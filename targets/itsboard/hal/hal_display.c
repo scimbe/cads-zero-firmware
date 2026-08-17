@@ -214,6 +214,11 @@ void cads_hal_display_blit(
     cads_hal_spi_release_bus();
 }
 
+void cads_hal_display_set_fast_clock(bool fast) {
+    cads_hal_spi_wait();
+    cads_hal_spi_set_speed(fast ? CadsSpiSpeedDisplayFast : CadsSpiSpeedDisplay);
+}
+
 bool cads_hal_display_busy(void) {
     return cads_hal_spi_busy();
 }

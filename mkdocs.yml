@@ -1,0 +1,106 @@
+site_name: CaDS Zero
+site_description: A Flipper-Zero-class handheld firmware for the ITSboard — STM32F429ZI, 480x320 colour touch, Ethernet
+site_url: https://scimbe.github.io/cads-zero/
+repo_url: https://github.com/scimbe/cads-zero
+repo_name: scimbe/cads-zero
+edit_uri: edit/main/docs/
+
+# Documentation is organised along Diataxis: the four kinds of document answer
+# four different questions, and mixing them is what makes documentation rot.
+#
+#   Tutorials    "teach me"      learning oriented, hand held, one happy path
+#   How-to       "help me do X"  task oriented, assumes competence
+#   Reference    "tell me"       information oriented, dry, complete
+#   Explanation  "why is it so"  understanding oriented, argument and context
+#
+# When adding a page, decide which question it answers first. A page that
+# answers two of them belongs in two files.
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - search.suggest
+    - toc.follow
+
+extra_css:
+  - stylesheets/cads.css
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - tutorials/index.md
+      - Build and flash your first image: tutorials/first-build.md
+      - Read the on-target test: tutorials/first-gate.md
+  - How-to:
+      - how-to/index.md
+      - Build the firmware: how-to/build.md
+      - Flash the board: how-to/flash.md
+      - Run the hardware gate: how-to/board-test.md
+      - Debug with GDB: how-to/debug.md
+      - Work an issue as an agent: how-to/agent-workflow.md
+  - Reference:
+      - reference/index.md
+      - Hardware: HARDWARE.md
+      - Safety rules: SAFETY.md
+      - Memory map: reference/memory-map.md
+      - Canvas API: reference/canvas.md
+      - HAL interface: reference/hal.md
+      - Measurements: reference/measurements.md
+  - Explanation:
+      - explanation/index.md
+      - What ports from a Flipper, and what cannot: explanation/what-ports.md
+      - The PA7 conflict: explanation/pa7-conflict.md
+      - Why the framebuffer is 4 bits per pixel: explanation/why-4bpp.md
+      - Why dirty rectangles are mandatory: explanation/dirty-rectangles.md
+      - Clean room, and what that means here: explanation/clean-room.md
+  - Roadmap: ROADMAP.md

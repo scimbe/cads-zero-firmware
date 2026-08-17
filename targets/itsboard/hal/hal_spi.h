@@ -14,6 +14,10 @@ typedef enum {
 void cads_hal_spi_init(void);
 void cads_hal_spi_set_speed(cads_spi_speed_t speed);
 
+/** Return the bus to whichever display divider is currently selected, after a
+ *  driver has temporarily dropped it (the touch controller does). */
+void cads_hal_spi_restore_display_speed(void);
+
 /**
  * Take ownership of the SPI1 MOSI pin.
  *

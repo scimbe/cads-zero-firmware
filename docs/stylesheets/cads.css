@@ -1,0 +1,62 @@
+/* CaDS Zero documentation theme.
+ *
+ * Palette taken from the CaDS mark: the deep blue of the wordmark, the pale
+ * blue of the lion, and the olive green of the tagline. The same three colours
+ * are palette slots 2, 3 and 4 in the firmware's canvas, so the docs and the
+ * device look like the same product.
+ */
+
+:root {
+  --cads-blue: #204c86;
+  --cads-blue-dark: #12305a;
+  --cads-lion: #b5c4d8;
+  --cads-lion-mid: #8fa6c4;
+  --cads-green: #9cb33b;
+
+  --md-primary-fg-color: var(--cads-blue);
+  --md-primary-fg-color--light: var(--cads-lion-mid);
+  --md-primary-fg-color--dark: var(--cads-blue-dark);
+  --md-accent-fg-color: var(--cads-green);
+  --md-typeset-a-color: var(--cads-blue);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--cads-blue-dark);
+  --md-accent-fg-color: var(--cads-green);
+  --md-typeset-a-color: var(--cads-lion);
+}
+
+/* Measured numbers and register values carry a lot of weight in this project;
+   give tables room to breathe rather than squeezing them. */
+.md-typeset table:not([class]) th {
+  background-color: var(--cads-blue);
+  color: #fff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background-color: var(--cads-blue-dark);
+}
+
+/* A pin map or a register dump must never wrap. */
+.md-typeset table:not([class]) {
+  display: block;
+  overflow-x: auto;
+}
+
+.md-typeset code {
+  font-size: 0.85em;
+}
+
+/* Callout used for facts that were measured on the physical board rather than
+   reasoned about, because the distinction matters constantly here. */
+.measured {
+  border-left: 4px solid var(--cads-green);
+  padding: 0.6rem 1rem;
+  background: rgba(156, 179, 59, 0.08);
+  border-radius: 0 4px 4px 0;
+}
+
+.md-header__topic .md-ellipsis {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}

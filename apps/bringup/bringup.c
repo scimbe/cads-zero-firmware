@@ -71,6 +71,16 @@ static void cads_diag_uint(const char* key, uint32_t value) {
 
 /* --- individual checks ----------------------------------------------------- */
 
+/* Set to 1 once a human has confirmed the panel renders cleanly at the faster
+ * divider. Until then the bring-up returns the bus to the proven-safe /16 so an
+ * unattended board never runs on an unqualified clock. */
+#ifndef CADS_BRINGUP_KEEP_FAST_CLOCK
+#define CADS_BRINGUP_KEEP_FAST_CLOCK false
+#endif
+
+static void cads_check_fast_clock(uint64_t safe_us);
+static void cads_draw_test_pattern(void);
+
 static void cads_check_time_base(void) {
     uint32_t start_ms = cads_hal_ticks_ms();
     uint64_t start_us = cads_hal_ticks_us();
@@ -188,6 +198,56 @@ static void cads_check_display_throughput(void) {
     cads_tap(partial == 40u * 40u, "dirty rectangle limits the transfer");
     cads_diag_uint("partial_pixels", partial);
     cads_diag_uint("partial_us", (uint32_t)partial_elapsed);
+
+    cads_check_fast_clock(elapsed);
+}
+
+/*
+ * Qualify the faster SPI divider on real silicon.
+ *
+ * The bus is write-only, so the panel cannot be asked whether it understood the
+ * faster clock. What CAN be checked is that the transfer time halves: if the
+ * 74HC4094 chain were failing to keep up, the symptom would be corrupted pixels
+ * rather than a slower transfer, so timing alone is not sufficient proof - a
+ * human still has to look at the panel. Timing does prove the divider actually
+ * changed, which is the half that software can establish.
+ *
+ * Staged deliberately: measure at the safe divider first, then the fast one,
+ * then return to safe. If the fast setting wedges the bus, the next boot starts
+ * from the known-good state because nothing is persisted.
+ */
+static void cads_check_fast_clock(uint64_t safe_us) {
+    cads_hal_display_set_fast_clock(true);
+
+    cads_draw_test_pattern();
+    /* Marker band so the panel visibly differs from the safe-clock pattern:
+     * if this band is clean, the faster clock is being latched correctly. */
+    cads_canvas_fill_rect(0, 300, CADS_CANVAS_WIDTH, 20, CadsColorAccent);
+    for(int16_t x = 0; x < CADS_CANVAS_WIDTH; x += 4) {
+        cads_canvas_draw_vline(x, 300, 20, CadsColorBrandDark);
+    }
+
+    uint64_t start = cads_hal_ticks_us();
+    uint32_t pixels = cads_canvas_flush();
+    uint64_t fast_us = cads_hal_ticks_us() - start;
+
+    cads_diag_uint("fast_flush_us", (uint32_t)fast_us);
+    if(fast_us > 0u) {
+        cads_diag_uint("fast_kpixel_per_s", (uint32_t)((uint64_t)pixels * 1000u / fast_us));
+        /* Ratio in tenths, so 20 means exactly double. */
+        cads_diag_uint("speedup_x10", (uint32_t)((safe_us * 10u) / fast_us));
+    }
+
+    /* Halving the divider must roughly double the rate. Anything below 1.6x
+     * means the divider did not take effect; anything above 2.4x means the
+     * baseline measurement was wrong. */
+    bool doubled = fast_us > 0u && (safe_us * 10u) / fast_us >= 16u &&
+                   (safe_us * 10u) / fast_us <= 24u;
+    cads_tap(doubled, "faster SPI divider roughly doubles throughput");
+
+    /* Leave the bus where the build says it should be. Until a human has
+     * confirmed the panel is clean at the faster clock, that is the safe one. */
+    cads_hal_display_set_fast_clock(CADS_BRINGUP_KEEP_FAST_CLOCK);
 }
 
 static void cads_check_adapter_io(void) {
@@ -223,7 +283,7 @@ void cads_bringup_run(void) {
     /* Assertion count must match exactly what runs below; board_test.py fails
      * the gate when the plan and the stream disagree, which is how a firmware
      * that dies half way through gets caught instead of looking green. */
-    cads_puts("1..9\r\n");
+    cads_puts("1..10\r\n");
 
     cads_check_time_base();
     cads_check_canvas_pixels();

@@ -101,7 +101,7 @@ void cads_hal_touch_read(cads_touch_state_t* state) {
     uint16_t raw_x = cads_touch_median(XPT2046_CMD_X);
     uint16_t raw_y = cads_touch_median(XPT2046_CMD_Y);
 
-    cads_hal_spi_set_speed(CadsSpiSpeedDisplay);
+    cads_hal_spi_restore_display_speed();
     cads_hal_spi_release_bus();
 
     /* Still pressed after sampling? Otherwise the finger left mid-read and the

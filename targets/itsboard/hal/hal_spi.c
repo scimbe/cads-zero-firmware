@@ -74,6 +74,12 @@ void cads_hal_spi_init(void) {
     NVIC_EnableIRQ(DMA2_Stream3_IRQn);
 }
 
+/* Which of the two display dividers is currently selected. The touch driver
+ * has to drop the bus to a crawl for the XPT2046 and put it back afterwards;
+ * remembering the choice here means it cannot accidentally undo a qualified
+ * fast-clock setting. */
+static cads_spi_speed_t cads_spi_display_speed = CadsSpiSpeedDisplay;
+
 void cads_hal_spi_set_speed(cads_spi_speed_t speed) {
     cads_hal_spi_wait();
     switch(speed) {
@@ -81,13 +87,19 @@ void cads_hal_spi_set_speed(cads_spi_speed_t speed) {
         cads_spi_configure(CADS_TP_SPI_DIV, false);
         break;
     case CadsSpiSpeedDisplayFast:
+        cads_spi_display_speed = speed;
         cads_spi_configure(CADS_LCD_SPI_DIV_FAST, false);
         break;
     case CadsSpiSpeedDisplay:
     default:
+        cads_spi_display_speed = CadsSpiSpeedDisplay;
         cads_spi_configure(CADS_LCD_SPI_DIV_SAFE, false);
         break;
     }
+}
+
+void cads_hal_spi_restore_display_speed(void) {
+    cads_hal_spi_set_speed(cads_spi_display_speed);
 }
 
 /* --- Ethernet arbitration ------------------------------------------------- */

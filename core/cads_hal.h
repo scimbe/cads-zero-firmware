@@ -59,6 +59,18 @@ void cads_hal_display_init(void);
 void cads_hal_display_backlight(uint8_t percent);
 
 /**
+ * Select the display bus clock.
+ *
+ * false = the always-safe divider, true = the faster one. The limit is the
+ * shield's 74HC4094 shift register chain rather than the panel, so the fast
+ * setting is only ever enabled after being qualified on real hardware.
+ * See docs/SAFETY.md, "Raising the SPI clock".
+ *
+ * No-op in the simulator.
+ */
+void cads_hal_display_set_fast_clock(bool fast);
+
+/**
  * Push a rectangle of RGB565 pixels to the panel.
  *
  * The buffer must stay valid until cads_hal_display_busy() reports false: on
