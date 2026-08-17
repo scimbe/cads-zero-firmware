@@ -104,6 +104,17 @@ use, so the firmware never drives that pin. Storage lives in internal flash.
 | IN0..7 | PF0..PF7 | input, pulled up |
 | INT0..5 | PG0..PG5 | input, pulled up, EXTI capable |
 
+**The OUT LEDs are active low.** Observed by camera: with the firmware holding
+the output banks at `0x0000`, eight LEDs are lit. Driving a bit low turns its
+LED on. A GPIO app that treats 1 as "on" will be inverted, so the inversion
+belongs in one place - the adapter I/O driver - and nowhere else.
+
+**Nothing is wired to PF0..PF7 or PG0..PG5 that the buttons reach.** A probe
+watching those fourteen lines recorded zero edges while all eight buttons were
+pressed. The assumption that INT0..5 were the button cluster was wrong. The
+hardware explorer's `w` command watches all 176 pins to settle where they
+actually are; until that measurement exists, no mapping is committed.
+
 ## 5. Ethernet
 
 LAN8742A over RMII, PHY address 0.

@@ -16,6 +16,16 @@
 #include "hal_gpio.h"
 
 void cads_hal_io_init(void) {
+    /* Every GPIO port's clock, so reading any IDR returns real pin state rather
+     * than zeroes. Costs a few microamps and makes the hardware explorer able
+     * to see the whole device. Enabling a clock does not change any pin's
+     * direction, so this is safe by construction. */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN |
+                    RCC_AHB1ENR_GPIODEN | RCC_AHB1ENR_GPIOEEN | RCC_AHB1ENR_GPIOFEN |
+                    RCC_AHB1ENR_GPIOGEN | RCC_AHB1ENR_GPIOHEN | RCC_AHB1ENR_GPIOIEN |
+                    RCC_AHB1ENR_GPIOJEN | RCC_AHB1ENR_GPIOKEN;
+    (void)RCC->AHB1ENR;
+
     /* Output banks: start at zero so nothing lights up before the firmware
      * decides it should. */
     cads_gpio_clock_enable(CADS_PIN_OUT_LOW_PORT);

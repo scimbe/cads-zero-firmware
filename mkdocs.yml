@@ -99,6 +99,7 @@ nav:
   - Explanation:
       - explanation/index.md
       - What ports from a Flipper, and what cannot: explanation/what-ports.md
+      - The input scheme: explanation/input-scheme.md
       - The PA7 conflict: explanation/pa7-conflict.md
       - Why the framebuffer is 4 bits per pixel: explanation/why-4bpp.md
       - Why dirty rectangles are mandatory: explanation/dirty-rectangles.md

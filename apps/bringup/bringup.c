@@ -19,16 +19,18 @@
 
 #include "cads_hal.h"
 #include "canvas.h"
+#include "explorer.h"
+#include "input_probe.h"
 
 /* --- minimal formatted console output ------------------------------------- */
 
-static void cads_puts(const char* text) {
+void cads_probe_puts(const char* text) {
     size_t length = 0u;
     while(text[length]) length++;
     cads_hal_console_write(text, length);
 }
 
-static void cads_put_uint(uint32_t value) {
+void cads_probe_put_uint(uint32_t value) {
     char digits[11];
     int index = 0;
     if(value == 0u) {
@@ -53,20 +55,20 @@ static uint32_t cads_test_failures;
 
 static void cads_tap(bool passed, const char* description) {
     cads_test_number++;
-    cads_puts(passed ? "ok " : "not ok ");
-    cads_put_uint(cads_test_number);
-    cads_puts(" - ");
-    cads_puts(description);
-    cads_puts("\r\n");
+    cads_probe_puts(passed ? "ok " : "not ok ");
+    cads_probe_put_uint(cads_test_number);
+    cads_probe_puts(" - ");
+    cads_probe_puts(description);
+    cads_probe_puts("\r\n");
     if(!passed) cads_test_failures++;
 }
 
 static void cads_diag_uint(const char* key, uint32_t value) {
-    cads_puts("# ");
-    cads_puts(key);
-    cads_puts(": ");
-    cads_put_uint(value);
-    cads_puts("\r\n");
+    cads_probe_puts("# ");
+    cads_probe_puts(key);
+    cads_probe_puts(": ");
+    cads_probe_put_uint(value);
+    cads_probe_puts("\r\n");
 }
 
 /* --- individual checks ----------------------------------------------------- */
@@ -271,11 +273,11 @@ static void cads_check_adapter_io(void) {
 void cads_bringup_run(void) {
     cads_hal_console_init(115200u);
 
-    cads_puts("\r\n");
-    cads_puts("========================================\r\n");
-    cads_puts(" CaDS Zero - milestone 0 bring-up\r\n");
-    cads_puts(" build " __DATE__ " " __TIME__ "\r\n");
-    cads_puts("========================================\r\n");
+    cads_probe_puts("\r\n");
+    cads_probe_puts("========================================\r\n");
+    cads_probe_puts(" CaDS Zero - milestone 0 bring-up\r\n");
+    cads_probe_puts(" build " __DATE__ " " __TIME__ "\r\n");
+    cads_probe_puts("========================================\r\n");
 
     cads_canvas_init();
     cads_hal_display_backlight(80u);
@@ -283,7 +285,7 @@ void cads_bringup_run(void) {
     /* Assertion count must match exactly what runs below; board_test.py fails
      * the gate when the plan and the stream disagree, which is how a firmware
      * that dies half way through gets caught instead of looking green. */
-    cads_puts("1..10\r\n");
+    cads_probe_puts("1..10\r\n");
 
     cads_check_time_base();
     cads_check_canvas_pixels();
@@ -293,16 +295,18 @@ void cads_bringup_run(void) {
 
     cads_tap(true, "reached the end of the self test");
 
-    cads_puts("# ");
-    cads_put_uint(cads_test_number - cads_test_failures);
-    cads_puts("/");
-    cads_put_uint(cads_test_number);
-    cads_puts(" passed\r\n");
-    cads_puts(cads_test_failures ? "# RESULT: FAIL\r\n" : "# RESULT: PASS\r\n");
+    cads_probe_puts("# ");
+    cads_probe_put_uint(cads_test_number - cads_test_failures);
+    cads_probe_puts("/");
+    cads_probe_put_uint(cads_test_number);
+    cads_probe_puts(" passed\r\n");
+    cads_probe_puts(cads_test_failures ? "# RESULT: FAIL\r\n" : "# RESULT: PASS\r\n");
 
-    /* Interactive phase. The heartbeat proves the machine is still alive, and
-     * echoing touch coordinates is how the panel calibration gets checked. */
-    cads_puts("# entering interactive loop, touch the panel\r\n");
+    /* Hand over to the interactive explorer. Discovery of the adapter wiring
+     * happens there, driven from the console, rather than on a fixed timer. */
+    cads_explorer_run();
+
+    cads_probe_puts("# entering interactive loop, touch the panel\r\n");
 
     uint32_t next_heartbeat = 0u;
     bool was_pressed = false;
@@ -320,11 +324,11 @@ void cads_bringup_run(void) {
 
         if(touch.pressed) {
             if(!was_pressed) {
-                cads_puts("# touch ");
-                cads_put_uint(touch.x);
-                cads_puts(",");
-                cads_put_uint(touch.y);
-                cads_puts("\r\n");
+                cads_probe_puts("# touch ");
+                cads_probe_put_uint(touch.x);
+                cads_probe_puts(",");
+                cads_probe_put_uint(touch.y);
+                cads_probe_puts("\r\n");
             }
             cads_canvas_fill_rect(
                 (int16_t)(touch.x - 3), (int16_t)(touch.y - 3), 7, 7, CadsColorAccent);

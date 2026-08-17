@@ -126,6 +126,31 @@ void cads_hal_led_toggle(cads_led_t led);
 /** The blue USER button on the Nucleo, active high. */
 bool cads_hal_user_button(void);
 
+/* --- raw port inspection --------------------------------------------------
+ *
+ * Used only by the hardware explorer, which exists because the ITS adapter's
+ * wiring is not documented anywhere we have. Exposed through the HAL rather
+ * than letting a tool in apps/ reach for the device headers directly - the rule
+ * that everything above the HAL builds for both targets is worth more than the
+ * convenience.
+ */
+
+/** Number of inspectable GPIO ports on this target. */
+uint32_t cads_hal_port_count(void);
+
+/** Single-letter name of a port, 'A'..'K' on the board. */
+char cads_hal_port_name(uint32_t index);
+
+/** Raw input register of a port. */
+uint16_t cads_hal_port_read(uint32_t index);
+
+/**
+ * True for pins that must not be repurposed: SWD, the HSE input, and the RMII
+ * lines. The explorer flags them so a reader is never tempted to wire a button
+ * to one. See docs/SAFETY.md.
+ */
+bool cads_hal_pin_is_reserved(uint32_t port_index, uint32_t pin);
+
 /* --- fault reporting ------------------------------------------------------ */
 
 /**

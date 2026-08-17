@@ -59,6 +59,8 @@ target_link_libraries(cads_gui PUBLIC cads_flags)
 
 add_library(cads_apps STATIC
     apps/bringup/bringup.c
+    apps/bringup/input_probe.c
+    apps/bringup/explorer.c
 )
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_gui cads_flags)
