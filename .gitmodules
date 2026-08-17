@@ -1,0 +1,18 @@
+[submodule "lib/CMSIS_6"]
+	path = lib/CMSIS_6
+	url = https://github.com/ARM-software/CMSIS_6.git
+[submodule "lib/cmsis_device_f4"]
+	path = lib/cmsis_device_f4
+	url = https://github.com/STMicroelectronics/cmsis_device_f4.git
+[submodule "lib/FreeRTOS-Kernel"]
+	path = lib/FreeRTOS-Kernel
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+[submodule "lib/littlefs"]
+	path = lib/littlefs
+	url = https://github.com/littlefs-project/littlefs.git
+[submodule "lib/Unity"]
+	path = lib/Unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "lib/lwip"]
+	path = lib/lwip
+	url = https://github.com/lwip-tcpip/lwip.git

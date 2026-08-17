@@ -1,0 +1,15 @@
+build/
+out/
+*.o
+*.obj
+*.elf
+*.bin
+*.hex
+*.map
+*.axf
+compile_commands.json
+.cache/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/

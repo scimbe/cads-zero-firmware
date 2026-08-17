@@ -1,0 +1,162 @@
+/*
+ * CaDS Zero - ITSboard pin map.
+ *
+ * Single source of truth for every pin this firmware touches. Derived from:
+ *   - NUCLEO-F429ZI (UM1974) Arduino connector mapping
+ *   - Waveshare 4inch TFT Touch Shield schematic + user manual
+ *   - The ITS adapter board wiring as used by the existing ITS_BRD_LIB
+ *
+ * Read docs/SAFETY.md before adding anything here. In short:
+ *   - PA13/PA14 are SWDIO/SWCLK. Reconfiguring them costs you debug access.
+ *   - PH0/PH1 carry the 8 MHz clock from the ST-Link (HSE bypass).
+ *   - PF0..PF7 and PG0..PG5 are INPUTS on the adapter board. Driving them as
+ *     outputs risks contention with whatever is wired to the adapter.
+ *   - The RMII pins belong to the Ethernet MAC and nothing else.
+ */
+
+#ifndef CADS_BOARD_H
+#define CADS_BOARD_H
+
+#include "stm32f4xx.h"
+
+/* --- clock tree -------------------------------------------------------------
+ * HSE is the 8 MHz MCO output of the on-board ST-Link, fed in as a bypass
+ * clock. PLL: 8 / M(8) * N(360) / P(2) = 180 MHz, with over-drive enabled and
+ * 5 flash wait states. These are the documented maximum-performance settings
+ * for the F429 at 3.3 V; do not raise them.
+ */
+#define CADS_HSE_HZ      8000000u
+#define CADS_SYSCLK_HZ   180000000u
+#define CADS_HCLK_HZ     180000000u
+#define CADS_PCLK1_HZ    45000000u  /* AHB / 4 */
+#define CADS_PCLK2_HZ    90000000u  /* AHB / 2 */
+
+/* --- display: Waveshare 4" TFT Touch Shield, ILI9486 ------------------------
+ * The shield does NOT wire the ILI9486 to SPI directly. SPI bytes are shifted
+ * into a 74HC4040 counter plus two 74HC4094 shift registers, which present a
+ * 16-bit parallel word to the panel. Consequences that shape the driver:
+ *   - the bus is WRITE ONLY: the panel cannot be read back, so there is no
+ *     ID check and no read-modify-write on video memory;
+ *   - one pixel costs 16 SPI clocks, so the pixel rate is SPI_CLK / 16.
+ */
+#define CADS_LCD_WIDTH   480
+#define CADS_LCD_HEIGHT  320
+
+#define CADS_LCD_SPI            SPI1
+
+#define CADS_PIN_SPI_SCK_PORT   GPIOA
+#define CADS_PIN_SPI_SCK        5u
+#define CADS_PIN_SPI_MISO_PORT  GPIOA
+#define CADS_PIN_SPI_MISO       6u
+
+/* --- THE PA7 CONFLICT -------------------------------------------------------
+ * Arduino D11 (SPI1_MOSI, the display's data line) lands on PA7 in the
+ * board's default strapping. PA7 is also the ONLY pin on the STM32F429 that
+ * can carry ETH_RMII_CRS_DV. Display and Ethernet therefore cannot both own
+ * the pin, and whichever driver initialises last wins the alternate-function
+ * mux. This is a hardware fact, not something software can wish away.
+ *
+ * UM1974 provides the escape hatch: solder bridges SB121/SB122 select which
+ * MCU pin D11 is bonded to.
+ *
+ *   SB121 ON,  SB122 OFF  (factory default)  -> D11 = PA7
+ *   SB121 OFF, SB122 ON                      -> D11 = PB5
+ *
+ * CADS_SPI_MOSI_ON_PB5 = 0 : stock board. Display and Ethernet are mutually
+ *     exclusive; cads_hal_spi_claim_bus() time-slices PA7 and Ethernet RX
+ *     loses frames during display bursts.
+ * CADS_SPI_MOSI_ON_PB5 = 1 : after the bridge swap. PA7 belongs to the PHY
+ *     alone and both subsystems run concurrently at full speed.
+ */
+#ifndef CADS_SPI_MOSI_ON_PB5
+#define CADS_SPI_MOSI_ON_PB5 0
+#endif
+
+#if CADS_SPI_MOSI_ON_PB5
+#define CADS_PIN_SPI_MOSI_PORT  GPIOB
+#define CADS_PIN_SPI_MOSI       5u
+#define CADS_SPI_ETH_COEXIST    1
+#else
+#define CADS_PIN_SPI_MOSI_PORT  GPIOA
+#define CADS_PIN_SPI_MOSI       7u
+#define CADS_SPI_ETH_COEXIST    0
+#endif
+
+#define CADS_PIN_SPI_MOSI_AF    5u  /* AF5 = SPI1 on both PA7 and PB5 */
+
+#define CADS_PIN_LCD_CS_PORT    GPIOD   /* Arduino D10 */
+#define CADS_PIN_LCD_CS         14u
+#define CADS_PIN_LCD_DC_PORT    GPIOF   /* Arduino D7  */
+#define CADS_PIN_LCD_DC         13u
+#define CADS_PIN_LCD_RST_PORT   GPIOF   /* Arduino D8  */
+#define CADS_PIN_LCD_RST        12u
+#define CADS_PIN_LCD_BL_PORT    GPIOD   /* Arduino D9, drives an S8050 */
+#define CADS_PIN_LCD_BL         15u
+
+/* SPI1 sits on APB2 (90 MHz). The 74HC4094 chain is the limiting factor, not
+ * the panel. The proven-good divider from the existing ITS firmware is /16;
+ * anything faster must be qualified on real hardware one step at a time.
+ * See docs/SAFETY.md "Raising the SPI clock". */
+#define CADS_LCD_SPI_DIV_SAFE   16u  /*  5.6 MHz -> 351 kpx/s */
+#define CADS_LCD_SPI_DIV_FAST   8u   /* 11.3 MHz -> 703 kpx/s, qualified in M1 */
+#define CADS_TP_SPI_DIV         128u /* XPT2046 needs a slow clock */
+
+/* --- touch: XPT2046, shares SPI1 ------------------------------------------ */
+#define CADS_PIN_TP_CS_PORT     GPIOF   /* Arduino D4 */
+#define CADS_PIN_TP_CS          14u
+#define CADS_PIN_TP_IRQ_PORT    GPIOE   /* Arduino D3 */
+#define CADS_PIN_TP_IRQ         13u
+#define CADS_PIN_TP_BUSY_PORT   GPIOB
+#define CADS_PIN_TP_BUSY        10u
+
+/* The shield also carries a microSD slot on the same SPI bus with SD_CS on
+ * Arduino D5. Whether the ITS adapter routes that pin through is UNVERIFIED,
+ * so the firmware never drives it. See docs/HARDWARE.md. */
+
+/* --- ITS adapter board I/O --------------------------------------------------
+ * OUT0..7  = PD0..PD7   (LED bank, safe to drive)
+ * OUT8..15 = PE0..PE7   (LED bank, safe to drive)
+ * IN0..7   = PF0..PF7   (inputs, pulled up)
+ * INT0..5  = PG0..PG5   (inputs, pulled up, EXTI capable)
+ */
+#define CADS_PIN_OUT_LOW_PORT   GPIOD
+#define CADS_PIN_OUT_HIGH_PORT  GPIOE
+#define CADS_PIN_IN_PORT        GPIOF
+#define CADS_PIN_INT_PORT       GPIOG
+#define CADS_ADAPTER_IO_MASK    0x00FFu  /* bits 0..7 on each of the above */
+#define CADS_ADAPTER_INT_MASK   0x003Fu  /* bits 0..5 on GPIOG */
+
+/* --- Nucleo-144 on-board indicators --------------------------------------- */
+#define CADS_PIN_LED_GREEN_PORT GPIOB
+#define CADS_PIN_LED_GREEN      0u
+#define CADS_PIN_LED_BLUE_PORT  GPIOB
+#define CADS_PIN_LED_BLUE       7u
+#define CADS_PIN_LED_RED_PORT   GPIOB
+#define CADS_PIN_LED_RED        14u
+#define CADS_PIN_USER_BTN_PORT  GPIOC
+#define CADS_PIN_USER_BTN       13u
+
+/* --- console: USART3 routed to the ST-Link virtual COM port ---------------- */
+#define CADS_CONSOLE_UART       USART3
+#define CADS_CONSOLE_BAUD       115200u
+#define CADS_PIN_UART_TX_PORT   GPIOD
+#define CADS_PIN_UART_TX        8u
+#define CADS_PIN_UART_RX_PORT   GPIOD
+#define CADS_PIN_UART_RX        9u
+#define CADS_UART_AF            7u
+
+/* --- Ethernet: LAN8742A over RMII ------------------------------------------
+ * PA1 REF_CLK, PA2 MDIO, PC1 MDC, PA7 CRS_DV, PC4 RXD0, PC5 RXD1,
+ * PG2 RXER, PG11 TX_EN, PG13 TXD0, PB13 TXD1.
+ * PA7 is the contended pin - see CADS_SPI_MOSI_ON_PB5 above.
+ */
+#define CADS_ETH_PHY_ADDR       0u
+
+/* --- internal flash storage volume ---------------------------------------- */
+#define CADS_FS_BASE            0x08120000u  /* bank 2, sector 17 */
+#define CADS_FS_SIZE            (896u * 1024u)
+#define CADS_FS_BLOCK_SIZE      (128u * 1024u)
+#define CADS_FS_FIRST_SECTOR    17u
+#define CADS_FS_SECTOR_COUNT    7u
+
+#endif /* CADS_BOARD_H */
