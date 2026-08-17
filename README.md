@@ -2,9 +2,9 @@
 
 # CaDS Zero
 
-**A Flipper-Zero-class handheld firmware for the ITSboard — 480×320 in colour, with Ethernet.**
+**A firmware for the ITSboard — 480×320 in colour, with Ethernet.**
 
-`#204C86` · `#B5C4D8` · `#9CB33B` — and a lion instead of a dolphin.
+`#204C86` · `#B5C4D8` · `#9CB33B` — and a lion.
 
 </div>
 
