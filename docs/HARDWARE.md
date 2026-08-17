@@ -104,16 +104,35 @@ use, so the firmware never drives that pin. Storage lives in internal flash.
 | IN0..7 | PF0..PF7 | input, pulled up |
 | INT0..5 | PG0..PG5 | input, pulled up, EXTI capable |
 
-**The OUT LEDs are active low.** Observed by camera: with the firmware holding
-the output banks at `0x0000`, eight LEDs are lit. Driving a bit low turns its
-LED on. A GPIO app that treats 1 as "on" will be inverted, so the inversion
-belongs in one place - the adapter I/O driver - and nowhere else.
+### The buttons
 
-**Nothing is wired to PF0..PF7 or PG0..PG5 that the buttons reach.** A probe
-watching those fourteen lines recorded zero edges while all eight buttons were
-pressed. The assumption that INT0..5 were the button cluster was wrong. The
-hardware explorer's `w` command watches all 176 pins to settle where they
-actually are; until that measurement exists, no mapping is committed.
+**S0..S7 are PF0..PF7 (IN0..IN7), active low.** Settled by the manufacturer's
+own hardware test, `ITS-BRD/its_brd_tst`, `Programs/GPIOTest/Src/main.c`:
+
+```c
+sprintf(txt, "Bitte die Taste %d druecken", i);
+while ((GPIOF->IDR & (1 << i)) != 0) { }   /* waits for the line to go LOW */
+```
+
+A press pulls the line to ground, so internal pull-ups are the correct
+configuration.
+
+**INT0..INT5 (PG0..PG5) are not buttons.** The same test exercises them by
+asking the operator to *jumper OUT0 to INTx with a wire* - they are
+general-purpose inputs brought out for external signals, EXTI capable. Any
+design that treats them as a button cluster is wrong.
+
+**The OUT LEDs are active high.** GPIOTest walks them with
+`GPIOD->BSRR = 1 << i` to light each in turn.
+
+!!! note "A correction worth recording"
+    An earlier reading of a camera frame showed eight LEDs lit while the output
+    banks were held at `0x0000`, and this was written up as "the OUT LEDs are
+    active low". That was wrong. The lit LEDs were almost certainly the eight
+    **input** state indicators, showing IN0..IN7 idle high with no button
+    pressed. Inferring electrical polarity from a photograph of a board whose
+    silkscreen was not legible was a guess dressed up as a measurement; the
+    manufacturer's test code settles it in one line.
 
 ## 5. Ethernet
 

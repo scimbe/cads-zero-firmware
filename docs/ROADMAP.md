@@ -68,7 +68,8 @@ Prove the toolchain, the boot path and the display path on real silicon.
 
 ## M3 — Input and GUI framework  `[ ]`
 
-- [ ] Input service: touch → gestures, adapter IN0..7 and INT0..5 → buttons
+- [x] Input service: S0..S7 (PF0..PF7, active low) + touch, one event stream
+      with debounce, repeat and long press
 - [ ] On-screen navigation cluster (the d-pad equivalent) as a widget
 - [ ] `view`, `view_port`, `view_dispatcher`, `gui` compositor with layers
 - [ ] Widgets: menu, submenu, dialog, text box, list, status bar
@@ -122,6 +123,14 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
 
 ## Log
+
+- 2026-08-18 — Button mapping settled from the manufacturer's own hardware test
+  (ITS-BRD/its_brd_tst GPIOTest) and the official pin table, rather than by
+  probing: S0..S7 are PF0..PF7 active low, INT0..5 are jumper inputs and not
+  buttons, OUT LEDs are active high. Two earlier inferences were wrong and are
+  corrected in docs/HARDWARE.md: TP_BUSY is PE9 not PB10, and the "OUT LEDs are
+  active low" claim - drawn from a photograph - does not survive contact with
+  the vendor's test code.
 
 - 2026-08-17 — Repo created, M0 HAL written, PA7 conflict identified and
   documented, per-blit arbitration implemented as the software-only mitigation.

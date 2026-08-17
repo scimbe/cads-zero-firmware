@@ -106,18 +106,37 @@
 #define CADS_PIN_TP_CS          14u
 #define CADS_PIN_TP_IRQ_PORT    GPIOE   /* Arduino D3 */
 #define CADS_PIN_TP_IRQ         13u
-#define CADS_PIN_TP_BUSY_PORT   GPIOB
-#define CADS_PIN_TP_BUSY        10u
+/* TP_BUSY is PE9 (Arduino D6) per the board's official pin table
+ * (ITS_BRD_HW/ITS-BRD-NucleoPins.xlsx). The older lab sources say PB10, which
+ * does not match the table or the shield manual.
+ *
+ * Rather than pick a side, the driver simply does not use it: the XPT2046's
+ * BUSY line is optional, and a fixed conversion delay is both sufficient and
+ * one less disputed dependency. Kept here for documentation only. */
+#define CADS_PIN_TP_BUSY_PORT   GPIOE
+#define CADS_PIN_TP_BUSY        9u
 
-/* The shield also carries a microSD slot on the same SPI bus with SD_CS on
- * Arduino D5. Whether the ITS adapter routes that pin through is UNVERIFIED,
- * so the firmware never drives it. See docs/HARDWARE.md. */
+/* The shield's microSD slot shares the SPI bus; SD_CS is PE11 (Arduino D5),
+ * confirmed by the board's official pin table. Unused - the user runs without
+ * a card, and storage lives in internal flash. */
+#define CADS_PIN_SD_CS_PORT     GPIOE
+#define CADS_PIN_SD_CS          11u
 
 /* --- ITS adapter board I/O --------------------------------------------------
- * OUT0..7  = PD0..PD7   (LED bank, safe to drive)
- * OUT8..15 = PE0..PE7   (LED bank, safe to drive)
- * IN0..7   = PF0..PF7   (inputs, pulled up)
- * INT0..5  = PG0..PG5   (inputs, pulled up, EXTI capable)
+ *
+ * Confirmed against the board's official pin table and the manufacturer's own
+ * hardware test (ITS-BRD/its_brd_tst, Programs/GPIOTest):
+ *
+ *   OUT0..7   PD0..PD7   LED bank, ACTIVE HIGH
+ *                        GPIOTest walks them with BSRR = 1<<i to light each.
+ *   OUT8..15  PE0..PE7   LED bank, active high
+ *   IN0..7    PF0..PF7   push buttons S0..S7, ACTIVE LOW
+ *                        GPIOTest waits on (GPIOF->IDR & (1<<i)) != 0, i.e.
+ *                        a press drives the line to ground. Internal pull-ups
+ *                        are therefore correct.
+ *   INT0..5   PG0..PG5   NOT buttons. General purpose inputs that GPIOTest
+ *                        exercises by asking the operator to jumper OUT0 to
+ *                        INTx. Available for external signals; EXTI capable.
  */
 #define CADS_PIN_OUT_LOW_PORT   GPIOD
 #define CADS_PIN_OUT_HIGH_PORT  GPIOE

@@ -29,6 +29,7 @@
 
 #include "cads_hal.h"
 #include "canvas.h"
+#include "input/cads_input.h"
 #include "input_probe.h"
 
 
@@ -179,7 +180,8 @@ static void cads_help(void) {
         "#   b <pct>    backlight\r\n"
         "#   p <n>      pattern 0=black 1=blue 2=green 3=quadrants 4=stripes\r\n"
         "#   f <0|1>    display clock: 0 = /16 safe, 1 = /8 fast\r\n"
-        "#   t          one touch sample\r\n");
+        "#   t          one touch sample\r\n"
+        "#   s <sec>    live button state S0..S7 and touch\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -231,6 +233,38 @@ void cads_explorer_run(void) {
                 cads_hal_display_set_fast_clock(argument[0] == '1');
                 cads_probe_puts("# clock set\r\n");
                 break;
+            case 's': {
+                /* Live view of the debounced input service. Confirms the
+                 * S0..S7 mapping at the bench without a rebuild. */
+                uint32_t seconds = cads_parse_uint(argument);
+                if(!seconds) seconds = 20u;
+                cads_input_init();
+                cads_probe_puts("# press buttons, shown as S7..S0\r\n");
+                uint32_t start = cads_hal_ticks_ms();
+                uint8_t last = 0xFFu;
+                while((cads_hal_ticks_ms() - start) < seconds * 1000u) {
+                    cads_input_tick();
+                    uint8_t state = cads_input_state();
+                    if(state != last) {
+                        last = state;
+                        cads_probe_puts("KEYS ");
+                        for(int bit = CADS_BUTTON_COUNT - 1; bit >= 0; bit--) {
+                            cads_probe_puts((state & (1u << bit)) ? "#" : ".");
+                        }
+                        cads_probe_puts("  ");
+                        for(uint32_t k = 0; k < CADS_BUTTON_COUNT; k++) {
+                            if(state & (1u << k)) {
+                                cads_probe_puts(cads_input_key_name((cads_key_t)k));
+                                cads_probe_puts(" ");
+                            }
+                        }
+                        cads_probe_puts("\r\n");
+                    }
+                    cads_hal_delay_us(2000u);
+                }
+                cads_probe_puts("# live view end\r\n");
+                break;
+            }
             case 't': {
                 cads_touch_state_t touch;
                 cads_hal_touch_read(&touch);

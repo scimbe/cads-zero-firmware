@@ -3,12 +3,14 @@
 How applications are driven. Designed around what this board actually has,
 rather than around what the device it takes its cues from has.
 
-!!! warning "Pin mapping pending measurement"
-    The **scheme** below is settled. The **pin mapping** is not: a probe of
-    PF0..PF7 and PG0..PG5 recorded zero edges while the buttons were pressed,
-    which disproved the obvious assumption. The hardware explorer (`w` command)
-    watches all 176 pins and will settle it. Nothing is committed to a mapping
-    until that measurement exists.
+!!! success "Pin mapping settled"
+    **S0..S7 are PF0..PF7, active low.** Established from the manufacturer's own
+    hardware test (`ITS-BRD/its_brd_tst`, `Programs/GPIOTest`), which waits on
+    `(GPIOF->IDR & (1<<i)) != 0` for each button in turn, and cross-checked
+    against the board's official pin table `ITS-BRD-NucleoPins.xlsx`.
+
+    **INT0..INT5 (PG0..PG5) are not buttons.** The same test exercises them by
+    asking the operator to jumper OUT0 to INTx with a wire.
 
 ## The starting point
 
@@ -18,10 +20,10 @@ written against that vocabulary, and it works because six is enough to express
 
 This board has, in principle:
 
-- **8 buttons** on the ITS adapter, in a row
+- **8 buttons** S0..S7 on the ITS adapter, in a row (PF0..PF7, active low)
 - a **480×320 resistive touchscreen**
 - the Nucleo's **USER** button
-- 8 further input lines and 6 interrupt lines on the adapter
+- 6 general-purpose input lines, INT0..INT5, meant for external signals
 
 Eight buttons in a row is not a D-pad. Pretending otherwise — mapping buttons
 1..4 to a cross — produces something that needs explaining every time. So the
