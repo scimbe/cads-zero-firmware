@@ -12,3 +12,7 @@
 void cads_explorer_eth_status(void) {
     cads_probe_puts("# PHY: not available in the simulator\r\n");
 }
+
+void cads_explorer_eth_cable_test(void) {
+    cads_probe_puts("# cable test: not available in the simulator\r\n");
+}

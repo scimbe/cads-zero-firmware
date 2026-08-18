@@ -112,6 +112,41 @@ Prove the toolchain, the boot path and the display path on real silicon.
 - [ ] `cads_cli` over TCP and over the serial console, shared command table
 - [ ] Screen streaming: framebuffer to a host viewer over TCP
 - [ ] HTTP status page
+
+### The network Swiss-army-knife (verified against DS00001989A, the LAN8742A datasheet)
+
+MDIO-only tools need no RMII data path and no PA7 — same access as the
+existing PHY status reader. RMII-dependent tools are gated on the ETH MAC
+driver above.
+
+- [x] Cable diagnostics (TDR): open/short detection + distance-to-fault, plus
+      matched-cable length estimation on an active link. MDIO-only, safe.
+      VERIFIED on hardware.
+- [ ] Auto-negotiation inspector: decode ANAR/ANLPAR to show what both sides
+      offered/agreed (helps diagnose speed/duplex mismatches). MDIO-only. S.
+- [ ] Link event log: poll BSR + the interrupt source register (reg 29) to
+      timestamp link up/down and auto-neg-complete events. MDIO-only. S.
+- [ ] Traffic statistics from the STM32 ETH MAC's built-in MMC counters
+      (Tx/Rx packet/byte/error counts) — hardware counters, no software
+      counting needed. Needs the MAC clocked but not RMII/lwIP. S.
+- [ ] ARP scan of the local subnet. Needs RMII + lwIP. S once M5 lands.
+- [ ] Ping / ICMP echo. lwIP ships an example to adapt. Needs RMII. S.
+- [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M.
+- [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
+      portable status struct and a UI. Needs RMII. S.
+- [ ] iperf-style throughput test via lwIP's lwiperf. Expect well under
+      100 Mbit/s — the STM32 ETH has checksum offload but the CPU is still
+      the bottleneck on small packets. Needs RMII. M.
+- [ ] Configurable-rate packet generator (DMA descriptor ring + timer). Needs
+      RMII. M.
+- [ ] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
+      is storage/processing at 100 Mbit on an MCU with no OS — frame loss
+      under load is likely and must be measured, not assumed. Needs RMII and
+      M4 storage. L.
+- [ ] MAC address table (switch-style learning with aging) from sniffed
+      frames. Needs the sniffer. M.
+- [ ] Wake-on-LAN magic-packet sender, independent of the board's own WoL
+      support. Needs RMII. S.
 - [ ] **HARDWARE GATE M5**: DHCP lease, ping, CLI over telnet, screen
       streaming at a measured frame rate, all with the display active
 
@@ -123,6 +158,33 @@ Prove the toolchain, the boot path and the display path on real silicon.
 - [ ] Network info app
 - [ ] A game, to exercise the input and timing paths end to end
 - [ ] **HARDWARE GATE M6**: full walkthrough of every app on the board
+
+### The GPIO Swiss-army-knife
+
+All timer-based, all achievable on the existing adapter wiring (PD0-7/PE0-7
+outputs, PF0-7 inputs = S0..S7 buttons, PG0-5 general inputs). None of this
+needs new hardware.
+
+- [ ] Logic level display: live high/low state of every adapter pin, already
+      the core of the `apps/gpio` app.
+- [ ] Frequency/period counter on an INT line via timer input capture
+      (TIM2/TIM5 are 32-bit general-purpose timers with input capture on
+      several AF mappings — confirm exact INT-pin-to-timer-channel mapping
+      against ITS-BRD-NucleoPins.xlsx before wiring). S/M.
+- [ ] Duty-cycle measurement, same input-capture channel, second capture
+      compare register. S/M.
+- [ ] PWM generator on an OUT line (any adapter output pin on a timer channel
+      can be reconfigured AF instead of GPIO push-pull — verify against the
+      pin table which OUT pins have timer AFs; PD/PE pins have mixed timer
+      support, some OUT pins may be GPIO-only). S/M, pin-mapping dependent.
+- [ ] Simple logic analyzer: sample IN0..7/INT0..5 at a timer-triggered rate
+      into a ring buffer in SRAM, render as a waveform on the canvas. Sample
+      rate bounded by how fast the canvas can be redrawn (dirty-rectangle
+      rule applies) rather than by the GPIO read itself. M.
+- [ ] Simple continuity/cable tester using two adapter pins: drive one OUT
+      pin, read it back on an IN pin through an external jumper/cable under
+      test — same operator-in-the-loop pattern the manufacturer's own
+      GPIOTest already uses for the OUT0-to-INTx test. S.
 
 ## M7 — Simulator and test pipeline  `[ ]`
 
@@ -149,6 +211,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-18 — Cable diagnostics (TDR) implemented and verified on hardware,
+  the first item of the network Swiss-army-knife. MDIO-only per
+  DS00001989A section 3.8.9 / Figure 3-16, transcribed exactly rather than
+  approximated. Both channels reported MATCHED against the bench's live
+  cable, the non-disruptive matched-length read gave a plausible ~6m, and the
+  PHY's prior register state (auto-negotiation, Auto-MDIX) was confirmed
+  restored after the disruptive TDR portion: link=UP, 100M full, unchanged
+  before and after. Distance accuracy against a real known fault is not yet
+  verified - that needs a deliberately damaged cable, a bench task for a
+  human. Two independent Claude sessions collaborated on the research:
+  local reading of the primary-source datasheet resolved the one point a
+  peer session's web search could not confirm (whether the LAN8742A does
+  real distance-to-fault TDR or only open/short detection - it does the
+  former, with a documented formula).
 
 - 2026-08-18 — Ethernet brought up from the end that needs no compromise. The
   PHY's management interface is MDIO on PA2 and MDC on PC1; only the RMII data

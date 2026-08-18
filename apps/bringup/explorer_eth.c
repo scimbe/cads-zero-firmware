@@ -13,6 +13,7 @@
 
 #include "cads_hal.h"
 #include "hal_eth_mdio.h"
+#include "hal_eth_tdr.h"
 #include "input_probe.h"
 
 static void cads_put_hex16(uint32_t value) {
@@ -23,6 +24,73 @@ static void cads_put_hex16(uint32_t value) {
         value >>= 4;
     }
     cads_hal_console_write(out, 4u);
+}
+
+static void cads_report_tdr(const cads_eth_tdr_result_t* r) {
+    cads_probe_puts(r->channel == CadsEthChannelMdi ? "# TDR MDI  " : "# TDR MDIX ");
+    if(!r->completed) {
+        cads_probe_puts("timed out\r\n");
+        return;
+    }
+    switch(r->condition) {
+    case CadsEthCableOpen:
+        cads_probe_puts("OPEN at ~");
+        cads_probe_put_uint(r->distance_m);
+        cads_probe_puts("m (raw=");
+        cads_probe_put_uint(r->raw_length);
+        cads_probe_puts(")\r\n");
+        break;
+    case CadsEthCableShorted:
+        cads_probe_puts("SHORT at ~");
+        cads_probe_put_uint(r->distance_m);
+        cads_probe_puts("m (raw=");
+        cads_probe_put_uint(r->raw_length);
+        cads_probe_puts(")\r\n");
+        break;
+    case CadsEthCableMatched:
+        cads_probe_puts("MATCHED (terminated / active far end, or no fault"
+                        " on this pair)\r\n");
+        break;
+    default:
+        cads_probe_puts("no condition resolved (raw=");
+        cads_probe_put_uint(r->raw_length);
+        cads_probe_puts(")\r\n");
+        break;
+    }
+}
+
+void cads_explorer_eth_cable_test(void) {
+    static bool initialised = false;
+    if(!initialised) {
+        cads_hal_eth_mdio_init();
+        initialised = true;
+    }
+
+    uint16_t matched_before;
+    bool had_matched = cads_hal_eth_cable_length_matched(0u, &matched_before);
+    if(had_matched) {
+        cads_probe_puts("# link was up before the test: matched length ~");
+        cads_probe_put_uint(matched_before);
+        cads_probe_puts("m\r\n");
+    } else {
+        cads_probe_puts("# link was down before the test\r\n");
+    }
+
+    cads_probe_puts("# running TDR - this will drop the link briefly\r\n");
+
+    cads_eth_tdr_result_t result;
+    if(cads_hal_eth_tdr_run(0u, CadsEthChannelMdi, CadsEthCableUnknown, &result)) {
+        cads_report_tdr(&result);
+    } else {
+        cads_probe_puts("# TDR MDI  failed to run (MDIO error)\r\n");
+    }
+    if(cads_hal_eth_tdr_run(0u, CadsEthChannelMdix, CadsEthCableUnknown, &result)) {
+        cads_report_tdr(&result);
+    } else {
+        cads_probe_puts("# TDR MDIX failed to run (MDIO error)\r\n");
+    }
+
+    cads_probe_puts("# cable test done, link will renegotiate\r\n");
 }
 
 void cads_explorer_eth_status(void) {

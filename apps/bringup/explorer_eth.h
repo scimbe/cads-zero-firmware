@@ -10,4 +10,14 @@
  */
 void cads_explorer_eth_status(void);
 
+/**
+ * Run cable diagnostics (TDR on MDI + MDIX, plus matched-length if the link
+ * is up before the test) and print the results.
+ *
+ * DISRUPTIVE: forces the PHY out of auto-negotiation for the duration of the
+ * TDR portion. The prior state is restored afterwards and the link
+ * renegotiates, but anything depending on that link sees a brief drop.
+ */
+void cads_explorer_eth_cable_test(void);
+
 #endif /* CADS_EXPLORER_ETH_H */

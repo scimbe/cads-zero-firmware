@@ -211,7 +211,8 @@ static void cads_help(void) {
         "#   t          one touch sample\r\n"
         "#   s <sec>    live button state S0..S7 and touch\r\n"
         "#   k          task stacks, task count, input counters\r\n"
-        "#   e          Ethernet PHY identity and link state (MDIO only)\r\n");
+        "#   e          Ethernet PHY identity and link state (MDIO only)\r\n"
+        "#   c          cable test: TDR + matched length (MDIO only, disruptive)\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -243,6 +244,7 @@ void cads_explorer_run(void) {
             case 'i': cads_dump_ports(); break;
             case 'k': cads_tasks_report(); break;
             case 'e': cads_explorer_eth_status(); break;
+            case 'c': cads_explorer_eth_cable_test(); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
                 uint32_t value = cads_parse_hex(argument);
