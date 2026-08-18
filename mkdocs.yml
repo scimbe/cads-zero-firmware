@@ -87,6 +87,7 @@ nav:
       - Flash the board: how-to/flash.md
       - Run the hardware gate: how-to/board-test.md
       - Debug with GDB: how-to/debug.md
+      - Port to different hardware: how-to/port-to-new-board.md
       - Work an issue as an agent: how-to/agent-workflow.md
   - Reference:
       - reference/index.md

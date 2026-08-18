@@ -11,6 +11,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_touch.c
     hal/hal_io.c
     hal/hal_ports.c
+    hal/hal_board_info.c
     hal/hal_init.c
 )
 

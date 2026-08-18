@@ -11,6 +11,8 @@
 
 #include "cads/toolbox/ring.h"
 
+#include <stddef.h>
+
 static bool cads_ring_is_power_of_two(uint32_t value) {
     return value >= 2u && (value & (value - 1u)) == 0u;
 }

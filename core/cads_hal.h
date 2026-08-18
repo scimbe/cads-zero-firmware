@@ -23,9 +23,63 @@
 extern "C" {
 #endif
 
-/* Panel geometry. Fixed at compile time on both backends. */
+/* --- board geometry --------------------------------------------------------
+ *
+ * These are the COMPILE TIME maxima, and they exist only because the canvas
+ * allocates its framebuffer statically - this device has no allocator, so the
+ * buffer's size has to be known to the linker.
+ *
+ * Everything else should ask cads_hal_board_info() at run time rather than
+ * assuming these values. A layout written against CADS_DISPLAY_WIDTH is a
+ * layout that breaks the day the panel changes; one written against
+ * info->display_width adapts. Porting to a different panel then means editing
+ * one board header and one descriptor, not hunting constants through the GUI.
+ */
+#ifndef CADS_DISPLAY_WIDTH
 #define CADS_DISPLAY_WIDTH  480
+#endif
+#ifndef CADS_DISPLAY_HEIGHT
 #define CADS_DISPLAY_HEIGHT 320
+#endif
+
+/* --- board identity and capabilities ---------------------------------------
+ *
+ * The point of this struct is that the layers above it never have to know
+ * which board they are on. An app asks "is there a network?" rather than
+ * testing for the ITSboard; a widget asks how many soft keys exist rather than
+ * assuming eight. Swapping the adapter, the Nucleo or the panel then touches
+ * the target directory and nothing else.
+ */
+typedef struct {
+    const char* board_name;   /**< e.g. "ITSboard (NUCLEO-F429ZI)"           */
+    const char* mcu_name;     /**< e.g. "STM32F429ZI"                        */
+    uint32_t cpu_hz;
+
+    uint16_t display_width;   /**< <= CADS_DISPLAY_WIDTH                     */
+    uint16_t display_height;  /**< <= CADS_DISPLAY_HEIGHT                    */
+    bool display_readable;    /**< false when the bus is write-only, as here */
+
+    uint8_t button_count;     /**< physical keys available as soft keys      */
+    bool has_touch;
+    bool has_network;
+    bool has_storage;
+
+    uint32_t flash_bytes;     /**< usable application flash                  */
+    uint32_t ram_bytes;       /**< DMA-capable RAM                           */
+
+    /**
+     * Measured pixel throughput of the display path, in pixels per second.
+     *
+     * Published because it is a first-class design input, not trivia: on this
+     * board it is ~342 000, which makes a full-screen redraw cost 448 ms and
+     * forces dirty-rectangle rendering. A GUI that wants to decide whether an
+     * animation is affordable should ask, not guess.
+     */
+    uint32_t display_pixels_per_second;
+} cads_board_info_t;
+
+/** Never NULL, valid for the lifetime of the program. */
+const cads_board_info_t* cads_hal_board_info(void);
 
 /* --- lifecycle ----------------------------------------------------------- */
 

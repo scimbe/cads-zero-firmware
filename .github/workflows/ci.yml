@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs: a push while a build is in flight makes that build
+# irrelevant, and the firmware build is the slow part.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: Firmware (STM32F429)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '13.3.Rel1'
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCADS_ARM_TOOLCHAIN_BIN=$(dirname $(which arm-none-eabi-gcc))
+
+      - name: Build
+        run: cmake --build build
+
+      # The size report is a regression signal, not decoration. FLASH_FS must
+      # stay at zero: anything landing there would collide with the littlefs
+      # volume in flash bank 2.
+      - name: Size report
+        run: |
+          arm-none-eabi-size build/cads-zero.elf
+          echo '### Size' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          arm-none-eabi-size build/cads-zero.elf >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Check the filesystem region is untouched
+        run: |
+          if arm-none-eabi-objdump -h build/cads-zero.elf | grep -qE '0810[2-9a-f]|081[1-9a-f]'; then
+            echo "error: a section landed in the littlefs window at 0x08120000" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            build/cads-zero.elf
+            build/cads-zero.bin
+            build/cads-zero.map
+
+  host:
+    name: Host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libsdl2-dev
+
+      - name: Configure
+        run: cmake -S . -B build/host -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build/host
+
+      - name: Unit tests
+        run: ctest --test-dir build/host --output-on-failure
+
+  generated:
+    name: Generated files are up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The vector table is derived from the CMSIS header. If someone edits the
+      # generated file by hand, or bumps the submodule without regenerating,
+      # this catches it before a wrong handler lands in a live interrupt slot.
+      - name: Regenerate the vector table and diff
+        run: |
+          python3 scripts/gen_vectors.py \
+            lib/cmsis_device_f4/Include/stm32f429xx.h \
+            targets/itsboard/startup/vectors_stm32f429.c
+          git diff --exit-code targets/itsboard/startup/vectors_stm32f429.c
+
+  # NOTE: there is no on-target job here. The hardware gate needs the physical
+  # board and the ST-Link, which the maintainer holds exclusively, and it is
+  # run with scripts/board_test.py before every merge. A green CI on its own
+  # does not mean the firmware runs - the display bus is write-only and cannot
+  # be verified in software at all.
