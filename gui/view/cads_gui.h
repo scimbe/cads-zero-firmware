@@ -15,6 +15,14 @@
  * doing nothing at all in the common case: cads_gui_tick() returns 0 without
  * touching the bus when no layer has changed.
  *
+ * That single box also means a frame cannot afford every layer. A keypress
+ * dirties a soft-key cell at the bottom and the content at the top, and one box
+ * around both is the whole screen. So the compositor admits a layer to a frame
+ * only when it does not cost more than painting it alone would have; a layer
+ * turned away keeps its dirty state and gets the next frame. Measured on the
+ * menu case, that is 85 ms per keypress instead of 409 ms. cads_gui_tick() must
+ * therefore be called every pass of the main loop, not only after input.
+ *
  * THE TWO INPUT RAILS MEET HERE
  * -----------------------------
  * A touch on the soft-key strip is turned into the key event the physical
@@ -54,7 +62,9 @@ typedef struct {
     cads_color_t background;
 
     uint32_t seen_generation;
+    bool key_feedback;
     bool recompose;
+    bool clear_content;
     bool started;
 } cads_gui_t;
 
@@ -74,6 +84,17 @@ void cads_gui_init(
 
 /** Background colour of the content band. Applied on the next full repaint. */
 void cads_gui_set_background(cads_gui_t* gui, cads_color_t color);
+
+/**
+ * Highlight a soft-key cell while its physical button is down. On by default.
+ *
+ * It costs two extra strip transfers per keypress, about 14 ms, because the
+ * highlight and the content change land in different frames. An app that
+ * prefers those milliseconds - a live plot, say - turns it off and loses
+ * nothing that the button's own tactile click does not already provide. Touch
+ * feedback is unaffected: a finger has no click to feel.
+ */
+void cads_gui_set_key_feedback(cads_gui_t* gui, bool enabled);
 
 /** The rectangle granted to the current view. */
 cads_rect_t cads_gui_content(const cads_gui_t* gui);

@@ -49,16 +49,25 @@ void cads_gui_init(
     gui->statusbar = statusbar;
     gui->softkeys = softkeys;
     gui->background = CadsColorBackground;
+    gui->key_feedback = true;
     gui->seen_generation = 0xFFFFFFFFu; /* forces the first tick to adopt a view */
     gui->recompose = true;
+    gui->clear_content = true;
     gui->started = false;
     cads_gui_layout(gui);
+    /* The dispatcher hands the rectangle to each view before its enter() runs,
+     * so views may be registered and navigated to in any order after this. */
+    if(dispatcher != NULL) cads_view_dispatcher_set_area(dispatcher, gui->content);
 }
 
 void cads_gui_set_background(cads_gui_t* gui, cads_color_t color) {
     if(gui == NULL || gui->background == color) return;
     gui->background = color;
     gui->recompose = true;
+}
+
+void cads_gui_set_key_feedback(cads_gui_t* gui, bool enabled) {
+    if(gui != NULL) gui->key_feedback = enabled;
 }
 
 cads_rect_t cads_gui_content(const cads_gui_t* gui) {
@@ -75,7 +84,7 @@ void cads_gui_invalidate(cads_gui_t* gui) {
 static void cads_gui_route_key(cads_gui_t* gui, const cads_input_event_t* event) {
     /* The strip mirrors the physical key so both rails give the same feedback;
      * a cell already held by a finger keeps its own highlight. */
-    if(gui->softkeys != NULL) {
+    if(gui->softkeys != NULL && gui->key_feedback) {
         if(event->type == CadsInputPress) {
             cads_softkeys_highlight(gui->softkeys, event->key, true);
         } else if(event->type == CadsInputRelease) {
@@ -120,8 +129,6 @@ void cads_gui_input(cads_gui_t* gui, const cads_input_event_t* event) {
 /* --- frame ---------------------------------------------------------------- */
 
 static void cads_gui_adopt_view(cads_gui_t* gui, cads_view_t* view) {
-    cads_view_set_area(view, gui->content);
-
     if(gui->statusbar != NULL) {
         cads_statusbar_set_title(gui->statusbar, cads_view_title(view));
     }
@@ -133,6 +140,59 @@ static void cads_gui_adopt_view(cads_gui_t* gui, cads_view_t* view) {
          * strip completely, blanks included. */
         if(keys != NULL) cads_softkeys_set(gui->softkeys, keys, count);
     }
+}
+
+/*
+ * WHY THE LAYERS ARE SCHEDULED RATHER THAN ALL PAINTED
+ * ----------------------------------------------------
+ * The canvas keeps one damage bounding box, not a list. Painting the soft-key
+ * highlight at the bottom of the screen in the same frame as a menu selection
+ * at the top produces a box spanning both - measured at 139 944 pixels, 409 ms,
+ * for a change that is really two rows and one cell, 29 280 pixels and 85 ms.
+ * Every single keypress hits that pattern, because a key both highlights its
+ * cell and changes the content.
+ *
+ * So a frame accepts a layer only when adding it does not cost more than
+ * painting it on its own would have: union area <= sum of the parts. A layer
+ * that fails the test keeps its dirty state and is painted in a later frame -
+ * one frame later is imperceptible for transient feedback, and a factor of five
+ * on the bus is not. Content goes first because it is what the user is looking
+ * at; the chrome catches up the moment the content stops changing.
+ *
+ * The deliberate limit: a view that dirties itself every single frame starves
+ * the chrome. Nothing in the roadmap does that, and the fix if something ever
+ * does is a damage list in the canvas rather than more policy here.
+ */
+
+static int32_t cads_gui_area_of(cads_rect_t rect) {
+    if(rect.width <= 0 || rect.height <= 0) return 0;
+    return (int32_t)rect.width * (int32_t)rect.height;
+}
+
+static cads_rect_t cads_gui_union(cads_rect_t a, cads_rect_t b) {
+    int16_t x0 = a.x < b.x ? a.x : b.x;
+    int16_t y0 = a.y < b.y ? a.y : b.y;
+    int16_t x1 = (a.x + a.width) > (b.x + b.width) ? (int16_t)(a.x + a.width) :
+                                                     (int16_t)(b.x + b.width);
+    int16_t y1 = (a.y + a.height) > (b.y + b.height) ? (int16_t)(a.y + a.height) :
+                                                       (int16_t)(b.y + b.height);
+    cads_rect_t out = {x0, y0, (int16_t)(x1 - x0), (int16_t)(y1 - y0)};
+    return out;
+}
+
+/** Accept `add` into the frame if it does not make the bounding box cost more
+ *  than painting it separately would have. */
+static bool cads_gui_accept(cads_rect_t* box, bool* have_box, cads_rect_t add) {
+    if(cads_gui_area_of(add) == 0) return false;
+    if(!*have_box) {
+        *box = add;
+        *have_box = true;
+        return true;
+    }
+    cads_rect_t merged = cads_gui_union(*box, add);
+    if(cads_gui_area_of(merged) > cads_gui_area_of(*box) + cads_gui_area_of(add)) return false;
+    *box = merged;
+    return true;
 }
 
 uint32_t cads_gui_tick(cads_gui_t* gui, uint32_t now_ms) {
@@ -154,34 +214,50 @@ uint32_t cads_gui_tick(cads_gui_t* gui, uint32_t now_ms) {
         gui->seen_generation = generation;
         gui->started = true;
         cads_gui_adopt_view(gui, view);
-        gui->recompose = true;
+        gui->clear_content = true;
+        cads_view_dirty(view);
     }
 
     if(gui->recompose) {
         gui->recompose = false;
-        cads_canvas_fill_rect(
-            gui->content.x, gui->content.y, gui->content.width, gui->content.height,
-            gui->background);
+        gui->clear_content = true;
         if(gui->statusbar != NULL) cads_statusbar_invalidate(gui->statusbar);
         if(gui->softkeys != NULL) cads_softkeys_invalidate(gui->softkeys);
         if(view != NULL) cads_view_dirty(view);
     }
 
-    if(gui->statusbar != NULL) cads_statusbar_draw(gui->statusbar);
-    if(gui->softkeys != NULL) cads_softkeys_draw(gui->softkeys);
+    cads_rect_t box = {0, 0, 0, 0};
+    bool have_box = false;
 
-    if(view != NULL) {
-        cads_rect_t damage;
-        if(cads_view_take_damage(view, &damage)) {
-            cads_rect_t clip = cads_gui_intersect(damage, gui->content);
-            if(clip.width > 0 && clip.height > 0) {
-                /* Clipping to the damage is what makes a lazy draw callback
-                 * correct: it may repaint the whole content area and still cost
-                 * only the rectangle it declared. */
-                cads_canvas_push_clip(clip);
-                cads_view_render(view, gui->content);
-                cads_canvas_pop_clip();
+    cads_rect_t content_damage;
+    if(view != NULL && cads_view_damage(view, &content_damage)) {
+        cads_rect_t clip = cads_gui_intersect(content_damage, gui->content);
+        if(cads_gui_accept(&box, &have_box, clip)) {
+            /* Clipping to the damage is what makes a lazy draw callback
+             * correct: it may repaint the whole content area and still cost
+             * only the rectangle it declared. */
+            cads_canvas_push_clip(clip);
+            if(gui->clear_content) {
+                gui->clear_content = false;
+                cads_canvas_fill_rect(
+                    gui->content.x, gui->content.y, gui->content.width, gui->content.height,
+                    gui->background);
             }
+            cads_view_render(view, gui->content);
+            cads_canvas_pop_clip();
+            cads_view_clear_damage(view);
+        }
+    }
+
+    if(gui->statusbar != NULL && cads_statusbar_is_dirty(gui->statusbar)) {
+        if(cads_gui_accept(&box, &have_box, cads_statusbar_damage(gui->statusbar))) {
+            cads_statusbar_draw(gui->statusbar);
+        }
+    }
+
+    if(gui->softkeys != NULL && cads_softkeys_is_dirty(gui->softkeys)) {
+        if(cads_gui_accept(&box, &have_box, cads_softkeys_damage(gui->softkeys))) {
+            cads_softkeys_draw(gui->softkeys);
         }
     }
 

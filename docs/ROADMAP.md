@@ -101,8 +101,12 @@ Prove the toolchain, the boot path and the display path on real silicon.
 - [ ] **HARDWARE GATE M4**: write, power-cycle, read back; verify the
       firmware region is untouched by comparing a flash CRC before and after
 
-## M5 — Network (the hardware advantage)  `[ ]`
+## M5 — Network (the hardware advantage)  `[~]`
 
+- [x] PHY management over MDIO — identity, link, speed, duplex. Independent
+      of RMII, so it needs neither PA7 nor a solder-bridge decision.
+      VERIFIED on hardware: LAN8742A id 0007:C131, model 0x13 rev 1,
+      link UP, autoneg done, 100 Mbit full duplex.
 - [ ] Bare-metal ETH MAC driver + lwIP netif, DMA descriptors in SRAM
 - [ ] DHCP, link state, status bar indicator
 - [ ] `cads_cli` over TCP and over the serial console, shared command table
@@ -139,6 +143,16 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
 
 ## Log
+
+- 2026-08-18 — Ethernet brought up from the end that needs no compromise. The
+  PHY's management interface is MDIO on PA2 and MDC on PC1; only the RMII data
+  path needs PA7. So the LAN8742A can be identified and its link read with the
+  display running normally, and it answers: 100 Mbit full duplex, link up.
+  Doing so exposed a latent cost in the SPI arbitration, which keyed off "is
+  the ETH clock enabled" and would therefore have stopped and restarted a MAC
+  that was not running on every single blit, and handed PA7 to a data path that
+  did not exist. It now keys off whether RMII is actually up, which the
+  Ethernet driver declares.
 
 - 2026-08-18 — The soak test found a real race on its first meaningful run. An
   idle soak had shown the ui task using 132 bytes of stack, which is the

@@ -107,9 +107,13 @@ bool cads_view_is_dirty(const cads_view_t* view);
 /** Assign the content rectangle and mark the view fully dirty. */
 void cads_view_set_area(cads_view_t* view, cads_rect_t area);
 
-/** Hand over the accumulated damage and clear it. False when nothing is
- *  pending, in which case `out` is untouched. */
-bool cads_view_take_damage(cads_view_t* view, cads_rect_t* out);
+/** Read the accumulated damage without clearing it. False when nothing is
+ *  pending, in which case `out` is untouched. The compositor peeks before it
+ *  decides whether this view can afford a frame. */
+bool cads_view_damage(const cads_view_t* view, cads_rect_t* out);
+
+/** Drop the accumulated damage, after painting it. */
+void cads_view_clear_damage(cads_view_t* view);
 
 void cads_view_enter(cads_view_t* view);
 void cads_view_exit(cads_view_t* view);

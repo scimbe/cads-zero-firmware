@@ -85,11 +85,14 @@ void cads_view_set_area(cads_view_t* view, cads_rect_t area) {
     cads_view_dirty(view);
 }
 
-bool cads_view_take_damage(cads_view_t* view, cads_rect_t* out) {
+bool cads_view_damage(const cads_view_t* view, cads_rect_t* out) {
     if(view == NULL || out == NULL || !view->damage_valid) return false;
     *out = view->damage;
-    view->damage_valid = false;
     return true;
+}
+
+void cads_view_clear_damage(cads_view_t* view) {
+    if(view != NULL) view->damage_valid = false;
 }
 
 void cads_view_enter(cads_view_t* view) {

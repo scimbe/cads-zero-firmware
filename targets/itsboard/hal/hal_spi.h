@@ -19,6 +19,18 @@ void cads_hal_spi_set_speed(cads_spi_speed_t speed);
 void cads_hal_spi_restore_display_speed(void);
 
 /**
+ * Declare whether the RMII data path is up and therefore owns PA7.
+ *
+ * The Ethernet driver sets this when it brings RMII up and clears it when it
+ * takes it down. Until then the display keeps the pin and the per-blit
+ * arbitration is skipped entirely - which matters because reading the PHY over
+ * MDIO enables the ETH clock without touching PA7 at all, and arbitrating
+ * against a data path that does not exist would cost every blit a pointless
+ * MAC stop and restart.
+ */
+void cads_hal_spi_set_eth_datapath_active(bool active);
+
+/**
  * Take ownership of the SPI1 MOSI pin.
  *
  * On a stock board this stops the Ethernet MAC and steals PA7 from the PHY;

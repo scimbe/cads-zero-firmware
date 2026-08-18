@@ -19,9 +19,21 @@ void cads_view_dispatcher_init(
     dispatcher->stack = stack;
     dispatcher->stack_capacity = (stack != NULL) ? stack_depth : 0u;
     dispatcher->depth = 0u;
+    dispatcher->area.x = 0;
+    dispatcher->area.y = 0;
+    dispatcher->area.width = 0;
+    dispatcher->area.height = 0;
     dispatcher->generation = 0u;
     dispatcher->on_exhausted = NULL;
     dispatcher->context = NULL;
+}
+
+void cads_view_dispatcher_set_area(cads_view_dispatcher_t* dispatcher, cads_rect_t area) {
+    if(dispatcher == NULL) return;
+    dispatcher->area = area;
+
+    cads_view_t* current = cads_view_dispatcher_top(dispatcher);
+    if(current != NULL) cads_view_set_area(current, area);
 }
 
 void cads_view_dispatcher_set_exhausted(
@@ -54,7 +66,11 @@ static void cads_view_dispatcher_activate(
     cads_view_dispatcher_t* dispatcher, cads_view_t* leaving, cads_view_t* entering) {
     if(leaving == entering) return;
     if(leaving != NULL) cads_view_exit(leaving);
-    if(entering != NULL) cads_view_enter(entering);
+    if(entering != NULL) {
+        /* Area first: enter() is where a view sizes its widgets. */
+        cads_view_set_area(entering, dispatcher->area);
+        cads_view_enter(entering);
+    }
     dispatcher->generation++;
 }
 

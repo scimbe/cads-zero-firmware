@@ -34,6 +34,7 @@
 #include "input_probe.h"
 #include "cads/kernel/kernel.h"
 #include "tasks.h"
+#include "hal_eth_mdio.h"
 
 
 
@@ -210,7 +211,8 @@ static void cads_help(void) {
         "#   f <0|1>    display clock: 0 = /16 safe, 1 = /8 fast\r\n"
         "#   t          one touch sample\r\n"
         "#   s <sec>    live button state S0..S7 and touch\r\n"
-        "#   k          task stacks, kernel heap, input counters\r\n");
+        "#   k          task stacks, task count, input counters\r\n"
+        "#   e          Ethernet PHY identity and link state (MDIO only)\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -241,6 +243,40 @@ void cads_explorer_run(void) {
             case '?': cads_help(); break;
             case 'i': cads_dump_ports(); break;
             case 'k': cads_tasks_report(); break;
+            case 'e': {
+                /* PHY management only - this never touches PA7, so the display
+                 * keeps working while the link is inspected. */
+                static bool initialised = false;
+                if(!initialised) {
+                    cads_hal_eth_mdio_init();
+                    initialised = true;
+                }
+                cads_eth_phy_status_t phy;
+                if(!cads_hal_eth_phy_status(0u, &phy)) {
+                    cads_probe_puts("# PHY: no answer at address 0\r\n");
+                    break;
+                }
+                cads_probe_puts("# PHY id=");
+                cads_put_hex16(phy.id1);
+                cads_probe_puts(":");
+                cads_put_hex16(phy.id2);
+                cads_probe_puts(" oui=0x");
+                cads_put_hex16((uint16_t)(phy.oui >> 8));
+                cads_put_hex16((uint16_t)(phy.oui & 0xFFu));
+                cads_probe_puts(" model=");
+                cads_probe_put_uint(phy.model);
+                cads_probe_puts(" rev=");
+                cads_probe_put_uint(phy.revision);
+                cads_probe_puts("\r\n# PHY bsr=");
+                cads_put_hex16(phy.bsr);
+                cads_probe_puts(phy.link_up ? " link=UP" : " link=DOWN");
+                cads_probe_puts(phy.autoneg_done ? " autoneg=done" : " autoneg=pending");
+                cads_probe_puts(" speed=");
+                cads_probe_put_uint(phy.speed_mbit);
+                cads_probe_puts(phy.full_duplex ? "M full" : "M half");
+                cads_probe_puts("\r\n");
+                break;
+            }
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
                 uint32_t value = cads_parse_hex(argument);

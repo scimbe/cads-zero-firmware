@@ -108,10 +108,32 @@ void cads_hal_spi_restore_display_speed(void) {
 static uint32_t cads_eth_saved_maccr = 0u;
 static uint32_t cads_eth_claim_depth = 0u;
 
+/*
+ * Whether the RMII DATA path owns PA7.
+ *
+ * Not the same question as "is the ETH clock on". The PHY's management
+ * interface (MDIO on PA2/MDC on PC1) needs the ETH clock but never touches
+ * PA7, so link state and PHY identity can be read with the display running
+ * normally. Only bringing up RMII makes PA7 contended.
+ *
+ * Keying the arbitration off the clock instead would mean every blit stopped
+ * and restarted a MAC that was not running, and handed PA7 to a data path that
+ * did not exist - pure cost for no correctness.
+ */
+static bool cads_eth_datapath_active = false;
+
+void cads_hal_spi_set_eth_datapath_active(bool active) {
+    cads_eth_datapath_active = active;
+}
+
 static bool cads_eth_is_running(void) {
-    /* If the ETH peripheral clock is off the MAC cannot be running, and
-     * touching its registers would fault. */
-    return (RCC->AHB1ENR & RCC_AHB1ENR_ETHMACEN) != 0u;
+    /* Touching MAC registers with the clock gated would fault, so both
+     * conditions have to hold. */
+    return cads_eth_datapath_active && (RCC->AHB1ENR & RCC_AHB1ENR_ETHMACEN) != 0u;
+}
+#else
+void cads_hal_spi_set_eth_datapath_active(bool active) {
+    (void)active; /* PA7 belongs to the PHY alone after the SB121/SB122 swap */
 }
 #endif
 

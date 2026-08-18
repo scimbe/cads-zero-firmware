@@ -55,7 +55,8 @@ typedef struct {
     size_t stack_capacity;
     size_t depth;
 
-    uint32_t generation; /**< bumped whenever the current view changes */
+    cads_rect_t area;    /**< content rectangle handed to every view      */
+    uint32_t generation; /**< bumped whenever the current view changes     */
 
     cads_view_exhausted_t on_exhausted;
     void* context;
@@ -74,6 +75,16 @@ void cads_view_dispatcher_init(
     size_t capacity,
     uint32_t* stack,
     size_t stack_depth);
+
+/**
+ * Set the content rectangle every view is given.
+ *
+ * The compositor calls this once, before the first navigation. It exists
+ * because a view's enter() is where widgets size themselves, and enter() must
+ * therefore run *after* the view knows how much room it has - a widget that
+ * measured itself against a zero rectangle would silently display nothing.
+ */
+void cads_view_dispatcher_set_area(cads_view_dispatcher_t* dispatcher, cads_rect_t area);
 
 void cads_view_dispatcher_set_exhausted(
     cads_view_dispatcher_t* dispatcher, cads_view_exhausted_t callback, void* context);

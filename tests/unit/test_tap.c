@@ -145,7 +145,11 @@ static void test_null_tap_is_survivable(void) {
     cads_tap_plan(NULL, 1u);
     cads_tap_ok(NULL, "nobody");
     cads_tap_diag(NULL, "nobody");
-    TEST_ASSERT_FALSE(cads_tap_check(NULL, true, "nobody"));
+    /* check() reports the verdict it was given even when nobody recorded it,
+     * so a caller's `if(!cads_tap_check(...))` does not change meaning
+     * depending on whether a writer happens to be installed. */
+    TEST_ASSERT_TRUE(cads_tap_check(NULL, true, "nobody"));
+    TEST_ASSERT_FALSE(cads_tap_check(NULL, false, "nobody"));
     TEST_ASSERT_FALSE(cads_tap_finish(NULL));
     TEST_ASSERT_EQUAL_UINT32(0u, cads_tap_count(NULL));
 }
