@@ -47,7 +47,6 @@ Prove the toolchain, the boot path and the display path on real silicon.
 
 ## M1 — Graphics and identity  `[~]`
 
-- [ ] DMA2D (Chrom-ART) path for L4→RGB565, software path kept as reference
 - [x] Font pipeline: TTF → packed 1 bpp glyph atlas, sizes 12/16/24
       (JetBrains Mono, SIL OFL 1.1; 1 bpp because an indexed canvas cannot
       antialias without burning palette slots on grey ramps)
@@ -62,7 +61,12 @@ Prove the toolchain, the boot path and the display path on real silicon.
       the panel, all three sizes legible, Leo correctly oriented, 10/10
       assertions still green. The camera caught a horizontal mirror that every
       colour-bar pattern had passed.
-- [ ] DMA2D output pixel-identical to the software reference
+- [!] DMA2D (Chrom-ART) path — DEFERRED, with cause. The flush is bus bound:
+      342 kpixel/s measured against a 351 kpixel/s theoretical maximum, so the
+      bus is 97% saturated and the CPU conversion is not the limit. DMA2D and
+      a 16-bit SPI frame both only save CPU cycles, which buys nothing
+      measurable today. Revisit when the scheduler lands and those cycles are
+      contended.
 
 ## M2 — Kernel  `[ ]`
 
@@ -131,6 +135,15 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
 
 ## Log
+
+- 2026-08-18 — Tried moving pixel output to a 16-bit SPI data frame so DMA2D
+  could feed it directly. Abandoned: it produced wrong colours in BOTH palette
+  byte orderings, matching neither model of the byte order, and the
+  justification did not survive checking. The flush is bus bound at 97% of the
+  theoretical rate, so neither a 16-bit frame nor DMA2D can make it faster -
+  they only free CPU cycles that nothing is currently competing for. Reverted
+  to the proven 8-bit path and recorded the reasoning in hal_display.c rather
+  than leaving a tempting half-finished optimisation behind.
 
 - 2026-08-18 — Two real bugs found, both by measurement rather than reasoning.
   (1) The console dropped characters: the explorer polled the UART every 500 us

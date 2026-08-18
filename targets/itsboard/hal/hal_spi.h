@@ -33,9 +33,20 @@ void cads_hal_spi_release_bus(void);
 uint8_t cads_hal_spi_transfer(uint8_t value);
 void cads_hal_spi_write(const uint8_t* data, size_t length);
 
-/** Start a DMA transmit. Returns immediately; the buffer must stay valid and
- *  must live in DMA-capable SRAM (never CCM). */
+/** Start an 8-bit DMA transmit. Returns immediately; the buffer must stay valid
+ *  and must live in DMA-capable SRAM (never CCM). */
 void cads_hal_spi_write_dma(const void* data, size_t length);
+
+/**
+ * Start a 16-bit DMA transmit, for pixel data.
+ *
+ * SPI sends a 16-bit frame most significant byte first, which is the order the
+ * panel's shift register chain expects, so pixels can be stored in native
+ * endianness and no per-pixel byte swap is needed. Call cads_hal_spi_end_16bit()
+ * before issuing any command again.
+ */
+void cads_hal_spi_write_dma16(const void* data, size_t halfwords);
+void cads_hal_spi_end_16bit(void);
 
 bool cads_hal_spi_busy(void);
 void cads_hal_spi_wait(void);

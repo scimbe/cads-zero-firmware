@@ -27,11 +27,13 @@ __attribute__((section(".dmaram"), aligned(4)))
 static uint16_t cads_stage[2][CADS_STAGE_PIXELS];
 
 /*
- * Palette held pre-swapped to big-endian RGB565.
+ * Palette in native RGB565.
  *
- * The panel expects the high byte first and the SPI DMA emits bytes in memory
- * order, so storing the swap here turns the whole conversion into a table
- * lookup and a store - no per-pixel byte shuffling on the hot path.
+ * The panel wants the high byte first, but pixels reach it through the SPI's
+ * 16-bit frame format, which already transmits most significant byte first.
+ * So no swap is needed anywhere - and, more importantly, this is the layout
+ * DMA2D produces, which is what lets the hardware accelerator drop straight
+ * into the flush path.
  */
 static uint16_t cads_palette[CADS_PALETTE_SIZE];
 
@@ -45,14 +47,14 @@ static struct {
 
 /* --- palette --------------------------------------------------------------- */
 
-static uint16_t cads_rgb565_be(uint8_t r, uint8_t g, uint8_t b) {
+static uint16_t cads_rgb565(uint8_t r, uint8_t g, uint8_t b) {
     uint16_t value = (uint16_t)(((r & 0xF8u) << 8) | ((g & 0xFCu) << 3) | (b >> 3));
     return (uint16_t)((value >> 8) | (value << 8));
 }
 
 void cads_canvas_set_palette(cads_color_t slot, uint8_t r, uint8_t g, uint8_t b) {
     if((uint32_t)slot >= CADS_PALETTE_SIZE) return;
-    cads_palette[slot] = cads_rgb565_be(r, g, b);
+    cads_palette[slot] = cads_rgb565(r, g, b);
 }
 
 static void cads_palette_defaults(void) {

@@ -92,6 +92,7 @@ nav:
       - reference/index.md
       - Hardware: HARDWARE.md
       - Safety rules: SAFETY.md
+      - Module layout: reference/module-layout.md
       - Memory map: reference/memory-map.md
       - Canvas API: reference/canvas.md
       - HAL interface: reference/hal.md

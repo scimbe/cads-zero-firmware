@@ -200,10 +200,21 @@ static void cads_lcd_set_window(uint16_t x, uint16_t y, uint16_t width, uint16_t
 }
 
 /*
- * Pixels go out as big-endian RGB565. The framebuffer stores native little
- * endian halfwords, so the byte order is fixed up by the flush path in
- * gui/canvas.c before the buffer reaches DMA - doing it here would mean
- * touching the caller's memory.
+ * Pixels go out as big-endian RGB565 over the 8-bit DMA path, byte for byte in
+ * memory order. The palette in gui/canvas.c is stored pre-swapped so this
+ * costs nothing per pixel.
+ *
+ * A 16-bit data frame format was tried here and abandoned. It ought to be
+ * equivalent - SPI transmits a 16-bit frame most significant byte first, which
+ * is the order the shift register chain wants - but on this hardware it
+ * produced wrong colours in both palette orderings, in ways that did not match
+ * either model of the byte order. Chasing it further was not justified: the
+ * measurements say the bus is 97% saturated (342 kpixel/s against a
+ * theoretical 351), so neither a 16-bit frame nor DMA2D can improve
+ * throughput. Both only save CPU cycles, and the CPU is not the bottleneck.
+ *
+ * That changes once there is a scheduler competing for those cycles during a
+ * flush. Until then this stays on the path that is proven correct.
  */
 void cads_hal_display_blit(
     uint16_t x,
