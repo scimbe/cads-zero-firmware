@@ -136,11 +136,17 @@ Prove the toolchain, the boot path and the display path on real silicon.
 
 ## Open decisions (need the user)
 
-- [!] **SB121/SB122 solder bridge.** Swapping them moves Arduino D11 from PA7
-      to PB5 and lets the display and Ethernet run concurrently at full speed.
-      Without it the two subsystems time-slice PA7 and Ethernet drops frames
-      during every redraw. Requires soldering on the Nucleo; reversible.
-      Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
+_None outstanding._
+
+## Resolved decisions
+
+- [x] **SB121/SB122 solder bridge — DECIDED 2026-08-18: no modification.**
+      The board stays stock, so `CADS_SPI_MOSI_ON_PB5=0` is permanent and the
+      display and Ethernet time-slice PA7. Reasoning and consequences in
+      docs/explanation/pa7-conflict.md. The flush path already bounds the cost:
+      it pushes in 16-row bands and releases the bus between them, so the
+      longest uninterrupted receiver blackout is 22.5 ms rather than the whole
+      448 ms frame.
 
 ## Log
 

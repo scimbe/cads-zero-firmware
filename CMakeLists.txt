@@ -48,6 +48,11 @@ target_compile_options(cads_flags INTERFACE
 )
 
 # --- modules -----------------------------------------------------------------
+# The toolbox is target neutral: the same sources link into the firmware and
+# into the host unit tests, which is the point of it sitting at the bottom of
+# the dependency graph.
+add_subdirectory(modules/toolbox)
+
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(modules/kernel)
 endif()
@@ -64,7 +69,7 @@ target_include_directories(cads_gui PUBLIC
     ${CADS_ROOT}/gui/fonts
     ${CADS_ROOT}/core
 )
-target_link_libraries(cads_gui PUBLIC cads_flags)
+target_link_libraries(cads_gui PUBLIC cads_toolbox cads_flags)
 
 add_library(cads_services STATIC
     services/input/cads_input.c

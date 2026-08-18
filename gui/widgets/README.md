@@ -66,6 +66,8 @@ the dirty state.
 ```c
 #include "cads_menu.h"
 
+void open_thing(uint32_t id); /* the app's own */
+
 static const cads_menu_item_t items[] = {
     {"Applications", NULL,   0},
     {"GPIO",         "16",   1},
