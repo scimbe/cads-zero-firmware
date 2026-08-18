@@ -50,9 +50,13 @@ target_compile_options(cads_flags INTERFACE
 # --- portable layers ---------------------------------------------------------
 add_library(cads_gui STATIC
     gui/canvas.c
+    gui/cads_splash.c
+    gui/assets/cads_logo.c
+    gui/fonts/cads_fonts.c
 )
 target_include_directories(cads_gui PUBLIC
     ${CADS_ROOT}/gui
+    ${CADS_ROOT}/gui/fonts
     ${CADS_ROOT}/core
 )
 target_link_libraries(cads_gui PUBLIC cads_flags)

@@ -38,9 +38,25 @@
 
 /*
  * Landscape, 480x320, left-to-right / top-to-bottom scan.
- * MADCTL 0x28: MV (row/column exchange) + BGR. DISCTRL byte 2 = 0x22.
+ *
+ * MADCTL bits: MY 0x80, MX 0x40, MV 0x20, ML 0x10, BGR 0x08.
+ *
+ * MV exchanges rows and columns to get landscape. Because of that exchange,
+ * MX and MY swap their apparent effect: with MV set it is MY that controls the
+ * horizontal scan direction, not MX. Setting MX instead flips the picture
+ * vertically, which is how this was pinned down - one bit at a time, with a
+ * camera pointed at the panel.
+ *
+ * MY is therefore needed on top of MV, otherwise the panel scans columns in
+ * the opposite order and everything comes out mirrored horizontally.
+ *
+ * That mirror is invisible in a colour-bar test pattern, which is symmetric in
+ * X, and it stayed hidden until the first text was rendered and photographed -
+ * the wordmark read backwards. The vendor's own driver compensates for the
+ * same effect in software with a coordinate transform on every window write;
+ * doing it in MADCTL instead costs nothing per pixel.
  */
-#define CADS_MADCTL_LANDSCAPE 0x28u
+#define CADS_MADCTL_LANDSCAPE 0xA8u  /* MY | MV | BGR */
 #define CADS_DISCTRL_SCAN     0x22u
 
 /* Power, gamma and frame timing for this module. Format: command, argument

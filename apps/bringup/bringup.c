@@ -19,6 +19,7 @@
 
 #include "cads_hal.h"
 #include "canvas.h"
+#include "cads_splash.h"
 #include "explorer.h"
 #include "input_probe.h"
 
@@ -281,6 +282,12 @@ void cads_bringup_run(void) {
 
     cads_canvas_init();
     cads_hal_display_backlight(80u);
+
+    /* Boot screen first: it is the only thing a person standing in front of the
+     * board sees before the self test starts scribbling test patterns. */
+    cads_splash_draw("milestone 1  .  bring-up self test");
+    cads_canvas_flush();
+    cads_hal_delay_ms(1500u);
 
     /* Assertion count must match exactly what runs below; board_test.py fails
      * the gate when the plan and the stream disagree, which is how a firmware

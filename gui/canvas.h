@@ -30,6 +30,8 @@
 #include <stdint.h>
 
 #include "cads_hal.h"
+#include "assets/cads_assets.h"
+#include "fonts/font.h"
 
 #define CADS_CANVAS_WIDTH  CADS_DISPLAY_WIDTH
 #define CADS_CANVAS_HEIGHT CADS_DISPLAY_HEIGHT
@@ -100,6 +102,37 @@ void cads_canvas_draw_bitmap4(
     int16_t height,
     const uint8_t* data,
     uint8_t transparent);
+
+/** Draw an embedded image, honouring its transparent index. */
+void cads_canvas_draw_image(int16_t x, int16_t y, const cads_image_t* image);
+
+/* --- text ----------------------------------------------------------------- */
+
+/** Pixel width of `text` in `font`, without drawing anything. */
+int16_t cads_canvas_text_width(const cads_font_t* font, const char* text);
+
+/**
+ * Draw `text` with its top-left at (x, y). Returns the pen position after the
+ * last glyph, so callers can chain runs in different colours.
+ *
+ * y is the top of the line box, not the baseline: laying out a status bar is
+ * far more often "put this at the top of that strip" than "put this on a
+ * baseline", and the font's ascent is applied internally.
+ */
+int16_t cads_canvas_draw_text(
+    int16_t x,
+    int16_t y,
+    const cads_font_t* font,
+    const char* text,
+    cads_color_t color);
+
+/** Draw `text` aligned within `box`, vertically centred. */
+void cads_canvas_draw_text_aligned(
+    cads_rect_t box,
+    cads_align_t align,
+    const cads_font_t* font,
+    const char* text,
+    cads_color_t color);
 
 /* --- clipping ------------------------------------------------------------- */
 

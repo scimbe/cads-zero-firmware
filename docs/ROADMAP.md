@@ -45,16 +45,24 @@ Prove the toolchain, the boot path and the display path on real silicon.
       write-only, so no software can check this)
 - [ ] CI workflow: firmware build + size report
 
-## M1 — Graphics and identity  `[ ]`
+## M1 — Graphics and identity  `[~]`
 
 - [ ] DMA2D (Chrom-ART) path for L4→RGB565, software path kept as reference
-- [ ] Font pipeline: TTF → packed 4 bpp glyph atlas, three sizes
-- [ ] `cads_canvas_draw_text` with alignment and clipping
-- [ ] CaDS lion asset: SVG → 4 bpp indexed C array, brand palette
-- [ ] Boot splash: lion + "CaDS Zero" wordmark
-- [ ] Qualify SPI divider /8 on hardware, keep /16 as the fallback
-- [ ] **HARDWARE GATE M1**: splash renders correctly, glyph atlas legible,
-      DMA2D output pixel-identical to the software reference
+- [x] Font pipeline: TTF → packed 1 bpp glyph atlas, sizes 12/16/24
+      (JetBrains Mono, SIL OFL 1.1; 1 bpp because an indexed canvas cannot
+      antialias without burning palette slots on grey ramps)
+- [x] `cads_canvas_draw_text` with alignment and clipping
+- [x] CaDS lion asset: PNG → 4 bpp indexed C array, brand palette
+      (quantisation is lossless for the three brand colours)
+- [x] Boot splash: the CaDS mark + "Z E R O" wordmark
+- [x] Qualify SPI divider /8 on hardware: 669 kpixel/s, 229 ms full screen,
+      1.9x speedup. Not made the default until the panel is confirmed clean
+      at the faster clock.
+- [x] **HARDWARE GATE M1 PASSED** 2026-08-18: type specimen photographed on
+      the panel, all three sizes legible, Leo correctly oriented, 10/10
+      assertions still green. The camera caught a horizontal mirror that every
+      colour-bar pattern had passed.
+- [ ] DMA2D output pixel-identical to the software reference
 
 ## M2 — Kernel  `[ ]`
 
@@ -123,6 +131,17 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
 
 ## Log
+
+- 2026-08-18 — Two real bugs found, both by measurement rather than reasoning.
+  (1) The console dropped characters: the explorer polled the UART every 500 us
+  while bytes arrive every 87 us at 115200 baud, and the F4 has no receive
+  FIFO. "b 90" arrived as "b", the argument parsed as zero, and the backlight
+  was set to 0% while still acknowledging success - a display that looked
+  broken and was not. RX is now interrupt driven with a ring buffer.
+  (2) The panel was mirrored horizontally. MADCTL needed MY, not MX: with MV
+  set the two swap their apparent effect. Invisible to every colour-bar test
+  pattern because those are symmetric in X, and only exposed once text was
+  rendered and photographed.
 
 - 2026-08-18 — Button mapping settled from the manufacturer's own hardware test
   (ITS-BRD/its_brd_tst GPIOTest) and the official pin table, rather than by

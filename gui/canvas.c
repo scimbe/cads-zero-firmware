@@ -274,6 +274,104 @@ void cads_canvas_draw_bitmap4(
     }
 }
 
+void cads_canvas_draw_image(int16_t x, int16_t y, const cads_image_t* image) {
+    cads_canvas_draw_bitmap4(
+        x, y, (int16_t)image->width, (int16_t)image->height, image->data, image->transparent);
+}
+
+/* --- text ------------------------------------------------------------------ */
+
+static const cads_glyph_t* cads_glyph_for(const cads_font_t* font, char character) {
+    uint8_t code = (uint8_t)character;
+    if(code < font->first || code > font->last) {
+        /* Anything outside the baked range renders as a space rather than as
+         * a garbage glyph or a crash. */
+        code = (uint8_t)' ';
+        if(code < font->first || code > font->last) return NULL;
+    }
+    return &font->glyphs[code - font->first];
+}
+
+int16_t cads_canvas_text_width(const cads_font_t* font, const char* text) {
+    int16_t width = 0;
+    for(const char* p = text; *p; p++) {
+        const cads_glyph_t* glyph = cads_glyph_for(font, *p);
+        if(glyph) width = (int16_t)(width + glyph->advance);
+    }
+    return width;
+}
+
+int16_t cads_canvas_draw_text(
+    int16_t x,
+    int16_t y,
+    const cads_font_t* font,
+    const char* text,
+    cads_color_t color) {
+    cads_rect_t clip = cads_current_clip();
+    int16_t pen = x;
+    int16_t min_y = CADS_CANVAS_HEIGHT;
+    int16_t max_y = 0;
+
+    for(const char* p = text; *p; p++) {
+        const cads_glyph_t* glyph = cads_glyph_for(font, *p);
+        if(!glyph) continue;
+
+        if(glyph->width && glyph->height) {
+            int16_t gx = (int16_t)(pen + glyph->left);
+            int16_t gy = (int16_t)(y + glyph->top);
+            uint32_t row_bytes = ((uint32_t)glyph->width + 7u) / 8u;
+
+            /* Whole glyph outside the clip: skip the inner loops entirely.
+             * Text is drawn often enough that this is worth the branch. */
+            if(gx < clip.x + clip.width && gx + glyph->width > clip.x &&
+               gy < clip.y + clip.height && gy + glyph->height > clip.y) {
+                for(uint32_t row = 0; row < glyph->height; row++) {
+                    const uint8_t* line = &font->bitmap[glyph->offset + row * row_bytes];
+                    for(uint32_t column = 0; column < glyph->width; column++) {
+                        if(line[column >> 3] & (0x80u >> (column & 7u))) {
+                            cads_canvas_set_pixel(
+                                (int16_t)(gx + column), (int16_t)(gy + row), color);
+                        }
+                    }
+                }
+                if(gy < min_y) min_y = gy;
+                if(gy + glyph->height > max_y) max_y = (int16_t)(gy + glyph->height);
+            }
+        }
+        pen = (int16_t)(pen + glyph->advance);
+    }
+
+    /* set_pixel already damaged each lit pixel, but a run of text produces
+     * thousands of one-pixel damages; one rectangle for the whole run keeps
+     * the bounding box tight and costs nothing. */
+    if(max_y > min_y) {
+        cads_canvas_damage(x, min_y, (int16_t)(pen - x), (int16_t)(max_y - min_y));
+    }
+    return pen;
+}
+
+void cads_canvas_draw_text_aligned(
+    cads_rect_t box,
+    cads_align_t align,
+    const cads_font_t* font,
+    const char* text,
+    cads_color_t color) {
+    int16_t width = cads_canvas_text_width(font, text);
+    int16_t x = box.x;
+
+    if(align == CadsAlignCenter) {
+        x = (int16_t)(box.x + (box.width - width) / 2);
+    } else if(align == CadsAlignRight) {
+        x = (int16_t)(box.x + box.width - width);
+    }
+
+    int16_t y = (int16_t)(box.y + (box.height - font->line_height) / 2);
+
+    cads_canvas_push_clip(box);
+    cads_canvas_draw_text(x, y, font, text, color);
+    cads_canvas_pop_clip();
+}
+
 /* --- flush ----------------------------------------------------------------- */
 
 /**

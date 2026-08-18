@@ -29,6 +29,7 @@
 
 #include "cads_hal.h"
 #include "canvas.h"
+#include "cads_splash.h"
 #include "input/cads_input.h"
 #include "input_probe.h"
 
@@ -163,6 +164,26 @@ static void cads_pattern(uint32_t which) {
         }
         break;
     }
+    case 5:
+        /* The boot screen, on demand. Being able to redraw it without a reset
+         * is what makes camera verification repeatable. */
+        cads_splash_draw("hardware gate  .  milestone 1");
+        break;
+    case 6: {
+        /* Type specimen: all three fonts, so a camera can confirm the glyph
+         * atlas is legible rather than merely present. */
+        cads_canvas_clear(CadsColorBackground);
+        cads_canvas_fill_rect(0, 0, CADS_CANVAS_WIDTH, 34, CadsColorBrand);
+        cads_rect_t header = {12, 0, 300, 34};
+        cads_canvas_draw_text_aligned(
+            header, CadsAlignLeft, &cads_font16, "CaDS Zero  type specimen", CadsColorWhite);
+        cads_canvas_draw_text(12, 50, &cads_font24, "24  Leo ABC xyz 0123", CadsColorBrandLight);
+        cads_canvas_draw_text(12, 96, &cads_font16, "16  The quick brown fox jumps", CadsColorWhite);
+        cads_canvas_draw_text(12, 128, &cads_font12, "12  over the lazy dog, 0123456789", CadsColorGrayLight);
+        cads_canvas_draw_text(12, 156, &cads_font12, "12  !\"#$%&'()*+,-./:;<=>?@[]^_{|}~", CadsColorAccent);
+        cads_canvas_draw_image(300, 150, &cads_leo);
+        break;
+    }
     default:
         cads_canvas_clear(CadsColorBackground);
         break;
@@ -178,7 +199,7 @@ static void cads_help(void) {
         "#   o <hex>    adapter outputs OUT0..15\r\n"
         "#   l <rgb>    on-board LEDs, e.g. l 100\r\n"
         "#   b <pct>    backlight\r\n"
-        "#   p <n>      pattern 0=black 1=blue 2=green 3=quadrants 4=stripes\r\n"
+        "#   p <n>      0=black 1=blue 2=green 3=quadrants 4=stripes 5=splash 6=fonts\r\n"
         "#   f <0|1>    display clock: 0 = /16 safe, 1 = /8 fast\r\n"
         "#   t          one touch sample\r\n"
         "#   s <sec>    live button state S0..S7 and touch\r\n");

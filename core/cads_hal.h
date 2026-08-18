@@ -48,8 +48,20 @@ void cads_hal_delay_ms(uint32_t ms);
 void cads_hal_console_init(uint32_t baud);
 void cads_hal_console_write(const void* data, size_t length);
 
-/** Non-blocking single byte read. Returns true when a byte was available. */
+/**
+ * Non-blocking single byte read from the receive ring buffer.
+ *
+ * Reception is interrupt driven precisely so a slow caller cannot lose bytes:
+ * the USART has a one byte register and no FIFO, so at 115200 baud any polling
+ * loop slower than 87 us drops characters.
+ */
 bool cads_hal_console_read(uint8_t* byte);
+
+/** Bytes discarded because the reader fell behind the ring buffer. */
+uint32_t cads_hal_console_dropped(void);
+
+/** Hardware receive overruns. Non-zero means bytes were lost before the ISR. */
+uint32_t cads_hal_console_overruns(void);
 
 /* --- display ------------------------------------------------------------- */
 
