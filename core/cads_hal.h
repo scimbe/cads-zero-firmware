@@ -42,6 +42,25 @@ extern "C" {
 #define CADS_DISPLAY_HEIGHT 320
 #endif
 
+/* --- memory placement -------------------------------------------------------
+ *
+ * On the board, anything a DMA controller will read must live in SRAM: the
+ * STM32F4's CCM is invisible to every DMA engine, and a transfer sourced from
+ * there silently produces nothing. The linker script provides a .dmaram
+ * section whose placement is therefore guaranteed and visible in the map file.
+ *
+ * The simulator has no such distinction, and Mach-O rejects a bare section
+ * name outright, so the attribute has to be target conditional rather than
+ * written inline at each buffer.
+ */
+#if defined(CADS_TARGET_ITSBOARD)
+#define CADS_DMA_SECTION __attribute__((section(".dmaram")))
+#define CADS_CCM_SECTION __attribute__((section(".ccm")))
+#else
+#define CADS_DMA_SECTION
+#define CADS_CCM_SECTION
+#endif
+
 /* --- board identity and capabilities ---------------------------------------
  *
  * The point of this struct is that the layers above it never have to know

@@ -20,10 +20,10 @@
 #define CADS_STAGE_ROWS 16
 #define CADS_STAGE_PIXELS (CADS_CANVAS_WIDTH * CADS_STAGE_ROWS)
 
-__attribute__((section(".dmaram"), aligned(4)))
+CADS_DMA_SECTION __attribute__((aligned(4)))
 static uint8_t cads_framebuffer[CADS_CANVAS_STRIDE * CADS_CANVAS_HEIGHT];
 
-__attribute__((section(".dmaram"), aligned(4)))
+CADS_DMA_SECTION __attribute__((aligned(4)))
 static uint16_t cads_stage[2][CADS_STAGE_PIXELS];
 
 /*

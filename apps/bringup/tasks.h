@@ -8,6 +8,15 @@
 void cads_tasks_start(void);
 
 /**
+ * Sleep, whether or not a scheduler exists.
+ *
+ * The board yields to other tasks; the simulator, which has none, busy waits.
+ * Callers above this line have no business knowing which - that is the whole
+ * reason this exists rather than everyone including the kernel header.
+ */
+void cads_tasks_sleep_ms(uint32_t ms);
+
+/**
  * Wait until the ui task has pushed everything currently drawn.
  *
  * Only the ui task flushes the display - a flush holds the bus for up to

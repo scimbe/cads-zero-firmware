@@ -77,11 +77,22 @@ add_library(cads_services STATIC
 target_include_directories(cads_services PUBLIC ${CADS_ROOT}/services)
 target_link_libraries(cads_services PUBLIC cads_gui cads_flags)
 
+# The task layer has two implementations: one that drives a scheduler and one
+# for the host, which has none. Everything else in cads_apps is portable.
+if(CADS_TARGET STREQUAL "itsboard")
+    set(CADS_TASKS_SOURCE apps/bringup/tasks.c)
+    set(CADS_EXPLORER_ETH_SOURCE apps/bringup/explorer_eth.c)
+else()
+    set(CADS_TASKS_SOURCE apps/bringup/tasks_sim.c)
+    set(CADS_EXPLORER_ETH_SOURCE apps/bringup/explorer_eth_sim.c)
+endif()
+
 add_library(cads_apps STATIC
     apps/bringup/bringup.c
     apps/bringup/input_probe.c
     apps/bringup/explorer.c
-    apps/bringup/tasks.c
+    ${CADS_TASKS_SOURCE}
+    ${CADS_EXPLORER_ETH_SOURCE}
 )
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)

@@ -33,9 +33,9 @@
 #define CADS_INPUT_STACK   256
 #define CADS_CONSOLE_STACK 512
 
-__attribute__((section(".ccm"), aligned(8))) static uint32_t cads_ui_stack[CADS_UI_STACK];
-__attribute__((section(".ccm"), aligned(8))) static uint32_t cads_input_stack[CADS_INPUT_STACK];
-__attribute__((section(".ccm"), aligned(8))) static uint32_t cads_console_stack[CADS_CONSOLE_STACK];
+CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_ui_stack[CADS_UI_STACK];
+CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_input_stack[CADS_INPUT_STACK];
+CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_console_stack[CADS_CONSOLE_STACK];
 
 static cads_thread_t cads_ui_thread;
 static cads_thread_t cads_input_thread;
@@ -116,6 +116,10 @@ void cads_tasks_start(void) {
         CADS_CONSOLE_STACK, CadsPriorityLow);
 
     cads_kernel_start(); /* does not return */
+}
+
+void cads_tasks_sleep_ms(uint32_t ms) {
+    cads_kernel_sleep_ms(ms);
 }
 
 bool cads_tasks_redraw_sync(uint32_t timeout_ms) {

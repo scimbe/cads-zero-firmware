@@ -32,9 +32,8 @@
 #include "cads_splash.h"
 #include "input/cads_input.h"
 #include "input_probe.h"
-#include "cads/kernel/kernel.h"
 #include "tasks.h"
-#include "hal_eth_mdio.h"
+#include "explorer_eth.h"
 
 
 
@@ -228,7 +227,7 @@ void cads_explorer_run(void) {
             /* Yield rather than spin: under the scheduler a busy wait here
              * would starve nothing (this is the lowest priority task) but it
              * would keep the CPU out of idle for no reason. */
-            cads_kernel_sleep_ms(2u);
+            cads_tasks_sleep_ms(2u);
             continue;
         }
 
@@ -243,40 +242,7 @@ void cads_explorer_run(void) {
             case '?': cads_help(); break;
             case 'i': cads_dump_ports(); break;
             case 'k': cads_tasks_report(); break;
-            case 'e': {
-                /* PHY management only - this never touches PA7, so the display
-                 * keeps working while the link is inspected. */
-                static bool initialised = false;
-                if(!initialised) {
-                    cads_hal_eth_mdio_init();
-                    initialised = true;
-                }
-                cads_eth_phy_status_t phy;
-                if(!cads_hal_eth_phy_status(0u, &phy)) {
-                    cads_probe_puts("# PHY: no answer at address 0\r\n");
-                    break;
-                }
-                cads_probe_puts("# PHY id=");
-                cads_put_hex16(phy.id1);
-                cads_probe_puts(":");
-                cads_put_hex16(phy.id2);
-                cads_probe_puts(" oui=0x");
-                cads_put_hex16((uint16_t)(phy.oui >> 8));
-                cads_put_hex16((uint16_t)(phy.oui & 0xFFu));
-                cads_probe_puts(" model=");
-                cads_probe_put_uint(phy.model);
-                cads_probe_puts(" rev=");
-                cads_probe_put_uint(phy.revision);
-                cads_probe_puts("\r\n# PHY bsr=");
-                cads_put_hex16(phy.bsr);
-                cads_probe_puts(phy.link_up ? " link=UP" : " link=DOWN");
-                cads_probe_puts(phy.autoneg_done ? " autoneg=done" : " autoneg=pending");
-                cads_probe_puts(" speed=");
-                cads_probe_put_uint(phy.speed_mbit);
-                cads_probe_puts(phy.full_duplex ? "M full" : "M half");
-                cads_probe_puts("\r\n");
-                break;
-            }
+            case 'e': cads_explorer_eth_status(); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
                 uint32_t value = cads_parse_hex(argument);
