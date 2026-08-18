@@ -32,6 +32,8 @@
 #include "cads_splash.h"
 #include "input/cads_input.h"
 #include "input_probe.h"
+#include "cads/kernel/kernel.h"
+#include "tasks.h"
 
 
 
@@ -202,7 +204,8 @@ static void cads_help(void) {
         "#   p <n>      0=black 1=blue 2=green 3=quadrants 4=stripes 5=splash 6=fonts\r\n"
         "#   f <0|1>    display clock: 0 = /16 safe, 1 = /8 fast\r\n"
         "#   t          one touch sample\r\n"
-        "#   s <sec>    live button state S0..S7 and touch\r\n");
+        "#   s <sec>    live button state S0..S7 and touch\r\n"
+        "#   k          task stacks, kernel heap, input counters\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -215,7 +218,10 @@ void cads_explorer_run(void) {
     for(;;) {
         uint8_t byte;
         if(!cads_hal_console_read(&byte)) {
-            cads_hal_delay_us(500u);
+            /* Yield rather than spin: under the scheduler a busy wait here
+             * would starve nothing (this is the lowest priority task) but it
+             * would keep the CPU out of idle for no reason. */
+            cads_kernel_sleep_ms(2u);
             continue;
         }
 
@@ -229,6 +235,7 @@ void cads_explorer_run(void) {
             switch(line[0]) {
             case '?': cads_help(); break;
             case 'i': cads_dump_ports(); break;
+            case 'k': cads_tasks_report(); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
                 uint32_t value = cads_parse_hex(argument);

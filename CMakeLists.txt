@@ -47,6 +47,11 @@ target_compile_options(cads_flags INTERFACE
     -fdata-sections
 )
 
+# --- modules -----------------------------------------------------------------
+if(CADS_TARGET STREQUAL "itsboard")
+    add_subdirectory(modules/kernel)
+endif()
+
 # --- portable layers ---------------------------------------------------------
 add_library(cads_gui STATIC
     gui/canvas.c
@@ -71,9 +76,13 @@ add_library(cads_apps STATIC
     apps/bringup/bringup.c
     apps/bringup/input_probe.c
     apps/bringup/explorer.c
+    apps/bringup/tasks.c
 )
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)
+if(CADS_TARGET STREQUAL "itsboard")
+    target_link_libraries(cads_apps PUBLIC cads_kernel)
+endif()
 
 # --- target specific ---------------------------------------------------------
 if(CADS_TARGET STREQUAL "itsboard")
@@ -83,7 +92,7 @@ if(CADS_TARGET STREQUAL "itsboard")
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)
 
     add_executable(cads-zero.elf targets/itsboard/main.c)
-    target_link_libraries(cads-zero.elf PRIVATE cads_apps cads_services cads_gui cads_hal_itsboard cads_flags)
+    target_link_libraries(cads-zero.elf PRIVATE cads_apps cads_services cads_gui cads_kernel cads_hal_itsboard cads_flags)
     target_link_options(cads-zero.elf PRIVATE
         -T${CADS_LINKER_SCRIPT}
         -Wl,--gc-sections

@@ -21,6 +21,7 @@
 #include "canvas.h"
 #include "cads_splash.h"
 #include "explorer.h"
+#include "tasks.h"
 #include "input_probe.h"
 
 /* --- minimal formatted console output ------------------------------------- */
@@ -309,9 +310,11 @@ void cads_bringup_run(void) {
     cads_probe_puts(" passed\r\n");
     cads_probe_puts(cads_test_failures ? "# RESULT: FAIL\r\n" : "# RESULT: PASS\r\n");
 
-    /* Hand over to the interactive explorer. Discovery of the adapter wiring
-     * happens there, driven from the console, rather than on a fixed timer. */
-    cads_explorer_run();
+    /* Everything from here runs under the scheduler. The explorer becomes the
+     * lowest-priority task rather than the only thing running, which is also
+     * the first real test of whether a 448 ms display flush starves anything. */
+    cads_probe_puts("# starting scheduler\r\n");
+    cads_tasks_start();
 
     cads_probe_puts("# entering interactive loop, touch the panel\r\n");
 

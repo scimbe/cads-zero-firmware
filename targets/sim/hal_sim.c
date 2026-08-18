@@ -100,6 +100,7 @@ static struct {
 
     cads_sim_options_t options;
     bool video_up;
+    bool stdin_patched;
     int stdin_flags;
 } cads_sim;
 
@@ -300,11 +301,11 @@ static void cads_sim_render(void) {
 /* --- screenshot ------------------------------------------------------------ */
 
 static void cads_sim_shutdown(void) {
-    if(cads_sim.stdin_flags != -1) {
+    if(cads_sim.stdin_patched) {
         /* A non-blocking stdin left behind outlives this process and makes the
          * next command in the same shell read EAGAIN. */
         (void)fcntl(STDIN_FILENO, F_SETFL, cads_sim.stdin_flags);
-        cads_sim.stdin_flags = -1;
+        cads_sim.stdin_patched = false;
     }
     if(cads_sim.video_up) {
         SDL_Quit();
@@ -524,10 +525,11 @@ void cads_hal_console_init(uint32_t baud) {
      * application's init sequence is identical on both backends. */
     (void)baud;
 
-    if(cads_sim.stdin_flags == -1) {
+    if(!cads_sim.stdin_patched) {
         int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
         if(flags != -1 && fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) != -1) {
             cads_sim.stdin_flags = flags;
+            cads_sim.stdin_patched = true;
         }
     }
 }
@@ -747,7 +749,6 @@ void cads_hal_early_init(void) {
     /* The hardware uses this for clocks and flash latency before the C runtime
      * is usable. On the host the runtime is already up by the time main() runs,
      * so the only job left is making the clock read zero at boot. */
-    cads_sim.stdin_flags = -1;
     cads_sim.epoch_us = cads_sim_monotonic_us();
 }
 

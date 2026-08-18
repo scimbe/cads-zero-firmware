@@ -1,41 +1,35 @@
 /*
- * CaDS Zero - time base.
+ * CaDS Zero - time base, built entirely on the DWT cycle counter.
  *
- * Two independent sources, on purpose:
- *   SysTick  -> 1 ms tick, and later the FreeRTOS scheduler tick
- *   DWT      -> free running CPU cycle counter for microsecond work
+ * SysTick is deliberately NOT used. FreeRTOS wants it for the scheduler tick,
+ * and two owners of one timer is the kind of arrangement that works until it
+ * suddenly does not. Deriving milliseconds from the same free-running cycle
+ * counter that already serves microsecond delays costs one division and leaves
+ * SysTick entirely to the kernel.
  *
- * The display and touch drivers need sub-microsecond settling delays that a
- * 1 ms tick simply cannot express, and busy-waiting on DWT costs nothing extra
- * because the counter is already running.
+ * It is also strictly better as a time base: DWT counts CPU cycles with no
+ * interrupt, so it keeps time correctly inside a critical section, inside an
+ * ISR, and while the scheduler is suspended - all places where a tick counter
+ * incremented by an interrupt quietly stops.
+ *
+ * CYCCNT wraps every 23.8 s at 180 MHz, so the 64-bit extension below has to
+ * be polled more often than that. Every caller does, and the scheduler tick
+ * guarantees it once the kernel is running.
  */
 
 #include "board.h"
 #include "cads_hal.h"
 
-static volatile uint32_t cads_tick_ms = 0u;
-
 void cads_hal_time_init(void) {
-    /* DWT cycle counter. Requires the debug block to be powered. */
+    /* DWT cycle counter. Requires the debug block to be powered, which TRCENA
+     * does; it works with no debugger attached. */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
     DWT->CYCCNT = 0u;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-
-    /* 1 ms SysTick. Lowest priority: it must never delay the display DMA or
-     * the Ethernet interrupt. */
-    SysTick->LOAD = (CADS_HCLK_HZ / 1000u) - 1u;
-    SysTick->VAL = 0u;
-    NVIC_SetPriority(SysTick_IRQn, 15u);
-    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk |
-                    SysTick_CTRL_ENABLE_Msk;
-}
-
-void SysTick_Handler(void) {
-    cads_tick_ms++;
 }
 
 uint32_t cads_hal_ticks_ms(void) {
-    return cads_tick_ms;
+    return (uint32_t)(cads_hal_ticks_us() / 1000u);
 }
 
 uint64_t cads_hal_ticks_us(void) {
