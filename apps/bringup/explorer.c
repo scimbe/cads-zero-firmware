@@ -190,7 +190,12 @@ static void cads_pattern(uint32_t which) {
         cads_canvas_clear(CadsColorBackground);
         break;
     }
-    cads_canvas_flush();
+
+    /* Deliberately no flush here. The ui task owns the transfer; this waits for
+     * it so the acknowledgement still means "it is on the panel". */
+    if(!cads_tasks_redraw_sync(3000u)) {
+        cads_probe_puts("# warning: redraw did not complete within 3 s\r\n");
+    }
 }
 
 static void cads_help(void) {

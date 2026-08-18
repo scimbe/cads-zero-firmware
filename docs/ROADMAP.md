@@ -68,15 +68,19 @@ Prove the toolchain, the boot path and the display path on real silicon.
       measurable today. Revisit when the scheduler lands and those cycles are
       contended.
 
-## M2 — Kernel  `[ ]`
+## M2 — Kernel  `[~]`
 
-- [ ] FreeRTOS integration, task stacks in CCM, heap in SRAM
-- [ ] `cads_thread`, `cads_mutex`, `cads_queue`, `cads_timer`, `cads_event`
+- [x] FreeRTOS integration, static allocation only — no kernel heap at all.
+      Task stacks in CCM (5 KB of 64 KB used), all DMA-capable SRAM left free.
+- [x] `cads_thread`, `cads_mutex`, `cads_queue` — all caller-allocated
+- [ ] `cads_timer`, `cads_event`
 - [ ] `cads_pubsub`, `cads_record` (service registry), `cads_string`
 - [ ] `cads_log` with levels, routed to the console
 - [ ] Fault handlers that dump the stacked frame before halting
-- [ ] **HARDWARE GATE M2**: multi-task blink + display + touch under the
-      scheduler for 10 minutes without a fault
+- [x] **HARDWARE GATE M2 PASSED** 2026-08-18: 10 minutes under the scheduler
+      with forced full-screen redraws, 30 samples, no silent interval, no task
+      lost, stack high-water marks converged. Used: ui 224 B of 2048,
+      input 132 B of 1024, console 372 B of 2048.
 
 ## M3 — Input and GUI framework  `[ ]`
 
@@ -135,6 +139,18 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Until decided, the firmware builds with `CADS_SPI_MOSI_ON_PB5=0`.
 
 ## Log
+
+- 2026-08-18 — The soak test found a real race on its first meaningful run. An
+  idle soak had shown the ui task using 132 bytes of stack, which is the
+  measurement of a task that never flushed because nothing was dirty. Driving
+  redraws revealed the console task's stack growing instead - because the
+  explorer's pattern command was calling cads_canvas_flush() itself, so two
+  tasks could flush concurrently and only one of them took the mutex. A flush
+  holds the SPI bus for up to 448 ms and reconfigures the Ethernet MAC around
+  it; two overlapping would interleave pixel data into the panel. Fixed by
+  making the ui task the single flusher and having everything else draw, mark
+  dirty and wait. The lesson is the test's, not the code's: a stack measured
+  without its deepest call path sizes nothing.
 
 - 2026-08-18 — Tried moving pixel output to a 16-bit SPI data frame so DMA2D
   could feed it directly. Abandoned: it produced wrong colours in BOTH palette

@@ -1,7 +1,5 @@
 #include "cads_gui.h"
 
-static cads_gui_t* cads_gui_attached;
-
 static cads_rect_t cads_gui_intersect(cads_rect_t a, cads_rect_t b) {
     int16_t x0 = a.x > b.x ? a.x : b.x;
     int16_t y0 = a.y > b.y ? a.y : b.y;
@@ -181,7 +179,7 @@ uint32_t cads_gui_tick(cads_gui_t* gui, uint32_t now_ms) {
                  * correct: it may repaint the whole content area and still cost
                  * only the rectangle it declared. */
                 cads_canvas_push_clip(clip);
-                if(view->draw != NULL) view->draw(gui->content, view->context);
+                cads_view_render(view, gui->content);
                 cads_canvas_pop_clip();
             }
         }
@@ -199,11 +197,9 @@ static void cads_gui_input_trampoline(const cads_input_event_t* event, void* con
 }
 
 void cads_gui_attach_input(cads_gui_t* gui) {
-    cads_gui_attached = gui;
     cads_input_set_callback(cads_gui_input_trampoline, gui);
 }
 
 void cads_gui_detach_input(void) {
-    cads_gui_attached = NULL;
     cads_input_set_callback(NULL, NULL);
 }

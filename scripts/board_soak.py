@@ -16,6 +16,19 @@ console for a task report and checks:
   - the input counter still moves if the operator is pressing things;
   - the display keeps flushing.
 
+WHY IT DRIVES LOAD
+------------------
+An idle soak measures the wrong thing. Left alone, the UI task never flushes -
+nothing is dirty - so its stack high-water mark reflects a call chain that
+never went through the canvas, the band conversion, the HAL blit and the DMA
+wait. That is the deepest path in the system and the only one worth sizing
+against.
+
+So the test draws. Every interval it asks for a full-screen pattern, which
+forces the worst case: a 448 ms flush holding the display mutex while the
+input task keeps preempting it at 100 Hz. If a stack is too small, or a long
+flush starves something, this is what surfaces it.
+
 It deliberately does not require a human. Left running overnight it either
 stays quiet or produces the first timestamp at which something changed.
 
@@ -51,6 +64,8 @@ def main() -> int:
     parser.add_argument("--minutes", type=float, default=10.0)
     parser.add_argument("--interval", type=float, default=15.0, help="seconds between reports")
     parser.add_argument("--settle", type=float, default=10.0, help="seconds to let boot finish")
+    parser.add_argument("--no-load", action="store_true",
+                        help="do not drive redraws (measures idle, which sizes nothing)")
     args = parser.parse_args()
 
     deadline = time.monotonic() + args.minutes * 60.0
@@ -67,8 +82,19 @@ def main() -> int:
         for _ in read_lines(fd, timeout=1.0, echo=False):
             pass
 
+        pattern = 0
         while time.monotonic() < deadline:
             started = time.monotonic()
+
+            if not args.no_load:
+                # Force the deepest path: a full-screen redraw. Patterns rotate
+                # so the whole panel is rewritten rather than a no-op region.
+                pattern = (pattern + 1) % 7
+                os.write(fd, f"p {pattern}\r\n".encode())
+                for _ in read_lines(fd, timeout=12.0,
+                                    stop_when=lambda l: "drawn" in l, echo=False):
+                    pass
+
             os.write(fd, b"k\r\n")
 
             report = None
@@ -101,7 +127,8 @@ def main() -> int:
                     problems.append(f"t+{elapsed}s: task count changed {first[0]} -> {tasks}")
 
                 print(f"t+{elapsed:5d}s  stacks ui={ui} input={inp} console={con}  "
-                      f"tasks={tasks} events={events} key={last_key}", flush=True)
+                      f"tasks={tasks} events={events} key={last_key}"
+                      f"{'' if args.no_load else f'  pattern={pattern}'}", flush=True)
 
             remaining = args.interval - (time.monotonic() - started)
             if remaining > 0:
@@ -112,6 +139,8 @@ def main() -> int:
     print()
     print(f"samples: {samples}, silent intervals: {silent}")
     print(f"worst stack free: ui={worst['ui']} input={worst['input']} console={worst['console']} bytes")
+    if args.no_load:
+        print("note: run without --no-load to size stacks against the deepest path")
 
     if problems:
         print(f"\nFAIL: {len(problems)} problem(s)")

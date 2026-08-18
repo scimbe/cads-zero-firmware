@@ -41,8 +41,19 @@ static cads_thread_t cads_ui_thread;
 static cads_thread_t cads_input_thread;
 static cads_thread_t cads_console_thread;
 
-/* The display is a single shared resource with a very long critical section,
- * so access is serialised explicitly rather than by convention. */
+/*
+ * THE DISPLAY HAS EXACTLY ONE FLUSHER.
+ *
+ * Any task may draw into the canvas - drawing is cheap and the buffer is
+ * private to the CPU - but only the ui task calls cads_canvas_flush(). A flush
+ * holds the SPI bus for up to 448 ms, reconfigures the Ethernet MAC around it,
+ * and drives a DMA transfer; two of them overlapping would interleave pixel
+ * data into the panel and corrupt the frame.
+ *
+ * The mutex below exists for the second flusher that does not exist yet. The
+ * rule is the real protection: everything else marks the canvas dirty and
+ * waits, via cads_tasks_redraw_sync().
+ */
 static cads_mutex_t cads_display_mutex;
 
 static volatile uint32_t cads_input_events;
@@ -105,6 +116,18 @@ void cads_tasks_start(void) {
         CADS_CONSOLE_STACK, CadsPriorityLow);
 
     cads_kernel_start(); /* does not return */
+}
+
+bool cads_tasks_redraw_sync(uint32_t timeout_ms) {
+    /* The caller has already drawn; the ui task owns the transfer. Wait for it
+     * to pick the work up rather than flushing here, which is what keeps the
+     * single-flusher rule true instead of merely intended. */
+    uint32_t deadline = cads_kernel_ticks() + timeout_ms;
+    while(cads_canvas_is_dirty()) {
+        if((int32_t)(cads_kernel_ticks() - deadline) >= 0) return false;
+        cads_kernel_sleep_ms(5u);
+    }
+    return true;
 }
 
 void cads_tasks_report(void) {

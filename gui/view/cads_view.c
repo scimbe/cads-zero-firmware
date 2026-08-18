@@ -106,6 +106,11 @@ void cads_view_exit(cads_view_t* view) {
     view->damage_valid = false;
 }
 
+void cads_view_render(cads_view_t* view, cads_rect_t area) {
+    if(view == NULL || view->draw == NULL) return;
+    view->draw(area, view->context);
+}
+
 bool cads_view_handle_input(cads_view_t* view, const cads_input_event_t* event) {
     if(view == NULL || view->input == NULL || event == NULL) return false;
     return view->input(event, view->context);

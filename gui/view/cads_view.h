@@ -114,6 +114,11 @@ bool cads_view_take_damage(cads_view_t* view, cads_rect_t* out);
 void cads_view_enter(cads_view_t* view);
 void cads_view_exit(cads_view_t* view);
 
+/** Invoke the draw callback over `area`. The compositor has already set the
+ *  clip to the damage, so the callback may paint as much of `area` as it
+ *  likes. */
+void cads_view_render(cads_view_t* view, cads_rect_t area);
+
 /** Route an event. Returns what the view's input callback returned, or false
  *  when it has none. */
 bool cads_view_handle_input(cads_view_t* view, const cads_input_event_t* event);
