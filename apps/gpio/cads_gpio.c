@@ -1,8 +1,8 @@
 #include "cads_gpio.h"
 
 #include <stdbool.h>
-#include <stdio.h>
 
+#include "cads/toolbox/fmt.h"
 #include "cads_hal.h"
 #include "cads_list.h"
 #include "cads_softkeys.h"
@@ -104,7 +104,7 @@ static void cads_gpio_paint_cell(cads_rect_t r, bool active, uint32_t index) {
     cads_canvas_fill_rect(r.x, r.y, r.width, r.height, active ? CadsColorAccent : CadsColorGrayDark);
     cads_canvas_draw_rect(r.x, r.y, r.width, r.height, CadsColorBlack);
     char digit[4];
-    snprintf(digit, sizeof(digit), "%u", (unsigned)index);
+    cads_fmt_uint(digit, sizeof(digit), index);
     cads_canvas_draw_text_aligned(
         r, CadsAlignCenter, &cads_font12, digit, active ? CadsColorBlack : CadsColorGrayLight);
 }
@@ -145,8 +145,9 @@ static void cads_gpio_out_row_draw(size_t index, cads_rect_t row, bool selected,
 
     cads_canvas_fill_rect(row.x, row.y, row.width, row.height, selected ? CadsColorBrand : CadsColorBackground);
 
-    char label[8];
-    snprintf(label, sizeof(label), "OUT%u", (unsigned)index);
+    /* "OUT" plus up to two digits (index < CADS_GPIO_OUT_COUNT = 16) plus NUL. */
+    char label[8] = "OUT";
+    cads_fmt_uint(label + 3, sizeof(label) - 3, index);
     cads_rect_t label_box = {(int16_t)(row.x + 10), row.y, (int16_t)(row.width / 2), row.height};
     cads_canvas_draw_text_aligned(
         label_box, CadsAlignLeft, &cads_font16, label,

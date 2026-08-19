@@ -87,13 +87,24 @@ else()
     set(CADS_EXPLORER_ETH_SOURCE apps/bringup/explorer_eth_sim.c)
 endif()
 
+# GUI stack: view/dispatcher/compositor, widgets, and the one app wired in for
+# the first real-hardware smoke test (apps/gpio - no Ethernet dependency,
+# directly hardware-observable). The other five apps (desktop, menu, settings,
+# about, netinfo) compile-check clean but are not wired in yet; see
+# docs/ROADMAP.md M6 for what remains before they can be.
+add_subdirectory(gui/view)
+add_subdirectory(gui/widgets)
+add_subdirectory(apps/gpio)
+
 add_library(cads_apps STATIC
     apps/bringup/bringup.c
     apps/bringup/input_probe.c
     apps/bringup/explorer.c
+    apps/bringup/explorer_gui_demo.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
+target_link_libraries(cads_apps PUBLIC cads_app_gpio)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)
 if(CADS_TARGET STREQUAL "itsboard")

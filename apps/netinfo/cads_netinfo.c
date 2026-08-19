@@ -74,7 +74,10 @@ static void cads_netinfo_draw(cads_rect_t area, void* context) {
     cads_netinfo_t* app = (cads_netinfo_t*)context;
     const cads_netinfo_status_t* s = &app->status;
 
-    char speed_text[20];
+    /* "65535 Mbit, half duplex" is the longest possible expansion (speed_mbit
+     * is a uint16_t); size for that rather than for the realistic 10/100/1000
+     * cases, so GCC's -Wformat-truncation has nothing to warn about. */
+    char speed_text[32];
     if(s->link_up && s->speed_mbit > 0u) {
         snprintf(
             speed_text, sizeof(speed_text), "%u Mbit, %s", (unsigned)s->speed_mbit,
