@@ -7,6 +7,8 @@ add_library(cads_toolbox STATIC
     src/fmt.c
     src/tap.c
     src/str.c
+    src/pubsub.c
+    src/record.c
 )
 
 target_include_directories(cads_toolbox

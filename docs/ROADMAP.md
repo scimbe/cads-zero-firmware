@@ -84,7 +84,29 @@ Prove the toolchain, the boot path and the display path on real silicon.
       Board-only (modules/kernel is not built for the simulator, matching
       its existing scope); a host stub reports so honestly rather than
       silently passing.
-- [ ] `cads_pubsub`, `cads_record` (service registry), `cads_string`
+- [x] `cads_pubsub`, `cads_record` (service registry), `cads_string` —
+      `cads_string` turned out to already exist: `cads/toolbox/str.h` +
+      `cads/toolbox/fmt.h`, built earlier for the explorer console, already
+      cover bounded copy/append/parse and no-heap number formatting, just
+      never connected to this checkbox. Built `cads_pubsub` (intrusive
+      subscription list, caller-owned nodes) and `cads_record` (fixed-
+      capacity name -> pointer registry) new, in `modules/toolbox` rather
+      than `modules/kernel` - both are plain data structures with no HAL and
+      no scheduler dependency, so they belong at the bottom of the graph and
+      are portable by construction (unlike cads_timer/cads_event above,
+      which genuinely need FreeRTOS). Neither is thread-safe internally,
+      documented in both headers: a cross-task caller serializes its own
+      access, the same convention `cads_ring_t` already established. Exist
+      to close the exact layering gap `docs/reference/module-layout.md`
+      warns about - a portable app needing something a board-only driver
+      knows, without including a `targets/` header (the mistake already made
+      once in `apps/bringup/explorer.c`) - for when M5's "link state, status
+      bar indicator" needs it. 12/12 host unit tests
+      (`tests/unit/test_pubsub.c`, `test_record.c`, plus the ten pre-
+      existing), and VERIFIED on hardware, 2026-08-19: explorer command `r`
+      exercises subscribe/publish/unsubscribe and register/duplicate-refused/
+      unregister/reuse for real inside the actual firmware image, not just
+      the host test binary - PASS.
 - [ ] `cads_log` with levels, routed to the console
 - [ ] Fault handlers that dump the stacked frame before halting
 - [x] **HARDWARE GATE M2 PASSED** 2026-08-18: 10 minutes under the scheduler
@@ -320,6 +342,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — Built `cads_pubsub` and `cads_record` (`modules/toolbox`),
+  closing M2's service-registry line. Placed in the toolbox rather than the
+  kernel module on purpose: both are caller-owned-storage data structures
+  with no HAL and no FreeRTOS dependency, so they build for host and board
+  alike without a `_sim.c` stub, unlike `cads_timer`/`cads_event` right above
+  them which genuinely need the real scheduler. `cads_string` was already
+  done under a name nobody had connected to the checkbox - `cads/toolbox/
+  str.h` + `fmt.h`, built earlier for the console. Real hardware gate: 12/12
+  host tests (two new suites), flashed, M0's boot self-test still 10/10
+  PASS, and a new explorer command `r` exercising both modules for real
+  inside the firmware image - PASS. Firmware grew 936 B (111572 -> 112508 B,
+  10.75% of FLASH_APP) purely from `cads_toolbox_selftest()` actually calling
+  the new functions; the object files added nothing to prior builds because
+  nothing referenced them and `--gc-sections` dropped them.
 
 - 2026-08-19 — Wired the whole M6 app tree (desktop, menu, settings, about,
   netinfo) into the real build and onto the real board; M3 mostly closed out

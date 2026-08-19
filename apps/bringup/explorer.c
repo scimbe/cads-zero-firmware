@@ -33,6 +33,8 @@
 #include "input/cads_input.h"
 #include "input_probe.h"
 #include "tasks.h"
+#include "cads/toolbox/pubsub.h"
+#include "cads/toolbox/record.h"
 #include "explorer_app_demo.h"
 #include "explorer_eth.h"
 #include "explorer_gui_demo.h"
@@ -182,6 +184,66 @@ static void cads_touch_soak(uint32_t count) {
     cads_probe_puts(" ms\r\n");
 }
 
+/* Copies the published uint32_t into whatever the subscriber's context
+ * points at - the whole job of the pubsub half of cads_toolbox_selftest()
+ * below. */
+static void cads_toolbox_selftest_relay(const void* message, void* context) {
+    *(uint32_t*)context = *(const uint32_t*)message;
+}
+
+/*
+ * M2's cads_pubsub / cads_record, exercised for real rather than trusted
+ * because they linked. Both are portable (no HAL, no scheduler), so this
+ * builds and runs identically on the board and the simulator - unlike
+ * explorer_kernel_test.c, which needs the real FreeRTOS scheduler and has a
+ * host stub that says so instead. Unit tests already cover the edge cases
+ * (tests/unit/test_pubsub.c, test_record.c); this only proves the object
+ * files actually work inside the real firmware image, same bar as everything
+ * else this explorer checks.
+ */
+static void cads_toolbox_selftest(void) {
+    bool ok = true;
+
+    /* --- pubsub: two subscribers, then one unsubscribes --------------- */
+    cads_pubsub_t pubsub;
+    cads_pubsub_init(&pubsub);
+
+    cads_pubsub_subscription_t sub_a, sub_b;
+    uint32_t seen_a = 0u, seen_b = 0u;
+    cads_pubsub_subscribe(&pubsub, &sub_a, cads_toolbox_selftest_relay, &seen_a);
+    cads_pubsub_subscribe(&pubsub, &sub_b, cads_toolbox_selftest_relay, &seen_b);
+
+    uint32_t message = 0xC0DEu;
+    cads_pubsub_publish(&pubsub, &message);
+    ok = ok && seen_a == 0xC0DEu && seen_b == 0xC0DEu;
+
+    ok = ok && cads_pubsub_unsubscribe(&pubsub, &sub_a);
+    ok = ok && !cads_pubsub_unsubscribe(&pubsub, &sub_a); /* second time fails */
+
+    seen_a = 0u;
+    seen_b = 0u;
+    message = 0xBEEFu;
+    cads_pubsub_publish(&pubsub, &message);
+    ok = ok && seen_a == 0u && seen_b == 0xBEEFu; /* a stopped, b still live */
+
+    /* --- record: register, duplicate refused, unregister, reuse ------- */
+    cads_record_entry_t storage[2];
+    cads_record_t registry;
+    cads_record_init(&registry, storage, 2u);
+
+    int marker_eth = 1, marker_dup = 2, marker_gpio = 3;
+    ok = ok && cads_record_register(&registry, "eth", &marker_eth);
+    ok = ok && !cads_record_register(&registry, "eth", &marker_dup); /* dup refused */
+    ok = ok && cads_record_lookup(&registry, "eth") == &marker_eth;
+    ok = ok && cads_record_register(&registry, "gpio", &marker_gpio);
+    ok = ok && !cads_record_register(&registry, "full", &marker_dup); /* capacity 2 */
+    ok = ok && cads_record_unregister(&registry, "eth");
+    ok = ok && cads_record_lookup(&registry, "eth") == NULL;
+    ok = ok && cads_record_register(&registry, "full", &marker_dup); /* slot freed */
+
+    cads_probe_puts(ok ? "# toolbox test: PASS\r\n" : "# toolbox test: FAIL\r\n");
+}
+
 static void cads_pattern(uint32_t which) {
     switch(which) {
     case 0:
@@ -267,6 +329,7 @@ static void cads_help(void) {
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
+        "#   r          toolbox test: cads_pubsub + cads_record\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
 }
 
@@ -376,6 +439,7 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'q': cads_touch_soak(cads_parse_uint(argument)); break;
+            case 'r': cads_toolbox_selftest(); break;
             default:
                 cads_probe_puts("# unknown, '?' for help\r\n");
                 break;
