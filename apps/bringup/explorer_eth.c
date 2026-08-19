@@ -13,6 +13,8 @@
 
 #include "cads_hal.h"
 #include "hal_eth_mdio.h"
+#include "hal_eth_aneg.h"
+#include "hal_eth_linklog.h"
 #include "hal_eth_tdr.h"
 #include "input_probe.h"
 
@@ -56,6 +58,93 @@ static void cads_report_tdr(const cads_eth_tdr_result_t* r) {
         cads_probe_put_uint(r->raw_length);
         cads_probe_puts(")\r\n");
         break;
+    }
+}
+
+static const char* cads_aneg_mode_name(cads_eth_aneg_mode_t mode) {
+    switch(mode) {
+    case CadsEthAnegMode100Full: return "100 Mbit full duplex";
+    case CadsEthAnegMode100Half: return "100 Mbit half duplex";
+    case CadsEthAnegMode10Full: return "10 Mbit full duplex";
+    case CadsEthAnegMode10Half: return "10 Mbit half duplex";
+    default: return "none in common";
+    }
+}
+
+static void cads_report_ability(const char* label, const cads_eth_aneg_ability_t* a) {
+    cads_probe_puts("# ");
+    cads_probe_puts(label);
+    cads_probe_puts(": ");
+    if(a->half_10) cads_probe_puts("10H ");
+    if(a->full_10) cads_probe_puts("10F ");
+    if(a->half_100) cads_probe_puts("100H ");
+    if(a->full_100) cads_probe_puts("100F ");
+    if(a->pause) cads_probe_puts("PAUSE ");
+    if(a->pause_asym) cads_probe_puts("PAUSE-ASYM ");
+    if(a->remote_fault) cads_probe_puts("REMOTE-FAULT ");
+    cads_probe_puts("\r\n");
+}
+
+void cads_explorer_eth_aneg(void) {
+    static bool initialised = false;
+    if(!initialised) {
+        cads_hal_eth_mdio_init();
+        initialised = true;
+    }
+
+    cads_eth_aneg_report_t report;
+    if(!cads_hal_eth_aneg_report(0u, &report)) {
+        cads_probe_puts("# aneg: MDIO read failed\r\n");
+        return;
+    }
+
+    cads_report_ability("local  ", &report.local);
+    cads_report_ability("partner", &report.partner);
+    cads_probe_puts("# partner acknowledged our advertisement: ");
+    cads_probe_puts(report.partner_acknowledged ? "yes" : "no");
+    cads_probe_puts("\r\n# resolved: ");
+    cads_probe_puts(cads_aneg_mode_name(report.resolved));
+    cads_probe_puts("\r\n");
+}
+
+static cads_eth_linklog_t s_linklog;
+static bool s_linklog_initialised = false;
+
+static const char* cads_link_event_name(cads_eth_link_event_type_t type) {
+    switch(type) {
+    case CadsEthLinkEventDown: return "LINK DOWN";
+    case CadsEthLinkEventAnegComplete: return "AUTONEG COMPLETE";
+    case CadsEthLinkEventRemoteFault: return "REMOTE FAULT";
+    default: return "?";
+    }
+}
+
+void cads_explorer_eth_linklog_poll_and_dump(void) {
+    if(!s_linklog_initialised) {
+        cads_hal_eth_mdio_init();
+        cads_eth_linklog_init(&s_linklog);
+        s_linklog_initialised = true;
+        cads_probe_puts("# linklog: initialised, watching for events\r\n");
+    }
+
+    if(!cads_hal_eth_linklog_poll(0u, &s_linklog)) {
+        cads_probe_puts("# linklog: MDIO read failed\r\n");
+        return;
+    }
+
+    uint32_t count = cads_eth_linklog_count(&s_linklog);
+    cads_probe_puts("# linklog: ");
+    cads_probe_put_uint(count);
+    cads_probe_puts(" event(s), ");
+    cads_probe_put_uint(s_linklog.dropped);
+    cads_probe_puts(" dropped\r\n");
+    for(uint32_t i = 0; i < count; i++) {
+        const cads_eth_link_event_t* e = cads_eth_linklog_at(&s_linklog, i);
+        cads_probe_puts("#   t=");
+        cads_probe_put_uint(e->timestamp_ms);
+        cads_probe_puts("ms  ");
+        cads_probe_puts(cads_link_event_name(e->type));
+        cads_probe_puts("\r\n");
     }
 }
 

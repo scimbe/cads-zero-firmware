@@ -16,3 +16,11 @@ void cads_explorer_eth_status(void) {
 void cads_explorer_eth_cable_test(void) {
     cads_probe_puts("# cable test: not available in the simulator\r\n");
 }
+
+void cads_explorer_eth_aneg(void) {
+    cads_probe_puts("# aneg: not available in the simulator\r\n");
+}
+
+void cads_explorer_eth_linklog_poll_and_dump(void) {
+    cads_probe_puts("# linklog: not available in the simulator\r\n");
+}

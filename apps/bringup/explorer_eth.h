@@ -20,4 +20,15 @@ void cads_explorer_eth_status(void);
  */
 void cads_explorer_eth_cable_test(void);
 
+/** Decode and print ANAR/ANLPAR: what each side advertised, and the
+ *  resolved highest-common-denominator mode. Non-disruptive, MDIO-only. */
+void cads_explorer_eth_aneg(void);
+
+/**
+ * Poll the link event log once and print any new events, then print the
+ * whole log. Call repeatedly (e.g. via the `w` pattern) to watch a link
+ * being unplugged/replugged in real time. MDIO-only.
+ */
+void cads_explorer_eth_linklog_poll_and_dump(void);
+
 #endif /* CADS_EXPLORER_ETH_H */

@@ -122,10 +122,16 @@ driver above.
 - [x] Cable diagnostics (TDR): open/short detection + distance-to-fault, plus
       matched-cable length estimation on an active link. MDIO-only, safe.
       VERIFIED on hardware.
-- [ ] Auto-negotiation inspector: decode ANAR/ANLPAR to show what both sides
-      offered/agreed (helps diagnose speed/duplex mismatches). MDIO-only. S.
-- [ ] Link event log: poll BSR + the interrupt source register (reg 29) to
-      timestamp link up/down and auto-neg-complete events. MDIO-only. S.
+- [x] Auto-negotiation inspector: decode ANAR/ANLPAR to show what both sides
+      offered/agreed (helps diagnose speed/duplex mismatches). MDIO-only.
+      VERIFIED on hardware: resolved 100 Mbit full duplex, matching the
+      independently-measured SCSR-based reading exactly.
+- [x] Link event log: poll register 29 (Interrupt Source Flag, latch-high /
+      clear-on-read) to timestamp link-down / remote-fault / auto-neg-
+      complete events in a static ring buffer. MDIO-only. VERIFIED on
+      hardware: correctly caught the auto-neg-complete event left latched by
+      the earlier TDR test, poll semantics confirmed (no duplicate counting,
+      no drops).
 - [ ] Traffic statistics from the STM32 ETH MAC's built-in MMC counters
       (Tx/Rx packet/byte/error counts) — hardware counters, no software
       counting needed. Needs the MAC clocked but not RMII/lwIP. S.
@@ -219,6 +225,22 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — Two MDIO-only diagnostics merged from `tester`, a peer Claude
+  session working in an isolated git worktree (`tester/mdio-diagnostics`
+  branch) specifically to avoid the merge-conflict risk of two sessions
+  editing one working directory: the auto-negotiation inspector and the link
+  event log. Both independently cross-checked their register bit positions
+  against ST's own LAN8742 driver before handing the work back; both were
+  re-verified here against the primary-source datasheet pages already read
+  for the TDR feature (registers 4/5 for ANAR/ANLPAR, register 29 for the
+  Interrupt Source Flag) before merging, wiring into the real build, and
+  flashing. 8/8 host unit tests pass (2 new: test_eth_aneg, test_eth_linklog,
+  both against a scripted fake MDIO bus). Hardware gate 10/10, plus direct
+  verification: the auto-neg inspector's resolved mode (100 Mbit full duplex)
+  matches the independently-measured SCSR-based reading exactly, and the link
+  log correctly caught the auto-neg-complete event still latched from the
+  earlier disruptive TDR test.
 
 - 2026-08-19 — A `git add -A` while committing the TDR feature swept in
   unreviewed, in-progress work from two concurrently running subagents

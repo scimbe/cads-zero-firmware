@@ -54,3 +54,34 @@ cads_add_unit_test(test_input
 )
 target_include_directories(test_input PRIVATE ${CADS_ROOT}/services/input)
 target_link_libraries(test_input PRIVATE cads_fake_hal)
+
+# --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------
+#
+# hal_eth_aneg.c and hal_eth_linklog.c only ever call cads_hal_eth_mdio_read(),
+# never the board's real implementation - fake_mdio.c stands in for the whole
+# MDIO bus, scripted per register, same discipline as fake_hal.h for the
+# display/input HAL surface.
+
+add_library(cads_fake_mdio STATIC fake_mdio.c)
+target_include_directories(cads_fake_mdio PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CADS_ROOT}/targets/itsboard/hal
+)
+target_link_libraries(cads_fake_mdio PRIVATE cads_flags)
+
+cads_add_unit_test(test_eth_aneg
+    test_eth_aneg.c
+    ${CADS_ROOT}/targets/itsboard/hal/hal_eth_aneg.c
+)
+target_include_directories(test_eth_aneg PRIVATE ${CADS_ROOT}/targets/itsboard/hal)
+target_link_libraries(test_eth_aneg PRIVATE cads_fake_mdio)
+
+cads_add_unit_test(test_eth_linklog
+    test_eth_linklog.c
+    ${CADS_ROOT}/targets/itsboard/hal/hal_eth_linklog.c
+)
+target_include_directories(test_eth_linklog PRIVATE
+    ${CADS_ROOT}/targets/itsboard/hal
+    ${CADS_ROOT}/core
+)
+target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)

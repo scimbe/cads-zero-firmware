@@ -214,6 +214,8 @@ static void cads_help(void) {
         "#   k          task stacks, task count, input counters\r\n"
         "#   e          Ethernet PHY identity and link state (MDIO only)\r\n"
         "#   c          cable test: TDR + matched length (MDIO only, disruptive)\r\n"
+        "#   a          auto-negotiation inspector (MDIO only)\r\n"
+        "#   n          link event log: poll + dump (MDIO only)\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n");
 }
 
@@ -247,6 +249,8 @@ void cads_explorer_run(void) {
             case 'k': cads_tasks_report(); break;
             case 'e': cads_explorer_eth_status(); break;
             case 'c': cads_explorer_eth_cable_test(); break;
+            case 'a': cads_explorer_eth_aneg(); break;
+            case 'n': cads_explorer_eth_linklog_poll_and_dump(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
