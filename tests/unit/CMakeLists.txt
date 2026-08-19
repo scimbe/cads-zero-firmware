@@ -29,6 +29,9 @@ target_link_libraries(test_pubsub PRIVATE cads_toolbox)
 cads_add_unit_test(test_record test_record.c)
 target_link_libraries(test_record PRIVATE cads_toolbox)
 
+cads_add_unit_test(test_log test_log.c)
+target_link_libraries(test_log PRIVATE cads_toolbox)
+
 # --- portable firmware layers -------------------------------------------------
 #
 # The subjects are compiled into the test binaries rather than linked from

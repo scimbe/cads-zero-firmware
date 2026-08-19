@@ -9,6 +9,7 @@ add_library(cads_toolbox STATIC
     src/str.c
     src/pubsub.c
     src/record.c
+    src/log.c
 )
 
 target_include_directories(cads_toolbox

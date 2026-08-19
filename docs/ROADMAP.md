@@ -107,7 +107,27 @@ Prove the toolchain, the boot path and the display path on real silicon.
       exercises subscribe/publish/unsubscribe and register/duplicate-refused/
       unregister/reuse for real inside the actual firmware image, not just
       the host test binary - PASS.
-- [ ] `cads_log` with levels, routed to the console
+- [x] `cads_log` with levels, routed to the console — `modules/toolbox`
+      (`cads/toolbox/log.h`), four levels in syslog order (Error=0, most
+      severe, through Debug=3), one global sink rather than a caller-owned
+      instance like `cads_tap_t` - a log line has no natural handle to
+      thread through every call site, unlike a TAP run which only ever
+      happens once, at boot, single threaded. Not thread-safe internally,
+      documented as such, for the same reason `cads_pubsub`/`cads_record`
+      are not: `cads_hal_console_write()` is already an unlocked blocking
+      byte loop today, and fixing that would mean reaching up to
+      `modules/kernel`'s `cads_mutex` from below it in the dependency graph.
+      No timestamps - attaching one would need a HAL clock call this module
+      has no business making; a caller puts one in the message text if it
+      wants one. 13/13 host unit tests (`tests/unit/test_log.c`, 9 new
+      cases). VERIFIED on hardware, 2026-08-19: wired into the real boot
+      sequence (`apps/bringup/bringup.c`, `cads_log_init()` right after
+      `cads_hal_console_init()`), and the console capture from a real flash
+      shows `I [boot] console up` as the very first line - not a test
+      harness, the actual production boot path. A Debug-level line right
+      before `cads_tasks_start()` is silent at the default Info minimum by
+      design, proving a suppressed level costs nothing on the wire on every
+      single boot rather than something a test has to go looking for.
 - [ ] Fault handlers that dump the stacked frame before halting
 - [x] **HARDWARE GATE M2 PASSED** 2026-08-18: 10 minutes under the scheduler
       with forced full-screen redraws, 30 samples, no silent interval, no task
@@ -342,6 +362,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — Built `cads_log` (`modules/toolbox`), the last piece of M2's
+  bundled service-registry line. One global sink rather than a caller-owned
+  instance, unlike everything else in this toolbox - a log line has no
+  natural handle to thread through every call site, unlike `cads_tap_t`
+  which only ever runs once at boot. Four levels in syslog order; not
+  thread-safe internally, same documented reason as `cads_pubsub`/
+  `cads_record` (`cads_hal_console_write()` is already an unlocked blocking
+  byte loop, and a lock would mean reaching up to `modules/kernel` from
+  below it). Wired into the real boot sequence, not just built and left
+  unused: `apps/bringup/bringup.c` now calls `cads_log_init()` right after
+  `cads_hal_console_init()`, and a real flash shows `I [boot] console up` as
+  the literal first line out of the UART. 13/13 host tests, M0's boot
+  self-test still 10/10 PASS after flashing. Fault handlers that dump the
+  stacked frame before halting are the one line left open in M2 now.
 
 - 2026-08-19 — Built `cads_pubsub` and `cads_record` (`modules/toolbox`),
   closing M2's service-registry line. Placed in the toolbox rather than the

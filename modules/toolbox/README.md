@@ -2,13 +2,14 @@
 
 ## What is it?
 
-Six small, generic C11 utilities that the rest of CaDS Zero kept re-inventing:
-a lock-free byte ring buffer (`cads_ring`), integer formatting into a
-caller-supplied buffer (`cads_fmt`), a TAP test-result writer (`cads_tap`),
-bounded string helpers with strict parsers (`cads_str`), a publish/subscribe
-list (`cads_pubsub`) and a named service registry (`cads_record`). It is the
-bottom of the dependency graph — it includes nothing from this project,
-nothing from a vendor SDK, and nothing from the C library.
+Seven small, generic C11 utilities that the rest of CaDS Zero kept
+re-inventing: a lock-free byte ring buffer (`cads_ring`), integer formatting
+into a caller-supplied buffer (`cads_fmt`), a TAP test-result writer
+(`cads_tap`), bounded string helpers with strict parsers (`cads_str`), a
+publish/subscribe list (`cads_pubsub`), a named service registry
+(`cads_record`) and leveled logging (`cads_log`). It is the bottom of the
+dependency graph — it includes nothing from this project, nothing from a
+vendor SDK, and nothing from the C library.
 
 ## Why is it shaped this way?
 
@@ -52,6 +53,16 @@ instance under a name, lets the two sides meet without either header knowing
 the other exists. Both are caller-owned-storage structures with no internal
 locking — see the "not thread safe" note in each header for why, and what a
 caller across two FreeRTOS tasks has to do about it.
+
+**`cads_log` is the one module here with global rather than caller-owned
+state**, and deliberately so: a log line has no natural handle to thread
+through every call site the way `cads_tap_t` can afford to require (a TAP run
+only ever happens once, at boot, single threaded). `cads_log_init()` wires a
+sink once, early — the same write-through-a-callback pattern as `cads_tap`,
+for the same reason: the identical call routes to the board's UART or the
+host's stdout without an `#ifdef`. Levels follow syslog's ordering
+(`CadsLogError` is 0, most severe); setting the minimum to `CadsLogWarn`
+shows Error and Warn, drops Info and Debug.
 
 **TAP writes through a callback.** The same test body runs on the board over
 USART3 and on the host over `stdout` without a single `#ifdef`. Lines end CRLF
@@ -141,3 +152,8 @@ include as `cads/toolbox/<name>.h`.
 - **`cads_record` names are capped at `CADS_RECORD_NAME_MAX` (15 bytes)** and
   a name that does not fit is refused outright, not truncated - two different
   modules truncating to the same prefix would collide silently otherwise.
+- **`cads_log` has one global sink, not one per caller**, and is not
+  thread-safe for the same reason `cads_pubsub`/`cads_record` are not - see
+  the header. It also carries no timestamp: attaching one would mean calling
+  a HAL clock function this module has no business depending on, so a caller
+  that wants one puts it in the message text.

@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "cads/toolbox/log.h"
 #include "cads_hal.h"
 #include "canvas.h"
 #include "cads_splash.h"
@@ -25,6 +26,13 @@
 #include "input_probe.h"
 
 /* --- minimal formatted console output ------------------------------------- */
+
+/* cads_log's sink signature carries a context argument cads_hal_console_write
+ * does not have; this is the whole adapter. */
+static void cads_log_console_sink(void* context, const char* text, size_t length) {
+    (void)context;
+    cads_hal_console_write(text, length);
+}
 
 void cads_probe_puts(const char* text) {
     size_t length = 0u;
@@ -274,6 +282,8 @@ static void cads_check_adapter_io(void) {
 
 void cads_bringup_run(void) {
     cads_hal_console_init(115200u);
+    cads_log_init(cads_log_console_sink, NULL, CadsLogInfo);
+    cads_log_info("boot", "console up");
 
     cads_probe_puts("\r\n");
     cads_probe_puts("========================================\r\n");
@@ -314,7 +324,13 @@ void cads_bringup_run(void) {
      * lowest-priority task rather than the only thing running, which is also
      * the first real test of whether a 448 ms display flush starves anything. */
     cads_probe_puts("# starting scheduler\r\n");
+    /* Debug-level and therefore silent at the default CadsLogInfo minimum -
+     * proof, on every single boot, that a suppressed level really costs
+     * nothing on the wire rather than something a test has to go looking
+     * for. Raise the level with cads_log_set_level(CadsLogDebug) to see it. */
+    cads_log_debug("boot", "about to call cads_tasks_start()");
     cads_tasks_start();
+    cads_log_info("boot", "scheduler running");
 
     cads_probe_puts("# entering interactive loop, touch the panel\r\n");
 
