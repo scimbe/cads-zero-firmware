@@ -17,6 +17,14 @@ Provided by the user (scimbe), 2026-08-19.
 - **`UM1974-nucleo144-user-manual.pdf`** — ST's own NUCLEO-F429ZI manual. Source
   for the SB121/SB122 solder-bridge documentation in
   [the PA7 conflict](../../explanation/pa7-conflict.md).
+- **`RM0090-stm32f4-reference-manual.pdf`** — ST's full peripheral reference
+  manual (DocID018909, 1731 pages), covering exactly this part:
+  STM32F405/415, F407/417, F427/437, **F429/439**. The primary source for
+  anything below the HAL that this project has so far derived from the CMSIS
+  device header alone (register bit layouts, DMA2D, timers, ADC/DAC, I2C, CAN,
+  USB OTG - the capability table in `docs/HARDWARE.md` section 4). Go here
+  before the CMSIS header when a register's *behaviour*, not just its bit
+  layout, is in question.
 - **`ARM-Cortex-M4-processor-datasheet.pdf`** — the core itself: NVIC, SysTick,
   the MPU, exception model. Reference for anything below the HAL that touches
   the processor rather than a peripheral.
