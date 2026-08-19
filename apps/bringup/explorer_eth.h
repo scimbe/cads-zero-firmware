@@ -31,4 +31,8 @@ void cads_explorer_eth_aneg(void);
  */
 void cads_explorer_eth_linklog_poll_and_dump(void);
 
+/** Read and print the MAC's six hardware traffic counters. Non-disruptive,
+ *  no MDIO involved - direct MAC register access. */
+void cads_explorer_eth_mmc(void);
+
 #endif /* CADS_EXPLORER_ETH_H */

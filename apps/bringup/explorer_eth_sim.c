@@ -24,3 +24,7 @@ void cads_explorer_eth_aneg(void) {
 void cads_explorer_eth_linklog_poll_and_dump(void) {
     cads_probe_puts("# linklog: not available in the simulator\r\n");
 }
+
+void cads_explorer_eth_mmc(void) {
+    cads_probe_puts("# mmc: not available in the simulator\r\n");
+}

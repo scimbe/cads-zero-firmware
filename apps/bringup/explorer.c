@@ -217,6 +217,7 @@ static void cads_help(void) {
         "#   c          cable test: TDR + matched length (MDIO only, disruptive)\r\n"
         "#   a          auto-negotiation inspector (MDIO only)\r\n"
         "#   n          link event log: poll + dump (MDIO only)\r\n"
+        "#   m          MAC traffic counters (direct register, no MDIO)\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
 }
@@ -253,6 +254,7 @@ void cads_explorer_run(void) {
             case 'c': cads_explorer_eth_cable_test(); break;
             case 'a': cads_explorer_eth_aneg(); break;
             case 'n': cads_explorer_eth_linklog_poll_and_dump(); break;
+            case 'm': cads_explorer_eth_mmc(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'x': cads_explorer_kernel_test(); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;

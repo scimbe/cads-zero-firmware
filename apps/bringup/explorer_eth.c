@@ -15,6 +15,7 @@
 #include "hal_eth_mdio.h"
 #include "hal_eth_aneg.h"
 #include "hal_eth_linklog.h"
+#include "hal_eth_mmc.h"
 #include "hal_eth_tdr.h"
 #include "input_probe.h"
 
@@ -146,6 +147,31 @@ void cads_explorer_eth_linklog_poll_and_dump(void) {
         cads_probe_puts(cads_link_event_name(e->type));
         cads_probe_puts("\r\n");
     }
+}
+
+void cads_explorer_eth_mmc(void) {
+    static bool initialised = false;
+    if(!initialised) {
+        cads_hal_eth_mdio_init(); /* enables the MAC clock as a side effect */
+        initialised = true;
+    }
+
+    cads_eth_mmc_counters_t counters;
+    cads_hal_eth_mmc_read(&counters);
+
+    cads_probe_puts("# mmc tx_good=");
+    cads_probe_put_uint(counters.tx_good_frames);
+    cads_probe_puts(" tx_after_1_collision=");
+    cads_probe_put_uint(counters.tx_good_after_single_collision);
+    cads_probe_puts(" tx_after_n_collisions=");
+    cads_probe_put_uint(counters.tx_good_after_multi_collision);
+    cads_probe_puts("\r\n#     rx_unicast=");
+    cads_probe_put_uint(counters.rx_good_unicast_frames);
+    cads_probe_puts(" rx_crc_err=");
+    cads_probe_put_uint(counters.rx_crc_errors);
+    cads_probe_puts(" rx_align_err=");
+    cads_probe_put_uint(counters.rx_alignment_errors);
+    cads_probe_puts("\r\n");
 }
 
 void cads_explorer_eth_cable_test(void) {

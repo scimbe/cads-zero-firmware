@@ -142,9 +142,16 @@ driver above.
       hardware: correctly caught the auto-neg-complete event left latched by
       the earlier TDR test, poll semantics confirmed (no duplicate counting,
       no drops).
-- [ ] Traffic statistics from the STM32 ETH MAC's built-in MMC counters
-      (Tx/Rx packet/byte/error counts) — hardware counters, no software
-      counting needed. Needs the MAC clocked but not RMII/lwIP. S.
+- [x] Traffic statistics from the STM32 ETH MAC's built-in MMC counters —
+      hardware counters, no software counting needed. Only six counters
+      exist in this silicon (RM0090 has no broadcast/multicast/byte
+      counters), not the fuller set this line originally assumed; corrected
+      after reading the actual register map rather than guessing. VERIFIED
+      on hardware: all six read exactly zero, which is the CORRECT result -
+      the RMII data path does not exist in this firmware yet (M5, below), so
+      the MAC's RX/TX are never enabled and no frames flow for the counters
+      to count. The meaningful functional test - counters incrementing under
+      real traffic - happens once M5's data path lands.
 - [ ] ARP scan of the local subnet. Needs RMII + lwIP. S once M5 lands.
 - [ ] Ping / ICMP echo. lwIP ships an example to adapt. Needs RMII. S.
 - [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M.
@@ -250,6 +257,18 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — MAC Management Counters merged from `tester`. Correctly left
+  the hardware-gate checkbox at `[~]` rather than `[x]` when handing it back,
+  since raw MAC-register access has no host-fakeable seam the way the
+  MDIO-based diagnostics do (`hal_eth_mdio.c` has never had one either, for
+  the same reason) - exactly the discipline this project asks for. Verified
+  here: all six counters read zero, which is the correct answer rather than
+  an inconclusive one - this firmware has no RMII data path yet, so the MAC's
+  RX/TX are never enabled and nothing increments them. Register offsets
+  independently re-checked against the CMSIS `ETH_TypeDef` struct rather than
+  taken on `tester`'s word alone, matching the same double-check pattern used
+  for the auto-negotiation and link-log merges.
 
 - 2026-08-19 — cads_timer/cads_event added to the kernel module. Caught and
   fixed a real design bug in my own first draft before it reached the board:
