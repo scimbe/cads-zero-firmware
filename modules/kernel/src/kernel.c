@@ -15,9 +15,11 @@
 #include <string.h>
 
 #include "FreeRTOS.h"
+#include "event_groups.h"
 #include "queue.h"
 #include "semphr.h"
 #include "task.h"
+#include "timers.h"
 
 #include "cads_hal.h"
 
@@ -28,6 +30,8 @@ static bool cads_scheduler_started;
  * adjacent memory, and a static assert costs nothing. */
 _Static_assert(sizeof(StaticSemaphore_t) <= 80, "cads_mutex_t storage too small");
 _Static_assert(sizeof(StaticQueue_t) <= 80, "cads_queue_t storage too small");
+_Static_assert(sizeof(StaticTimer_t) <= 80, "cads_timer_t storage too small");
+_Static_assert(sizeof(StaticEventGroup_t) <= 80, "cads_event_t storage too small");
 
 void cads_kernel_init(void) {
     cads_scheduler_started = false;
@@ -153,6 +157,88 @@ bool cads_queue_send_from_isr(cads_queue_t* queue, const void* item) {
 
 uint32_t cads_queue_count(const cads_queue_t* queue) {
     return (uint32_t)uxQueueMessagesWaiting((QueueHandle_t)queue->handle);
+}
+
+/* --- timer ------------------------------------------------------------------
+ *
+ * FreeRTOS's timer callback receives only the timer handle, not an arbitrary
+ * context, so the caller's function pointer and context cannot travel through
+ * FreeRTOS directly. xTimerCreateStatic's pvTimerID slot holds exactly one
+ * pointer; that pointer is set to the owning cads_timer_t itself, which is
+ * where the real callback and context already live (set by cads_timer_init()
+ * before the timer can possibly fire), so the trampoline recovers both with
+ * no allocation and no second lookup table.
+ */
+
+static void cads_timer_trampoline(TimerHandle_t handle) {
+    cads_timer_t* timer = (cads_timer_t*)pvTimerGetTimerID(handle);
+    timer->callback(timer->context);
+}
+
+void cads_timer_init(
+    cads_timer_t* timer,
+    const char* name,
+    uint32_t period_ms,
+    bool auto_reload,
+    cads_timer_fn_t callback,
+    void* context) {
+    timer->callback = callback;
+    timer->context = context;
+    timer->handle = xTimerCreateStatic(
+        name, pdMS_TO_TICKS(period_ms), auto_reload ? pdTRUE : pdFALSE, timer,
+        cads_timer_trampoline, (StaticTimer_t*)timer->storage);
+}
+
+bool cads_timer_start(cads_timer_t* timer, uint32_t timeout_ms) {
+    return xTimerStart((TimerHandle_t)timer->handle, pdMS_TO_TICKS(timeout_ms)) == pdPASS;
+}
+
+bool cads_timer_stop(cads_timer_t* timer, uint32_t timeout_ms) {
+    return xTimerStop((TimerHandle_t)timer->handle, pdMS_TO_TICKS(timeout_ms)) == pdPASS;
+}
+
+bool cads_timer_reset(cads_timer_t* timer, uint32_t timeout_ms) {
+    return xTimerReset((TimerHandle_t)timer->handle, pdMS_TO_TICKS(timeout_ms)) == pdPASS;
+}
+
+bool cads_timer_change_period(cads_timer_t* timer, uint32_t period_ms, uint32_t timeout_ms) {
+    return xTimerChangePeriod(
+               (TimerHandle_t)timer->handle, pdMS_TO_TICKS(period_ms), pdMS_TO_TICKS(timeout_ms)) ==
+           pdPASS;
+}
+
+bool cads_timer_is_running(const cads_timer_t* timer) {
+    return xTimerIsTimerActive((TimerHandle_t)timer->handle) != pdFALSE;
+}
+
+/* --- event ------------------------------------------------------------------ */
+
+void cads_event_init(cads_event_t* event) {
+    event->handle = xEventGroupCreateStatic((StaticEventGroup_t*)event->storage);
+}
+
+uint32_t cads_event_set(cads_event_t* event, uint32_t bits) {
+    return (uint32_t)xEventGroupSetBits((EventGroupHandle_t)event->handle, (EventBits_t)bits);
+}
+
+uint32_t cads_event_clear(cads_event_t* event, uint32_t bits) {
+    return (uint32_t)xEventGroupClearBits((EventGroupHandle_t)event->handle, (EventBits_t)bits);
+}
+
+uint32_t cads_event_get(const cads_event_t* event) {
+    return (uint32_t)xEventGroupGetBits((EventGroupHandle_t)event->handle);
+}
+
+uint32_t cads_event_wait(
+    cads_event_t* event,
+    uint32_t bits,
+    bool clear_on_exit,
+    bool wait_for_all,
+    uint32_t timeout_ms) {
+    TickType_t ticks = (timeout_ms == UINT32_MAX) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+    return (uint32_t)xEventGroupWaitBits(
+        (EventGroupHandle_t)event->handle, (EventBits_t)bits, clear_on_exit ? pdTRUE : pdFALSE,
+        wait_for_all ? pdTRUE : pdFALSE, ticks);
 }
 
 /* --- diagnostics ---------------------------------------------------------- */

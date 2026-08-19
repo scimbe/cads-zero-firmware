@@ -104,6 +104,11 @@ add_library(cads_apps STATIC
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
+if(CADS_TARGET STREQUAL "itsboard")
+    target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test.c)
+else()
+    target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test_sim.c)
+endif()
 target_link_libraries(cads_apps PUBLIC cads_app_gpio)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)

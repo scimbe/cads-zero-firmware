@@ -73,7 +73,16 @@ Prove the toolchain, the boot path and the display path on real silicon.
 - [x] FreeRTOS integration, static allocation only — no kernel heap at all.
       Task stacks in CCM (5 KB of 64 KB used), all DMA-capable SRAM left free.
 - [x] `cads_thread`, `cads_mutex`, `cads_queue` — all caller-allocated
-- [ ] `cads_timer`, `cads_event`
+- [x] `cads_timer`, `cads_event` — thin FreeRTOS wrappers (xTimerCreateStatic,
+      xEventGroupCreateStatic), static allocation, same 80-byte opaque
+      storage convention as cads_mutex/cads_queue. VERIFIED on hardware
+      under the real scheduler: a one-shot timer's callback (running on the
+      FreeRTOS timer service task) sets an event bit observed by the
+      console task - 199ms elapsed against a 200ms period, exact marker
+      value confirming the callback genuinely ran on a different task.
+      Board-only (modules/kernel is not built for the simulator, matching
+      its existing scope); a host stub reports so honestly rather than
+      silently passing.
 - [ ] `cads_pubsub`, `cads_record` (service registry), `cads_string`
 - [ ] `cads_log` with levels, routed to the console
 - [ ] Fault handlers that dump the stacked frame before halting
@@ -225,6 +234,24 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — cads_timer/cads_event added to the kernel module. Caught and
+  fixed a real design bug in my own first draft before it reached the board:
+  FreeRTOS's timer callback receives only the timer handle, not an arbitrary
+  context, so a callback function pointer AND a context pointer cannot both
+  travel through it directly - the first draft tried to and would have
+  compiled but called through garbage. Fixed by pointing the timer's one
+  pvTimerID slot at the owning cads_timer_t itself, which already holds both
+  as its own fields. Verified on hardware with a test that proves the
+  callback runs on a different task than the caller (a marker value only the
+  callback writes) rather than merely proving a flag got set somehow.
+
+  Also hit the same host/board portability mistake as twice before this
+  session (explorer_eth.c, tasks.c): explorer.c unconditionally called the
+  new test's entry point while its implementation was board-only, breaking
+  the simulator link. Fixed with the same pattern already established -
+  explorer_kernel_test_sim.c reports "not available" rather than the build
+  silently failing or, worse, silently claiming success.
 
 - 2026-08-19 — Two MDIO-only diagnostics merged from `tester`, a peer Claude
   session working in an isolated git worktree (`tester/mdio-diagnostics`

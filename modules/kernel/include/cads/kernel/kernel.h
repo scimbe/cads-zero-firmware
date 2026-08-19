@@ -124,6 +124,97 @@ bool cads_queue_send_from_isr(cads_queue_t* queue, const void* item);
 
 uint32_t cads_queue_count(const cads_queue_t* queue);
 
+/* --- timer ------------------------------------------------------------------
+ *
+ * A software timer: its callback runs on FreeRTOS's timer service task, not
+ * on the caller's thread and not in interrupt context. That matters for two
+ * things a caller must get right - the callback must not block for long (it
+ * shares the one timer task with every other timer in the system, so a slow
+ * callback delays all of them), and it is free to call other kernel APIs
+ * (mutexes, queues) that an ISR could not.
+ */
+
+typedef void (*cads_timer_fn_t)(void* context);
+
+typedef struct {
+    void* handle;
+    /* FreeRTOS's timer callback receives only the timer handle, not an
+     * arbitrary context - its one pvTimerID slot is used to point back at
+     * this struct so the trampoline in kernel.c can recover both of these. */
+    cads_timer_fn_t callback;
+    void* context;
+    uint8_t storage[80];
+} cads_timer_t;
+
+/**
+ * Create a timer. It does not start running until cads_timer_start().
+ *
+ * `auto_reload`: true restarts the timer after every expiry (a periodic
+ * tick); false fires once and stops (a timeout).
+ */
+void cads_timer_init(
+    cads_timer_t* timer,
+    const char* name,
+    uint32_t period_ms,
+    bool auto_reload,
+    cads_timer_fn_t callback,
+    void* context);
+
+bool cads_timer_start(cads_timer_t* timer, uint32_t timeout_ms);
+bool cads_timer_stop(cads_timer_t* timer, uint32_t timeout_ms);
+
+/** Restart the period from now, without changing it. Starts the timer if it
+ *  was not already running. */
+bool cads_timer_reset(cads_timer_t* timer, uint32_t timeout_ms);
+
+bool cads_timer_change_period(cads_timer_t* timer, uint32_t period_ms, uint32_t timeout_ms);
+bool cads_timer_is_running(const cads_timer_t* timer);
+
+/* --- event ------------------------------------------------------------------
+ *
+ * A rendezvous point for "wait until some combination of things has
+ * happened" - the case a queue or a mutex does not fit, because there is no
+ * single message and no single resource, just a set of independent
+ * conditions a caller wants to wait on together. 24 flags: FreeRTOS reserves
+ * the top 8 bits of the word this is built on for internal bookkeeping.
+ */
+
+#define CADS_EVENT_BIT_COUNT 24u
+
+typedef struct {
+    void* handle;
+    uint8_t storage[80];
+} cads_event_t;
+
+void cads_event_init(cads_event_t* event);
+
+/** Set bits and return the value immediately after the set (which may already
+ *  reflect another thread's concurrent clear - only useful as a hint). */
+uint32_t cads_event_set(cads_event_t* event, uint32_t bits);
+uint32_t cads_event_clear(cads_event_t* event, uint32_t bits);
+uint32_t cads_event_get(const cads_event_t* event);
+
+/**
+ * Block until `bits` are satisfied or `timeout_ms` elapses.
+ *
+ * `wait_for_all`: true waits for every bit in `bits` to be set, false for any
+ * one of them. `clear_on_exit`: true atomically clears the bits that were
+ * waited for before returning, which is what turns them into one-shot events
+ * rather than persistent state - the usual choice unless another waiter also
+ * needs to observe them.
+ *
+ * Returns the bits actually set at the moment of return (which can include
+ * bits beyond the ones waited for); check `(result & bits) == bits` for
+ * wait_for_all or `(result & bits) != 0` for wait-for-any to tell a real
+ * satisfaction from a timeout.
+ */
+uint32_t cads_event_wait(
+    cads_event_t* event,
+    uint32_t bits,
+    bool clear_on_exit,
+    bool wait_for_all,
+    uint32_t timeout_ms);
+
 /* --- diagnostics ---------------------------------------------------------- */
 
 /**
