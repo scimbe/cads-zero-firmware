@@ -95,6 +95,7 @@ nav:
       - Safety rules: SAFETY.md
       - Module layout: reference/module-layout.md
       - Memory map: reference/memory-map.md
+      - Datasheets and schematics: reference/datasheets/README.md
       - Canvas API: reference/canvas.md
       - HAL interface: reference/hal.md
       - Measurements: reference/measurements.md

@@ -134,6 +134,63 @@ design that treats them as a button cluster is wrong.
     silkscreen was not legible was a guess dressed up as a measurement; the
     manufacturer's test code settles it in one line.
 
+    Confirmed after the fact against the adapter's own schematic (see below):
+    that guess was right. PF0..PF7 feed an SN74LVC245 buffer whose B side
+    drives both connector IN0..7 and a bank of eight **red** LEDs - an input
+    state indicator, not an output.
+
+### Schematic-level confirmation and what it adds
+
+The adapter's actual schematic (`ITSBRD.pdf` by Tobias Jähnichen, HAW Hamburg
+Labor für Technische Informatik, rev. 02 2020-12-16, archived at
+[`docs/reference/datasheets/`](reference/datasheets/README.md)) confirms every pin
+assignment above at the circuit level and adds detail the manufacturer's test
+code did not need to mention:
+
+- **Inputs and outputs go through SN74LVC245 buffer ICs**, not straight to the
+  MCU pins. IN0..7 (U1) and OUT0..7/OUT8..15 (U2/U3) are each buffered, with
+  10 kΩ pull-ups to 3V3 on the input side. The MCU sees a clean logic load
+  either way; plain push-pull output / pulled-up input, exactly what this
+  firmware already does, is the correct interface.
+- **Three LED banks, one per direction:** red (D0..D7) on the input buffer's
+  A side, blue (D8..D15) on OUT0..7, green (D16..D23) on OUT8..15. 24 discrete
+  LEDs, not the 16 the OUT-only view suggested.
+- **INT0..5 (PG0..5) are unbuffered**, straight from the MCU to connector
+  `CN3`, labelled `AUX0..5` on the silkscreen - "AUX", not "INT". Consistent
+  with the manufacturer's test procedure treating them as external-signal
+  inputs rather than a button cluster.
+
+### Capability this board has that the firmware does not yet use
+
+All confirmed present and wired on the schematic, none of it touched by any
+code in this repository yet:
+
+| Bus / feature | Pins | Chip | Header |
+|---|---|---|---|
+| I2C1 | PB8 (SCL) / PB9 (SDA) | PCA9306 level shifter | `CN5` (3V3) and `CN6` (5V) |
+| RS232 | PC10 / PC11 → USART6 | MAX3232ECWE | D-sub-style serial header |
+| SPI3 / I2S3 | PC10 SCK, PC12 MOSI, PC11 MISO, PA15 NSS | — (direct) | `CN7` |
+| CAN1 | PD0 (RX) / PD1 (TX) | SN65HVD231D transceiver | `CN2`-adjacent CAN header |
+| ADC | PF8/PF9/PF10, PB1, PC0/PC2/PC3 | STM32 internal ADC3/12/123 | `CN4`, 7 channels |
+| DAC | PA4 | STM32 internal DAC1 | `CN4` |
+| Timer breakout | PE8/PE10/PE14, PB10/PB11, PB0, PC6/PC7/PC8/PC9 | TIM1/2/3/8 | `CN8`, 10 channels |
+
+I2C1 and the timer breakout are the two most directly useful for the GPIO
+Swiss-army-knife plan in `docs/ROADMAP.md`: an I2C bus scanner is close to
+free given the level-shifted header already exists, and the timer breakout
+gives input-capture-capable pins for the frequency/duty-cycle tool without
+having to repurpose an adapter pin that already has another job.
+
+### What this board does *not* have
+
+**No SD/MMC card slot. No SPI flash.** Both exist on a *different, older* lab
+board (STM32F417ZG-based, referred to in its own docs as the "TI-C-Board"),
+whose schematic is archived alongside this one for lineage but describes
+different hardware with **opposite** GPIO polarity (its Port E is input, Port
+G is output - the reverse of PD/PE-output, PF/PG-input here). Storage on this
+firmware is internal flash via littlefs (see M4 in `docs/ROADMAP.md`) because
+that is what this board actually has, not because SD support was deferred.
+
 ## 5. Ethernet
 
 LAN8742A over RMII, PHY address 0.

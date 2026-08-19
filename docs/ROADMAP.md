@@ -161,6 +161,21 @@ driver above.
       M4 storage. L.
 - [ ] MAC address table (switch-style learning with aging) from sniffed
       frames. Needs the sniffer. M.
+
+### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
+
+Not yet scoped into tasks — noted here so it is not lost, not because it is
+committed. See docs/HARDWARE.md "Capability this board has that the firmware
+does not yet use" for the full table and sourcing.
+
+- I2C1 is level-shifted (3V3 and 5V headers) and completely unused. An I2C bus
+  scanner would be a natural, cheap addition to the Swiss-army-knife theme.
+- A 10-channel timer breakout (TIM1/2/3/8) exists specifically for this kind
+  of use and is more appropriate for the GPIO frequency/duty-cycle tool than
+  repurposing an OUT/IN pin that already has a job.
+- CAN1 (SN65HVD231D transceiver) and RS232 (MAX3232, via USART6) are also
+  wired and unused - out of scope for now, but real capability if a future
+  need calls for it.
 - [ ] Wake-on-LAN magic-packet sender, independent of the board's own WoL
       support. Needs RMII. S.
 - [ ] **HARDWARE GATE M5**: DHCP lease, ping, CLI over telnet, screen
