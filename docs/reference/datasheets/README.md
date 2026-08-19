@@ -28,6 +28,32 @@ Provided by the user (scimbe), 2026-08-19.
 - **`ARM-Cortex-M4-processor-datasheet.pdf`** — the core itself: NVIC, SysTick,
   the MPU, exception model. Reference for anything below the HAL that touches
   the processor rather than a peripheral.
+- **`ARM-Cortex-M4-technical-reference-manual-r0p1.pdf`** — ARM's own Cortex-M4
+  TRM (ARM 100166_0001_00_en). A different document from the processor
+  datasheet above, not a duplicate: this one is implementation-level detail on
+  the core itself (bus interfaces, debug components, the FPU), where the
+  datasheet is more the "how to program against it" summary.
+- **`PM0214-cortex-m4-programming-manual.pdf`** — ST's Cortex-M4 programming
+  manual for the F3/F4/L4 series (DocID022708), covering the processor
+  programming model, instruction set and core peripherals. RM0090 itself
+  points here rather than repeating this material - read this before RM0090
+  for anything about the core (NVIC configuration, exception entry, the
+  instruction set), and RM0090 for anything about a peripheral.
+- **`RM0090-stm32f4-reference-manual.pdf`** — ST's full peripheral reference
+  manual (DocID018909, 1731 pages), covering exactly this part:
+  STM32F405/415, F407/417, F427/437, **F429/439**. The primary source for
+  anything below the HAL that this project has so far derived from the CMSIS
+  device header alone (register bit layouts, DMA2D, timers, ADC/DAC, I2C, CAN,
+  USB OTG - the capability table in `docs/HARDWARE.md` section 4). Go here
+  before the CMSIS header when a register's *behaviour*, not just its bit
+  layout, is in question.
+- **`DS-STM32F415-F417-datasheet-sibling-part.pdf`** — the STM32F415/F417
+  datasheet (DocID022063). **Not this project's exact part** - this board uses
+  the F429/439, not the F415/417 - but same family, same reference manual
+  (RM0090 covers both), and electrically close enough that the feature list
+  and pinout philosophy transfer as a general sanity check. Do not copy a
+  specific number (a timing spec, a current rating) from this file and assume
+  it applies to the F429 without checking the F429's own datasheet.
 - **`AN4013-stm32-timer-overview.pdf`** — ST application note, cross-series
   timer modes. Relevant to the GPIO Swiss-army-knife plan (frequency/duty-cycle
   via input capture, PWM generation) in `docs/ROADMAP.md`.
