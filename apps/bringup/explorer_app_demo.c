@@ -1,0 +1,91 @@
+/*
+ * CaDS Zero - the real application tree, live on the panel, reached from the
+ * hardware explorer's 'd' command.
+ *
+ * Same non-reentrancy rule as explorer_gui_demo.c: this never calls
+ * cads_input_tick() itself. The input task already polls it at 100 Hz under
+ * the scheduler; this only redirects that already-running task's events to
+ * the GUI for as long as it owns the screen (cads_gui_attach_input()) and
+ * hands the input task's own callback back on the way out.
+ */
+
+#include "explorer_app_demo.h"
+
+#include "cads_desktop.h"
+#include "cads_gpio.h"
+#include "cads_gui.h"
+#include "cads_hal.h"
+#include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo */
+#include "cads_softkeys.h"
+#include "cads_statusbar.h"
+#include "cads_view_dispatcher.h"
+#include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
+
+/* desktop, menu, settings, settings-confirm, about, gpio, netinfo. */
+#define CADS_APP_DEMO_VIEW_CAPACITY 7u
+#define CADS_APP_DEMO_STACK_DEPTH   4u
+
+static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
+static uint32_t s_stack[CADS_APP_DEMO_STACK_DEPTH];
+static cads_view_dispatcher_t s_dispatcher;
+static cads_gui_t s_gui;
+static cads_statusbar_t s_statusbar;
+static cads_softkeys_t s_softkeys;
+
+void cads_explorer_app_demo(uint32_t seconds) {
+    cads_view_dispatcher_init(
+        &s_dispatcher, s_entries, CADS_APP_DEMO_VIEW_CAPACITY, s_stack, CADS_APP_DEMO_STACK_DEPTH);
+
+    cads_rect_t full = {0, 0, CADS_CANVAS_WIDTH, CADS_CANVAS_HEIGHT};
+    cads_view_dispatcher_set_area(&s_dispatcher, full);
+
+    cads_desktop_init(&s_dispatcher);
+    cads_menu_app_init(&s_dispatcher); /* also registers settings, about, gpio, netinfo */
+
+    if(!cads_view_dispatcher_switch_to(&s_dispatcher, CADS_VIEW_ID_DESKTOP)) {
+        cads_probe_puts("# app demo: failed to switch to the desktop\r\n");
+        return;
+    }
+
+    cads_statusbar_init(&s_statusbar);
+    cads_softkeys_init(&s_softkeys);
+    cads_gui_init(&s_gui, &s_dispatcher, &s_statusbar, &s_softkeys);
+    cads_gui_attach_input(&s_gui);
+
+    uint32_t start_generation = cads_view_dispatcher_generation(&s_dispatcher);
+
+    cads_probe_puts("# app demo: desktop -> menu -> app live on the panel for ");
+    cads_probe_put_uint(seconds);
+    cads_probe_puts(
+        "s - OK opens the menu, F1 pets Leo, "
+        "every action here is reachable by touch too\r\n");
+
+    uint32_t start = cads_hal_ticks_ms();
+    uint32_t total_pixels = 0u;
+    uint32_t frames = 0u;
+
+    while(cads_hal_ticks_ms() - start < seconds * 1000u) {
+        uint32_t now = cads_hal_ticks_ms();
+        cads_desktop_tick(now);
+        cads_gpio_tick(now);
+        uint32_t pixels = cads_gui_tick(&s_gui, now);
+        if(pixels) {
+            total_pixels += pixels;
+            frames++;
+        }
+        cads_hal_delay_ms(10u);
+    }
+
+    uint32_t end_generation = cads_view_dispatcher_generation(&s_dispatcher);
+    cads_gui_detach_input();
+
+    cads_probe_puts("# app demo done: ");
+    cads_probe_put_uint(frames);
+    cads_probe_puts(" frames flushed, ");
+    cads_probe_put_uint(total_pixels);
+    cads_probe_puts(" pixels total, ");
+    cads_probe_put_uint(end_generation - start_generation);
+    cads_probe_puts(" navigation transitions, ended on view id ");
+    cads_probe_put_uint(cads_view_dispatcher_current_id(&s_dispatcher));
+    cads_probe_puts("\r\n");
+}

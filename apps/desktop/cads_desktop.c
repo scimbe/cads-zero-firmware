@@ -1,10 +1,11 @@
 #include "cads_desktop.h"
 
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdint.h>
 
 #include "assets/cads_assets.h"
+#include "cads/toolbox/fmt.h"
+#include "cads/toolbox/str.h"
 #include "canvas.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
@@ -198,9 +199,10 @@ static void cads_desktop_paint_caption(const cads_desktop_t* app) {
 
     char line[48];
     uint32_t level = cads_desktop_level(&app->leo, cads_hal_ticks_ms());
-    snprintf(
-        line, sizeof(line), "Leo is %s - level %lu", cads_leo_mood_names[app->leo.mood],
-        (unsigned long)level);
+    size_t pos = cads_str_copy(line, sizeof(line), "Leo is ");
+    pos = cads_str_append(line, sizeof(line), cads_leo_mood_names[app->leo.mood]);
+    pos = cads_str_append(line, sizeof(line), " - level ");
+    if(pos < sizeof(line)) cads_fmt_uint(line + pos, sizeof(line) - pos, level);
 
     cads_rect_t top = {r.x, r.y, r.width, (int16_t)(r.height / 2)};
     cads_rect_t bottom = {r.x, (int16_t)(r.y + r.height / 2), r.width, (int16_t)(r.height / 2)};

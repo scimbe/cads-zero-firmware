@@ -3,8 +3,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
+#include "cads/toolbox/fmt.h"
+#include "cads/toolbox/str.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
 #include "cads_textbox.h"
@@ -36,25 +37,42 @@ static const cads_softkey_t cads_about_keys[] = {
  * Every field below comes from cads_hal_board_info() or a compiler-provided
  * build date macro, never a hard-coded 480/320 or similar - this screen is the
  * proof the descriptor is actually load-bearing.
+ *
+ * No snprintf: linking it pulls in newlib's heap-init syscall stub (_sbrk),
+ * which this project's linker script deliberately does not provide (no heap
+ * anywhere - the same bug caught and fixed in apps/gpio, see docs/ROADMAP.md).
+ * cads_str_append() and cads_fmt_uint() self-locate the end of the buffer, so
+ * a plain sequence of calls does the same job with no format string at all.
  */
+static size_t s_about_pos;
+
+static void cads_about_str(const char* text) {
+    s_about_pos = cads_str_append(s_about_text, sizeof(s_about_text), text);
+    if(s_about_pos >= sizeof(s_about_text)) s_about_pos = sizeof(s_about_text) - 1u;
+}
+
+static void cads_about_uint(uint32_t value) {
+    s_about_pos += cads_fmt_uint(s_about_text + s_about_pos, sizeof(s_about_text) - s_about_pos, value);
+    if(s_about_pos >= sizeof(s_about_text)) s_about_pos = sizeof(s_about_text) - 1u;
+}
+
 static void cads_about_build_text(void) {
     const cads_board_info_t* info = cads_hal_board_info();
-    size_t pos = 0u;
-    int n;
+    s_about_pos = 0u;
+    s_about_text[0] = '\0';
 
-#define CADS_ABOUT_APPEND(...)                                                     \
-    do {                                                                           \
-        n = snprintf(s_about_text + pos, sizeof(s_about_text) - pos, __VA_ARGS__); \
-        if(n > 0) pos += (size_t)n;                                                \
-        if(pos >= sizeof(s_about_text)) pos = sizeof(s_about_text) - 1u;           \
-    } while(0)
-
-    CADS_ABOUT_APPEND("Board: %s\n", info->board_name);
-    CADS_ABOUT_APPEND("MCU: %s\n", info->mcu_name);
-    CADS_ABOUT_APPEND("CPU clock: %lu MHz\n", (unsigned long)(info->cpu_hz / 1000000u));
-    CADS_ABOUT_APPEND(
-        "Display: %u x %u, %s\n", (unsigned)info->display_width, (unsigned)info->display_height,
-        info->display_readable ? "readable" : "write-only");
+    cads_about_str("Board: ");
+    cads_about_str(info->board_name);
+    cads_about_str("\nMCU: ");
+    cads_about_str(info->mcu_name);
+    cads_about_str("\nCPU clock: ");
+    cads_about_uint(info->cpu_hz / 1000000u);
+    cads_about_str(" MHz\nDisplay: ");
+    cads_about_uint(info->display_width);
+    cads_about_str(" x ");
+    cads_about_uint(info->display_height);
+    cads_about_str(", ");
+    cads_about_str(info->display_readable ? "readable" : "write-only");
 
     uint32_t full_screen_ms = 0u;
     if(info->display_pixels_per_second > 0u) {
@@ -62,19 +80,27 @@ static void cads_about_build_text(void) {
             ((uint64_t)info->display_width * info->display_height * 1000u) /
             info->display_pixels_per_second);
     }
-    CADS_ABOUT_APPEND(
-        "Throughput: %lu px/s (~%lu ms full redraw)\n",
-        (unsigned long)info->display_pixels_per_second, (unsigned long)full_screen_ms);
-
-    CADS_ABOUT_APPEND("Buttons: %u\n", (unsigned)info->button_count);
-    CADS_ABOUT_APPEND("Touch: %s\n", info->has_touch ? "yes" : "no");
-    CADS_ABOUT_APPEND("Network: %s\n", info->has_network ? "yes" : "no");
-    CADS_ABOUT_APPEND("Storage: %s\n", info->has_storage ? "yes" : "no");
-    CADS_ABOUT_APPEND("Flash: %lu KB usable\n", (unsigned long)(info->flash_bytes / 1024u));
-    CADS_ABOUT_APPEND("RAM (DMA-capable): %lu KB\n", (unsigned long)(info->ram_bytes / 1024u));
-    CADS_ABOUT_APPEND("Firmware built: %s %s\n", __DATE__, __TIME__);
-
-#undef CADS_ABOUT_APPEND
+    cads_about_str("\nThroughput: ");
+    cads_about_uint(info->display_pixels_per_second);
+    cads_about_str(" px/s (~");
+    cads_about_uint(full_screen_ms);
+    cads_about_str(" ms full redraw)\nButtons: ");
+    cads_about_uint(info->button_count);
+    cads_about_str("\nTouch: ");
+    cads_about_str(info->has_touch ? "yes" : "no");
+    cads_about_str("\nNetwork: ");
+    cads_about_str(info->has_network ? "yes" : "no");
+    cads_about_str("\nStorage: ");
+    cads_about_str(info->has_storage ? "yes" : "no");
+    cads_about_str("\nFlash: ");
+    cads_about_uint(info->flash_bytes / 1024u);
+    cads_about_str(" KB usable\nRAM (DMA-capable): ");
+    cads_about_uint(info->ram_bytes / 1024u);
+    cads_about_str(" KB\nFirmware built: ");
+    cads_about_str(__DATE__);
+    cads_about_str(" ");
+    cads_about_str(__TIME__);
+    cads_about_str("\n");
 }
 
 static void cads_about_draw(cads_rect_t area, void* context) {

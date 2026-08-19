@@ -33,6 +33,7 @@
 #include "input/cads_input.h"
 #include "input_probe.h"
 #include "tasks.h"
+#include "explorer_app_demo.h"
 #include "explorer_eth.h"
 #include "explorer_gui_demo.h"
 #include "explorer_kernel_test.h"
@@ -136,6 +137,51 @@ static uint32_t cads_parse_uint(const char* text) {
     return value;
 }
 
+/*
+ * M3 hardware gate, the half of "no ghost touches over 200 interactions" that
+ * does not need a finger: sample the touch controller `count` times with the
+ * panel untouched and count how many readings came back pressed anyway. The
+ * IRQ-line recheck in hal_touch.c (cads_hal_touch_read() only reports a touch
+ * when the line is still asserted after the conversion) is what this is
+ * actually testing - a soak rather than a single sample, because the earlier
+ * console UART bug (docs/ROADMAP.md, 2026-08-18) was exactly the kind of thing
+ * that only shows up under sustained sampling, not one-off checks.
+ */
+static void cads_touch_soak(uint32_t count) {
+    if(!count) count = 200u;
+
+    cads_probe_puts("# touch soak: ");
+    cads_probe_put_uint(count);
+    cads_probe_puts(" samples, panel should be untouched\r\n");
+
+    uint32_t ghosts = 0u;
+    uint32_t start = cads_hal_ticks_ms();
+    for(uint32_t i = 0; i < count; i++) {
+        cads_touch_state_t touch;
+        cads_hal_touch_read(&touch);
+        if(touch.pressed) {
+            ghosts++;
+            cads_probe_puts("# ghost at sample ");
+            cads_probe_put_uint(i);
+            cads_probe_puts(" x=");
+            cads_probe_put_uint(touch.x);
+            cads_probe_puts(" y=");
+            cads_probe_put_uint(touch.y);
+            cads_probe_puts("\r\n");
+        }
+        cads_hal_delay_ms(5u);
+    }
+    uint32_t elapsed = cads_hal_ticks_ms() - start;
+
+    cads_probe_puts(ghosts == 0u ? "# touch soak: PASS, " : "# touch soak: FAIL, ");
+    cads_probe_put_uint(ghosts);
+    cads_probe_puts(" ghost(s) of ");
+    cads_probe_put_uint(count);
+    cads_probe_puts(" samples in ");
+    cads_probe_put_uint(elapsed);
+    cads_probe_puts(" ms\r\n");
+}
+
 static void cads_pattern(uint32_t which) {
     switch(which) {
     case 0:
@@ -219,6 +265,8 @@ static void cads_help(void) {
         "#   n          link event log: poll + dump (MDIO only)\r\n"
         "#   m          MAC traffic counters (direct register, no MDIO)\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
+        "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
+        "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
 }
 
@@ -256,6 +304,7 @@ void cads_explorer_run(void) {
             case 'n': cads_explorer_eth_linklog_poll_and_dump(); break;
             case 'm': cads_explorer_eth_mmc(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
+            case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
@@ -326,6 +375,7 @@ void cads_explorer_run(void) {
                 cads_probe_puts("\r\n");
                 break;
             }
+            case 'q': cads_touch_soak(cads_parse_uint(argument)); break;
             default:
                 cads_probe_puts("# unknown, '?' for help\r\n");
                 break;

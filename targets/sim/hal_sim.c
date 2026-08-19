@@ -737,6 +737,42 @@ bool cads_hal_pin_is_reserved(uint32_t port_index, uint32_t pin) {
     return false;
 }
 
+/* --- board descriptor --------------------------------------------------------
+ *
+ * apps/about and apps/netinfo read this at run time rather than special-casing
+ * a target, so it has to exist here too or the whole app tree fails to link
+ * for the host - exactly what happened the first time this file was wired in
+ * (docs/ROADMAP.md, 2026-08-19). Fields the simulator genuinely cannot make
+ * true are reported as 0/false rather than borrowed from the real board: a
+ * host binary has no clock divider, no fixed RAM budget and no write-only bus
+ * to be honest or dishonest about, so pretending otherwise would teach the
+ * about screen something false about the machine it is actually running on.
+ */
+
+static const cads_board_info_t cads_sim_board_info = {
+    .board_name = "CaDS Zero simulator (SDL2 host)",
+    .mcu_name = "host CPU, not an MCU",
+    .cpu_hz = 0u, /* no fixed clock divider on the host - see the file banner */
+
+    .display_width = CADS_DISPLAY_WIDTH,
+    .display_height = CADS_DISPLAY_HEIGHT,
+    .display_readable = true, /* an SDL surface, not a write-only shift register */
+
+    .button_count = 8, /* keys 1..8 map to S0..S7, see cads_hal_port_read() */
+    .has_touch = true, /* mouse-emulated, see cads_hal_touch_read() */
+    .has_network = false, /* no RMII/lwIP model on the host yet */
+    .has_storage = false, /* no littlefs/flash model on the host yet */
+
+    .flash_bytes = 0u, /* meaningless: the host has no flash budget */
+    .ram_bytes = 0u,   /* meaningless: the host has no fixed RAM budget */
+
+    .display_pixels_per_second = 0u, /* the blit is synchronous; see the file banner */
+};
+
+const cads_board_info_t* cads_hal_board_info(void) {
+    return &cads_sim_board_info;
+}
+
 /* --- lifecycle and panic ---------------------------------------------------- */
 
 void cads_sim_configure(const cads_sim_options_t* options) {

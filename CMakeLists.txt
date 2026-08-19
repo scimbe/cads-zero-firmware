@@ -87,20 +87,26 @@ else()
     set(CADS_EXPLORER_ETH_SOURCE apps/bringup/explorer_eth_sim.c)
 endif()
 
-# GUI stack: view/dispatcher/compositor, widgets, and the one app wired in for
-# the first real-hardware smoke test (apps/gpio - no Ethernet dependency,
-# directly hardware-observable). The other five apps (desktop, menu, settings,
-# about, netinfo) compile-check clean but are not wired in yet; see
-# docs/ROADMAP.md M6 for what remains before they can be.
+# GUI stack: view/dispatcher/compositor, widgets, and the full M6 app tree -
+# desktop, settings, about, gpio and netinfo, plus the menu that ties them
+# together. apps/gpio was the first wired in (the initial hardware smoke test,
+# no Ethernet dependency, directly hardware-observable); the rest followed once
+# that stack was proven on real silicon. See docs/ROADMAP.md M3/M6.
 add_subdirectory(gui/view)
 add_subdirectory(gui/widgets)
+add_subdirectory(apps/desktop)
+add_subdirectory(apps/settings)
+add_subdirectory(apps/about)
+add_subdirectory(apps/netinfo)
 add_subdirectory(apps/gpio)
+add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
     apps/bringup/bringup.c
     apps/bringup/input_probe.c
     apps/bringup/explorer.c
     apps/bringup/explorer_gui_demo.c
+    apps/bringup/explorer_app_demo.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
@@ -109,7 +115,7 @@ if(CADS_TARGET STREQUAL "itsboard")
 else()
     target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test_sim.c)
 endif()
-target_link_libraries(cads_apps PUBLIC cads_app_gpio)
+target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)
 if(CADS_TARGET STREQUAL "itsboard")

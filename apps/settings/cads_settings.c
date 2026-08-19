@@ -2,8 +2,9 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 
+#include "cads/toolbox/fmt.h"
+#include "cads/toolbox/str.h"
 #include "cads_dialog.h"
 #include "cads_hal.h"
 #include "cads_menu.h"
@@ -77,20 +78,22 @@ static cads_settings_confirm_t s_confirm;
 /* --- shadow state / detail text --------------------------------------------- */
 
 static void cads_settings_refresh_details(void) {
-    snprintf(
-        s_brightness_detail, sizeof(s_brightness_detail), "%u%%",
-        (unsigned)s_shadow.brightness_percent);
-    snprintf(
-        s_spi_detail, sizeof(s_spi_detail), "%s",
-        s_shadow.fast_clock ? "fast (/8)" : "safe (/16)");
+    size_t pos = cads_fmt_uint(
+        s_brightness_detail, sizeof(s_brightness_detail), s_shadow.brightness_percent);
+    if(pos < sizeof(s_brightness_detail)) {
+        cads_str_append(s_brightness_detail, sizeof(s_brightness_detail), "%");
+    }
+    cads_str_copy(
+        s_spi_detail, sizeof(s_spi_detail), s_shadow.fast_clock ? "fast (/8)" : "safe (/16)");
 }
 
 static void cads_settings_refresh_info(void) {
     /* Numbers from docs/explanation/pa7-conflict.md: the longest single
      * Ethernet blackout is one display band, and raising the SPI divider
      * halves it along with the redraw time. */
-    snprintf(
-        s_main.info_text, sizeof(s_main.info_text), "Ethernet blackout per band: %s",
+    cads_str_copy(s_main.info_text, sizeof(s_main.info_text), "Ethernet blackout per band: ");
+    cads_str_append(
+        s_main.info_text, sizeof(s_main.info_text),
         s_shadow.fast_clock ? "11.5 ms (/8)" : "22.5 ms (/16, safe)");
 }
 

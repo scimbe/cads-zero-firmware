@@ -3,8 +3,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
+#include "cads/toolbox/fmt.h"
+#include "cads/toolbox/str.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
 #include "cads_view.h"
@@ -77,13 +78,17 @@ static void cads_netinfo_draw(cads_rect_t area, void* context) {
     /* "65535 Mbit, half duplex" is the longest possible expansion (speed_mbit
      * is a uint16_t); size for that rather than for the realistic 10/100/1000
      * cases, so GCC's -Wformat-truncation has nothing to warn about. */
+    /* "65535 Mbit, half duplex" is the longest possible expansion (speed_mbit
+     * is a uint16_t), which is comfortably inside the 32 byte buffer, so the
+     * intermediate offset below never needs clamping the way cads_about.c's
+     * longer, multi-field buffer does. */
     char speed_text[32];
     if(s->link_up && s->speed_mbit > 0u) {
-        snprintf(
-            speed_text, sizeof(speed_text), "%u Mbit, %s", (unsigned)s->speed_mbit,
-            s->full_duplex ? "full duplex" : "half duplex");
+        size_t pos = cads_fmt_uint(speed_text, sizeof(speed_text), s->speed_mbit);
+        cads_str_copy(speed_text + pos, sizeof(speed_text) - pos, " Mbit, ");
+        cads_str_append(speed_text, sizeof(speed_text), s->full_duplex ? "full duplex" : "half duplex");
     } else {
-        snprintf(speed_text, sizeof(speed_text), "-");
+        cads_str_copy(speed_text, sizeof(speed_text), "-");
     }
 
     int16_t row = 0;

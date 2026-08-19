@@ -92,15 +92,58 @@ Prove the toolchain, the boot path and the display path on real silicon.
       lost, stack high-water marks converged. Used: ui 224 B of 2048,
       input 132 B of 1024, console 372 B of 2048.
 
-## M3 — Input and GUI framework  `[ ]`
+## M3 — Input and GUI framework  `[~]`
 
 - [x] Input service: S0..S7 (PF0..PF7, active low) + touch, one event stream
       with debounce, repeat and long press
-- [ ] On-screen navigation cluster (the d-pad equivalent) as a widget
-- [ ] `view`, `view_port`, `view_dispatcher`, `gui` compositor with layers
-- [ ] Widgets: menu, submenu, dialog, text box, list, status bar
-- [ ] **HARDWARE GATE M3**: navigate a three-level menu by touch, no ghost
-      touches over 200 interactions
+- [x] On-screen navigation cluster (the d-pad equivalent) as a widget —
+      DECIDED AGAINST, not merely deferred. Considered and rejected in favour
+      of treating the eight buttons as a labelled soft-key strip; see
+      docs/explanation/input-scheme.md "Why not an on-screen D-pad". Building
+      one now would contradict a decision already made and documented, not
+      complete an open task.
+- [x] `view`, `view_port`, `view_dispatcher`, `gui` compositor with layers —
+      built as `gui/view` (cads_view.c/.h, cads_view_dispatcher.c/.h,
+      cads_gui.c/.h). `view_port` is not a separate type here: a
+      `cads_view_t` owns its own damage rectangle directly, which is what
+      Flipper's ViewPort exists to add on top of a bare view - folding it in
+      was a clean-room simplification, not a gap. The compositor's three
+      layers (status bar / content / soft-key strip) are real and load
+      bearing (see gui/view/cads_gui.h). Wired onto real hardware and
+      photographed, commit df3ceca, 2026-08-18.
+- [x] Widgets: menu, submenu, dialog, text box, list, status bar — all six
+      exist in `gui/widgets` (cads_menu, cads_dialog, cads_textbox,
+      cads_list, cads_statusbar, cads_softkeys). "Submenu" is not a distinct
+      widget: apps/menu pushes another `cads_menu` view onto the navigation
+      stack, which is what a submenu actually is in this framework - see
+      apps/settings, whose "Factory reset" row opens exactly that pattern one
+      level deeper as a confirm dialog.
+- [~] **HARDWARE GATE M3**: navigate a three-level menu by touch, no ghost
+      touches over 200 interactions. Split into what can and cannot be
+      verified without a human, same as the M0 gate's visual-confirmation
+      item:
+      - [x] Ghost-touch soak, real hardware, 2026-08-19: 300 samples of
+            `cads_hal_touch_read()` with the panel untouched, 0 false
+            positives (`scripts/board_cmd.py q 300`, explorer command `q`,
+            `apps/bringup/explorer.c`). Exceeds the 200-interaction bar in
+            the gate's own wording.
+      - [x] The three-level tree itself now exists and is wired in: desktop
+            (apps/desktop) -> menu (apps/menu) -> an app (settings/about/
+            gpio/netinfo), with settings going one level deeper still into a
+            confirm dialog. Built, flashed, and run live on the real panel
+            for 45s combined across two runs with the status bar and
+            soft-key strip both enabled (explorer command `d`,
+            apps/bringup/explorer_app_demo.c) - 13 frames flushed, 315648
+            pixels, no fault, no lost task, explorer still responsive
+            afterwards. Photographed: the desktop, Leo, the status bar and
+            the caption text all render correctly on real silicon.
+      - [ ] Touch navigation itself, by a human. Software can drive input
+            events synthetically but that would test the dispatcher, not the
+            XPT2046 and the finger pressing it - the actual point of this
+            line. 0 navigation transitions were observed in the runs above,
+            which is the expected and correct result of nobody having
+            touched the panel, not a failure. Same category as M0's open
+            "visual confirmation ... by a human" item.
 
 ## M4 — Storage  `[ ]`
 
@@ -188,22 +231,35 @@ does not yet use" for the full table and sourcing.
 - [ ] **HARDWARE GATE M5**: DHCP lease, ping, CLI over telnet, screen
       streaming at a measured frame rate, all with the display active
 
-## M6 — Applications  `[ ]`
+## M6 — Applications  `[~]`
 
-- [ ] Desktop with Leo the lion mascot (mood/level state) — compile-checked
-      clean for ARM, not yet wired into the build or hardware-verified
-- [ ] Main menu, settings, about — compile-checked clean for ARM, not yet
-      wired into the build or hardware-verified
+- [x] Desktop with Leo the lion mascot (mood/level state) — wired into the
+      build and VERIFIED on hardware, 2026-08-19: photographed live on the
+      panel (status bar, Leo's portrait, mood caption all rendering
+      correctly). Review before flashing found the same snprintf/heap bug as
+      apps/gpio, in all four of desktop/settings/about/netinfo - fixed with
+      `cads/toolbox/str.h` + `cads/toolbox/fmt.h` in every case, no new
+      module needed.
+- [x] Main menu, settings, about — wired into the build (apps/menu,
+      apps/settings, apps/about) and flashed; the tree boots and runs stably
+      for 45s combined across two runs, no fault. See the M3 hardware-gate
+      entry above for what that does and does not verify without a human.
 - [x] GPIO app driving OUT0..15 and reading IN0..7 / INT0..5 — VERIFIED on
       hardware: the full gui/view + gui/widgets + apps/gpio stack renders
       correctly on the real panel (photographed), input handoff to/from the
-      running input task confirmed clean, no task lost, stacks stable. Not
-      yet wired into the production task set (apps/bringup/tasks.c) - reached
-      via the explorer's `g` command for this first smoke test.
-- [ ] Network info app — compile-checked clean for ARM (after fixing a
-      real snprintf buffer-size warning), not yet wired into the build
+      running input task confirmed clean, no task lost, stacks stable. Now
+      also reachable through the production app tree (apps/menu -> GPIO), in
+      addition to the explorer's standalone `g` command.
+- [x] Network info app — wired into the build (apps/netinfo) and flashed. Its
+      link-state fields are honest placeholders (has_network only; link_up,
+      speed, IP all fixed until the maintainer exposes PHY status through a
+      portable service - see the comment in cads_netinfo.c) because the
+      Ethernet data path does not exist yet, only MDIO-based PHY management.
 - [ ] A game, to exercise the input and timing paths end to end
-- [ ] **HARDWARE GATE M6**: full walkthrough of every app on the board
+- [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
+      five apps below the menu build, flash, and run without fault; a human
+      walkthrough of each one by touch and by button is the same open item
+      as the M3 gate's touch-navigation line, not a separate one.
 
 ### The GPIO Swiss-army-knife
 
@@ -264,6 +320,68 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — Wired the whole M6 app tree (desktop, menu, settings, about,
+  netinfo) into the real build and onto the real board; M3 mostly closed out
+  along with it. Three findings, all real:
+  (1) The same snprintf/heap-init-syscall bug already fixed once in apps/gpio
+  was present in all four remaining apps (desktop, settings, about, netinfo) -
+  every subagent that wrote a formatted-text screen reached for it out of
+  habit. Fixed the same way: `cads/toolbox/str.h` + `cads/toolbox/fmt.h`,
+  no heap, no new module. `cads/toolbox/str.h` already existed and already
+  covers what the roadmap's M2 "`cads_string`" line was asking for, just
+  under a name nobody had connected to that checkbox.
+  (2) apps/about and apps/netinfo were the first *portable* code to actually
+  call `cads_hal_board_info()` - the explorer never had - and the simulator
+  never had an implementation. Host link failed the moment they were wired
+  in. Added one to `targets/sim/hal_sim.c`, honestly: fields the host
+  genuinely cannot make true (cpu_hz, flash_bytes, ram_bytes,
+  display_pixels_per_second) report 0 rather than borrowing the board's
+  numbers.
+  (3) The roadmap itself had drifted from the repo: M3's "view/view_port/
+  dispatcher/compositor" and "widgets" lines, and M6's desktop/menu/settings/
+  about lines, were still `[ ]` for work that commit df3ceca had already
+  built and hardware-verified on 2026-08-18. Corrected rather than re-done -
+  see the M3 and M6 sections above for what was actually already true.
+  Also settled, while reading gui/widgets/README.md and
+  docs/explanation/input-scheme.md to check the above: the "on-screen
+  navigation cluster" line was never a gap. It was considered and explicitly
+  rejected in favour of the soft-key-strip idiom, already documented, just
+  never checked off - fixed to say so rather than to describe a widget this
+  project decided against building.
+  Real hardware gate, ST-Link 066FFF565282494867161033: built for both
+  targets (host: 10/10 unit + golden tests green; itsboard: 111 572 B flash,
+  10.64% of FLASH_APP, 58.35% RAM), flashed, M0's boot self-test still 10/10
+  PASS. New: ghost-touch soak (explorer `q`, `scripts/board_cmd.py`) - 300
+  samples untouched, 0 false positives. New: the full app tree live on the
+  panel for 45s combined across two runs (explorer `d`) - 13 frames, 315 648
+  pixels, no fault, explorer responsive throughout and after. Photographed:
+  Leo, the status bar and the mood caption all correct on real silicon,
+  which is also the on-hardware proof that the snprintf rewrite in (1)
+  produces correct text rather than just linking. What this cannot close by
+  itself: actually navigating the tree by touch needs a human, same as M0's
+  open visual-confirmation line - 0 navigation transitions were observed in
+  both runs, which is the expected result of nobody touching the panel, not
+  a failure.
+  Also added `scripts/board_cmd.py`: send one hardware-explorer command,
+  capture what comes back, for exactly this kind of one-off on-target check
+  (board_test.py only knows the boot self-test; board_soak.py only knows
+  long-running load).
+  One test-harness observation, not a firmware bug: a full `board_test.py`
+  run (flash + listen, no `--no-flash`) intermittently captured a partial
+  duplicate of the TAP stream and reported a spurious FAIL, while an
+  immediately following `--no-flash` reset-and-listen against the identical,
+  already-flashed image passed clean, 10/10, byte-identical timings to the
+  "duplicate" portion. Not chased further this session - noting it here so a
+  future spurious FAIL after a fresh flash is checked against a bare reset
+  before being treated as a regression.
+
+- 2026-08-19 — Closed GitHub issue #18 (the SB121/SB122 solder-bridge
+  decision) as stale: the decision was made and logged here on 2026-08-18,
+  but `scripts/sync_github.py` never closes issues by design, so nothing had
+  told GitHub. Commented with the resolution and closed by hand. The other
+  38 open issues at the time were all `[M#]`-pattern roadmap mirrors, already
+  accurately reflected - nothing else to triage.
 
 - 2026-08-19 — MAC Management Counters merged from `tester`. Correctly left
   the hardware-gate checkbox at `[~]` rather than `[x]` when handing it back,
