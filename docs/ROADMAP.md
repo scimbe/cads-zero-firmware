@@ -152,10 +152,18 @@ driver above.
 
 ## M6 — Applications  `[ ]`
 
-- [ ] Desktop with Leo the lion mascot (mood/level state)
-- [ ] Main menu, settings, about
-- [ ] GPIO app driving OUT0..15 and reading IN0..7 / INT0..5
-- [ ] Network info app
+- [ ] Desktop with Leo the lion mascot (mood/level state) — compile-checked
+      clean for ARM, not yet wired into the build or hardware-verified
+- [ ] Main menu, settings, about — compile-checked clean for ARM, not yet
+      wired into the build or hardware-verified
+- [x] GPIO app driving OUT0..15 and reading IN0..7 / INT0..5 — VERIFIED on
+      hardware: the full gui/view + gui/widgets + apps/gpio stack renders
+      correctly on the real panel (photographed), input handoff to/from the
+      running input task confirmed clean, no task lost, stacks stable. Not
+      yet wired into the production task set (apps/bringup/tasks.c) - reached
+      via the explorer's `g` command for this first smoke test.
+- [ ] Network info app — compile-checked clean for ARM (after fixing a
+      real snprintf buffer-size warning), not yet wired into the build
 - [ ] A game, to exercise the input and timing paths end to end
 - [ ] **HARDWARE GATE M6**: full walkthrough of every app on the board
 
@@ -211,6 +219,27 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-19 — A `git add -A` while committing the TDR feature swept in
+  unreviewed, in-progress work from two concurrently running subagents
+  (modules/storage, all six M6 apps) and pushed it to origin/main without
+  review. Nothing broke - neither was wired into any CMakeLists.txt yet, so
+  the built and gated firmware was unaffected - but the process was wrong.
+  Corrective action: `apps/gpio` and `gui/view`/`gui/widgets` were reviewed
+  (individually compile-checked for ARM, one real bug found and fixed - see
+  below), wired into the real build, flashed and hardware-verified before
+  this commit; `modules/storage` and the other five apps remain compile-
+  checked-only pending the same review. Going forward, `git status` is
+  checked and files are staged explicitly rather than with `-A`.
+
+  The review caught one real, non-obvious bug: `apps/gpio/cads_gpio.c` used
+  `snprintf`, which linking pulled in newlib's heap-init syscall stub
+  (`_sbrk`, needing a linker symbol `end` that does not exist - the project
+  has no heap by design, see the M2 kernel entry). Fixed by switching to
+  `cads/toolbox/fmt.h`, the malloc-free formatter already built for exactly
+  this. `apps/netinfo` separately had a real `-Wformat-truncation` warning
+  (buffer sized for the realistic case, not the type's theoretical maximum)
+  fixed while reviewing.
 
 - 2026-08-18 — Cable diagnostics (TDR) implemented and verified on hardware,
   the first item of the network Swiss-army-knife. MDIO-only per
