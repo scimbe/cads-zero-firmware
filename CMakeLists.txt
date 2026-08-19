@@ -145,4 +145,9 @@ else()
     add_subdirectory(targets/sim)
     enable_testing()
     add_subdirectory(tests)
+    # Needs cads-zero-sim to exist, and needs enable_testing() to have already
+    # run in this directory scope for its add_test() calls to register with
+    # ctest - both of which is why this is added from here rather than from
+    # inside targets/sim/CMakeLists.txt itself, which runs before either.
+    add_subdirectory(targets/sim/tests)
 endif()

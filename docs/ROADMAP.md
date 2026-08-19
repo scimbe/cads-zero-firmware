@@ -235,7 +235,14 @@ needs new hardware.
 ## M7 — Simulator and test pipeline  `[ ]`
 
 - [ ] SDL2 simulator: panel, touch via mouse, adapter I/O panel, console
-- [ ] Golden-image tests: render, compare against reference PNGs
+- [x] Golden-image tests: render, compare against reference PNGs. Hand-written
+      BMP reader + PNG encoder (real zlib DEFLATE via Python stdlib, not
+      vendored/hand-rolled compression) rather than a new C image library for
+      one debug feature. Exact pixel comparison (the sim renders
+      deterministically), diff PNG written on mismatch. Two golden images so
+      far: boot splash, bring-up self-test pattern. apps/gpio deliberately
+      not captured yet - it postdates this branch's fork point from main, see
+      targets/sim/golden/README.md for the recipe to add it.
 - [ ] Unit tests (Unity) for canvas, core, toolbox
 - [ ] `scripts/board_test.py` extended: TAP over VCP, per-milestone suites
 - [ ] CI: build both targets, unit + golden tests, size regression budget
