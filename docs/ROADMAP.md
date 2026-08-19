@@ -43,7 +43,8 @@ Prove the toolchain, the boot path and the display path on real silicon.
       exact, DWT within 0.03 %.
 - [ ] Visual confirmation of the test pattern by a human (the bus is
       write-only, so no software can check this)
-- [ ] CI workflow: firmware build + size report
+- [x] CI workflow: firmware build + size report (.github/workflows/ci.yml,
+      commit 05ecb7d) — this was done but never checked off here.
 
 ## M1 — Graphics and identity  `[~]`
 
