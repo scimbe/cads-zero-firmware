@@ -225,7 +225,7 @@ Prove the toolchain, the boot path and the display path on real silicon.
             touched the panel, not a failure. Same category as M0's open
             "visual confirmation ... by a human" item.
 
-## M4 — Storage  `[~]`
+## M4 — Storage  `[x]`
 
 - [x] littlefs on flash bank 2 (`0x08120000`, 896 KB, 7 × 128 KB blocks) —
       `modules/storage`, littlefs as a git submodule (`lib/littlefs`),
@@ -257,7 +257,34 @@ Prove the toolchain, the boot path and the display path on real silicon.
       (real littlefs, not a fake, over the RAM-backed `cads_flash_host.c`
       emulation which enforces the same NOR "program only clears bits"
       contract the real driver does).
-- [ ] File browser app
+- [x] File browser app — `apps/filebrowser`, read-only navigation of the
+      littlefs volume via `cads/storage/storage.h`. Deliberately read-only:
+      `gui/widgets` has no text entry (its own README says so), and this
+      milestone's job was the storage layer and a way to see what is on it,
+      not a full manager - rename/delete/a content viewer are all reachable
+      through `cads/storage/storage.h` already for a later app to add. One
+      menu view whose current path is a mutable fixed buffer, reloaded from
+      the real filesystem on every navigation, rather than a view per
+      directory depth (an unbounded tree would need dynamic view ids); a
+      second view for a file's size, pushed as its own view for the same
+      reason `apps/settings` does that rather than nesting a dialog in the
+      list view's own draw path. Wired into `apps/menu` ("Files") like every
+      other M6 app. VERIFIED on hardware, 2026-08-20: builds clean for both
+      targets (16/16 host tests unaffected), M0's boot self-test still
+      10/10 PASS after flashing, and a new explorer command (`v`, mirroring
+      `explorer_gui_demo.c`'s direct-to-view shortcut) ran it live against
+      the real volume twice - one full-screen frame rendered each time
+      (153 600 pixels, matching a full redraw), no fault, explorer
+      responsive throughout and after. Mounted the same volume the M4
+      hardware gate's `/cads_test.bin` was written to, so the listing it
+      rendered was real filesystem content, not a fixture. Not
+      photographed: the bench camera's framing had drifted since earlier in
+      this session (lighting and/or a bumped cable, per the full-frame
+      capture taken while diagnosing it) and `scripts/board_photo.py`'s
+      fixed crop no longer lands on the panel - a camera re-aim, not a
+      firmware question, and the same category of open item as M0's
+      "visual confirmation ... by a human": everything automatable here
+      passed; actually looking at the screen is the one thing left.
 - [x] **HARDWARE GATE M4 PASSED**, 2026-08-20: write, reset (not a
       reflash), read back; firmware-region CRC32 identical before and after
       (`0x58A5B49C`, both within the write run and again after the reset).
@@ -438,6 +465,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — Built `apps/filebrowser`, the last open item in M4, which is
+  now `[x]`. Read-only navigation of the littlefs volume: one menu view
+  with a mutable current-path buffer rather than a view per directory
+  depth, a second view for a file's size (same "push it as its own view"
+  shape `apps/settings` already uses for its confirm dialog, and for the
+  same reason - the soft-key strip only re-applies on a real view change).
+  Wired into `apps/menu` as "Files". VERIFIED on hardware: a new explorer
+  command (`v`) ran it live, twice, against the real volume the M4 gate's
+  `/cads_test.bin` was written to - one full-screen frame each run, no
+  fault, explorer responsive after. Not photographed this round: the bench
+  camera's framing drifted since earlier in the session and the fixed crop
+  in `scripts/board_photo.py` no longer lands on the panel - a re-aim, not
+  a firmware question, tracked the same way M0's own unchecked visual-
+  confirmation line is.
 
 - 2026-08-20 — M4 storage: littlefs on flash bank 2, real hardware gate
   passed (write, reset, read back, firmware CRC identical before and

@@ -105,6 +105,7 @@ add_subdirectory(apps/settings)
 add_subdirectory(apps/about)
 add_subdirectory(apps/netinfo)
 add_subdirectory(apps/gpio)
+add_subdirectory(apps/filebrowser)
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -114,6 +115,7 @@ add_library(cads_apps STATIC
     apps/bringup/explorer_gui_demo.c
     apps/bringup/explorer_app_demo.c
     apps/bringup/explorer_storage_test.c
+    apps/bringup/explorer_filebrowser_demo.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
@@ -124,7 +126,7 @@ else()
     target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test_sim.c)
     target_sources(cads_apps PRIVATE apps/bringup/explorer_fault_test_sim.c)
 endif()
-target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio)
+target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage)
 if(CADS_TARGET STREQUAL "itsboard")

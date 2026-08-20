@@ -7,6 +7,7 @@
 
 #include "../about/cads_about.h"
 #include "../desktop/cads_desktop.h"
+#include "../filebrowser/cads_filebrowser.h"
 #include "../gpio/cads_gpio.h"
 #include "../netinfo/cads_netinfo.h"
 #include "../settings/cads_settings.h"
@@ -26,6 +27,7 @@ static const cads_menu_item_t cads_menu_app_items[] = {
     {"About", NULL, CADS_VIEW_ID_ABOUT},
     {"GPIO", "16/8", CADS_VIEW_ID_GPIO},
     {"Network Info", "Ethernet", CADS_VIEW_ID_NETINFO},
+    {"Files", NULL, CADS_VIEW_ID_FILEBROWSER},
 };
 
 static const cads_softkey_t cads_menu_app_keys[] = {
@@ -70,6 +72,7 @@ void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
     cads_about_init(dispatcher);
     cads_gpio_init(dispatcher);
     cads_netinfo_init(dispatcher);
+    cads_filebrowser_init(dispatcher);
 
     s_menu_app.dispatcher = dispatcher;
     cads_menu_init(

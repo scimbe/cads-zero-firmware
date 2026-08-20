@@ -39,6 +39,7 @@
 #include "explorer_app_demo.h"
 #include "explorer_eth.h"
 #include "explorer_fault_test.h"
+#include "explorer_filebrowser_demo.h"
 #include "explorer_gui_demo.h"
 #include "explorer_kernel_test.h"
 #include "explorer_storage_test.h"
@@ -334,6 +335,7 @@ static void cads_help(void) {
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
         "#   r          toolbox test: cads_pubsub + cads_record\r\n"
         "#   u          M4 hardware gate: format/write, or verify after a reset\r\n"
+        "#   v <sec>    file browser live on the panel, default 30s\r\n"
         "#   y          raw flash driver diagnostic, no littlefs (debug 'u' failures)\r\n"
         "#   z FAULT    trip UsageFault deliberately - HALTS FOR GOOD, needs a reflash\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
@@ -447,6 +449,7 @@ void cads_explorer_run(void) {
             case 'q': cads_touch_soak(cads_parse_uint(argument)); break;
             case 'r': cads_toolbox_selftest(); break;
             case 'u': cads_explorer_storage_test(); break;
+            case 'v': cads_explorer_filebrowser_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'y': cads_explorer_flash_raw_test(); break;
             case 'z': cads_explorer_fault_test(argument); break;
             default:
