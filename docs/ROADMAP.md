@@ -599,13 +599,73 @@ driver above.
       that real requests genuinely went out, not just a plausible-looking
       number. `d 8` immediately after confirmed no regression to the app
       tree.
-- [ ] Ping / ICMP echo. lwIP ships an example to adapt. Needs RMII. S.
-- [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M.
+- [x] Ping / ICMP echo. New explorer command `P <hex-target> [count]` /
+      `apps/bringup/explorer_ping_demo.c`, e.g. `P c0a80101 4` pings
+      192.168.1.1 four times. New `cads_net_ping()` in `modules/net`
+      (`cads_net_board.c`): a raw `IP_PROTO_ICMP` pcb, one created and
+      removed per call rather than kept around (never more than one ping
+      in flight at a time - the RAM saving below made that the right
+      default anyway). Hand-built `struct icmp_echo_hdr`
+      (`lwip/prot/icmp.h`), checksummed with `inet_chksum_pbuf()`,
+      matched against its reply by a per-call id + fixed sequence number
+      so a late reply to an earlier, already-timed-out ping cannot be
+      mistaken for the current one's answer - the same
+      construct-and-match-by-id pattern `cads_net_arp_probe()` already
+      established for ARP, applied to ICMP.
+      Needed `LWIP_RAW=1` (off since M5's first bullet - incoming echo
+      requests already worked via lwIP's own auto-reply in `icmp.c`, but
+      asking a question of this device's own needs the raw API), which
+      cost real RAM: `MEMP_NUM_RAW_PCB`'s default of 4 pushed this
+      firmware's free RAM under `cads_itsboard.ld`'s
+      `ASSERT(__cads_heap_size >= 48K, ...)` guard for the third time this
+      milestone (M5's MAC/lwIP, HTTP status page, and now this). Reduced
+      to 1 (all this firmware ever uses) and trimmed `PBUF_POOL_SIZE`
+      8 -> 7 (each slot is a full ~600-byte RX buffer, this bench's own
+      measured near-zero traffic never needed 8) to buy back real margin
+      instead of landing exactly on the edge again.
+      **A real, structural limitation was found, not a bug**: ping
+      constructed and would have sent a correct request, but
+      `raw_sendto()` -> `ip4_route()` refuses to select ANY netif whose
+      own configured address is 0.0.0.0 (`lib/lwip/src/core/ipv4/ip4.c`,
+      `ip4_route()`'s `!ip4_addr_isany_val(*netif_ip4_addr(netif))`
+      check) - it returns `ERR_RTE` before a single byte reaches the MAC.
+      This device has never obtained a DHCP lease on this bench (every
+      earlier M5 task found the same thing), so `netif_ip4_addr()` is
+      always 0.0.0.0, so **no outbound unicast send can route at all**,
+      structurally, regardless of what the request contains - a strictly
+      stronger and more precise finding than "requests go unanswered".
+      DHCP and ARP both work without this precondition (DHCP by design
+      uses broadcast/unspecified-source send paths meant for exactly this
+      situation; ARP is below the IP layer and never calls `ip4_route()`),
+      which is exactly why they, and not ping, were the ones that already
+      worked earlier in M5. VERIFIED on hardware, precisely: `m` before
+      and after a ping showed `tx_good` unchanged - zero new frames, which
+      is the correct, expected observation for a call that fails inside
+      `ip4_route()` before ever reaching `cads_hal_eth_mac_transmit()`,
+      not "sent and unanswered" like the DHCP/ARP findings were. `d 8`
+      immediately after confirmed no regression to the app tree.
+      Deliberately not fixed by adding a link-local (RFC 3927 AutoIP) or
+      static-address fallback here: that is real new capability (this
+      device would need SOME address, DHCP-assigned or not, for every
+      future outbound-client tool - traceroute and iperf-client-mode
+      below will hit this exact same wall) rather than anything this "S"
+      sized bullet's own scope calls for, and it costs more of the RAM
+      margin this task just fought to win back. Left as a clearly-scoped
+      candidate for a future bullet if a DHCP-less bench ever needs to
+      exercise these tools for real, not folded in silently here.
+- [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M. Will hit
+      the same `ip4_route()`-needs-a-non-zero local address wall the ping
+      bullet above just documented, on this bench specifically (no DHCP
+      lease ever obtained) - not a reason to skip building it, but budget
+      for hitting it again rather than being surprised.
 - [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
       portable status struct and a UI. Needs RMII. S.
 - [ ] iperf-style throughput test via lwIP's lwiperf. Expect well under
       100 Mbit/s — the STM32 ETH has checksum offload but the CPU is still
-      the bottleneck on small packets. Needs RMII. M.
+      the bottleneck on small packets. Needs RMII. M. lwiperf's client mode
+      would hit the same routing precondition as ping/traceroute above on
+      this bench; server mode (this device answering an external iperf
+      client) does not need an outbound route at all and is unaffected.
 - [ ] Configurable-rate packet generator (DMA descriptor ring + timer). Needs
       RMII. M.
 - [ ] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
@@ -723,6 +783,35 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's seventh task: ping / ICMP echo. New explorer command
+  `P`, driving a new `cads_net_ping()` in `modules/net` - a raw
+  `IP_PROTO_ICMP` pcb, hand-built `icmp_echo_hdr`, matched to its reply by
+  a per-call id so a late/stale reply cannot be mistaken for the current
+  ping's answer. Needed `LWIP_RAW=1`, which cost enough RAM to blow the
+  linker's 48K headroom guard a third time this milestone - reduced
+  `MEMP_NUM_RAW_PCB` to 1 (all this firmware ever uses at once) and
+  `PBUF_POOL_SIZE` 8->7 to buy back real margin this time, not just enough
+  to scrape by again.
+  Found something more precise than "no DHCP server" this time: ping is
+  correctly implemented but structurally cannot send anything AT ALL on
+  this bench, because lwIP's `ip4_route()` refuses to select a netif whose
+  own address is 0.0.0.0 - and this device has never held a real IP
+  address, ever, on this bench. DHCP and ARP worked earlier in M5 only
+  because neither of them calls `ip4_route()` (DHCP uses a
+  broadcast/unspecified-source path built for exactly this situation; ARP
+  is below IP entirely) - ping is the first tool in this Swiss-army-knife
+  to actually need routing, and the first to expose that this device
+  effectively has no usable address on this segment at all, not just no
+  DHCP lease. Verified precisely via the MMC counter: `tx_good` did not
+  move across a ping call, meaning it failed inside `ip4_route()` before
+  ever reaching the MAC - a different, stronger finding than DHCP/ARP's
+  "sent, unanswered".
+  Deliberately not fixed with an AutoIP/static-address fallback here -
+  real new capability every future outbound-client tool (traceroute,
+  iperf client mode) would also need, not this "S" bullet's own scope, and
+  it would spend more of the RAM margin just won back. Noted against both
+  of those tasks below so it is not silently rediscovered.
 
 - 2026-08-20 — M5's sixth task: ARP scan of the local subnet. New explorer
   command `A`, `apps/bringup/explorer_arp_demo.c`, driving a new

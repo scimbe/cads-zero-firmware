@@ -132,6 +132,7 @@ add_library(cads_apps STATIC
     apps/bringup/explorer_filebrowser_demo.c
     apps/bringup/explorer_cli_demo.c
     apps/bringup/explorer_arp_demo.c
+    apps/bringup/explorer_ping_demo.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
     ${CADS_EXPLORER_SCREENCAST_SOURCE}

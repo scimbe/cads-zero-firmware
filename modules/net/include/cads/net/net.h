@@ -66,6 +66,17 @@ void cads_net_status(cads_net_status_t* status);
  */
 bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]);
 
+/**
+ * Send one ICMP echo request to `ip` (host byte order) and wait up to
+ * `timeout_ms` for a matching reply. Calls cads_net_poll() internally, so
+ * the caller does not need its own wait loop around this.
+ *
+ * `rtt_ms`, when not NULL, receives the round-trip time on a true return.
+ * Returns false (no request sent) immediately if the link is not up, the
+ * same "nothing to probe through yet" reasoning as cads_net_arp_probe().
+ */
+bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms);
+
 #ifdef __cplusplus
 }
 #endif

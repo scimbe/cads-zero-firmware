@@ -24,9 +24,12 @@
 #include "hal_spi.h"
 
 #include "lwip/dhcp.h"
+#include "lwip/icmp.h"
+#include "lwip/inet_chksum.h"
 #include "lwip/init.h"
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
+#include "lwip/raw.h"
 #include "lwip/timeouts.h"
 #include "netif/etharp.h"
 #include "netif/ethernet.h"
@@ -206,4 +209,103 @@ bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
         cads_hal_delay_ms(5u);
     }
     return false;
+}
+
+#define CADS_NET_PING_PAYLOAD_SIZE 32u
+
+typedef struct {
+    uint16_t id;
+    uint16_t seq;
+    uint32_t sent_at_ms;
+    bool got_reply;
+    uint32_t rtt_ms;
+} cads_net_ping_ctx_t;
+
+/* Raw IPv4 recv callbacks see the packet WITH its IP header still attached
+ * (ip4_input() calls raw_input() before stripping it - unlike UDP/TCP,
+ * raw sockets are meant to see the whole IP packet), so the ICMP header is
+ * ip_current_header_tot_len() bytes in, not at p->payload. Copied out with
+ * pbuf_copy_partial() rather than cast in place so this does not care
+ * whether the reply arrived as one pbuf or a chain. */
+static u8_t cads_net_ping_recv(void* arg, struct raw_pcb* pcb, struct pbuf* p, const ip_addr_t* addr) {
+    (void)pcb;
+    (void)addr;
+    cads_net_ping_ctx_t* ctx = (cads_net_ping_ctx_t*)arg;
+
+    u16_t iphdr_len = ip_current_header_tot_len();
+    struct icmp_echo_hdr hdr;
+    if(p->tot_len < (uint32_t)iphdr_len + sizeof(hdr)) return 0u; /* too short to be ours - let it live on */
+    pbuf_copy_partial(p, &hdr, sizeof(hdr), iphdr_len);
+
+    if(hdr.type == ICMP_ER && lwip_ntohs(hdr.id) == ctx->id && lwip_ntohs(hdr.seqno) == ctx->seq) {
+        ctx->got_reply = true;
+        ctx->rtt_ms = cads_hal_ticks_ms() - ctx->sent_at_ms;
+        pbuf_free(p);
+        return 1u; /* eaten */
+    }
+    return 0u; /* somebody else's echo reply (or a stale one of ours) - not eaten */
+}
+
+static uint16_t cads_net_ping_next_id(void) {
+    /* Varies per call so a late reply to an earlier, already-timed-out
+     * ping cannot be mistaken for this one's answer. */
+    static uint16_t id = 0xC0DEu;
+    return ++id;
+}
+
+bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
+    if(!cads_net_link_was_up) return false;
+
+    struct raw_pcb* pcb = raw_new(IP_PROTO_ICMP);
+    if(!pcb) return false;
+
+    cads_net_ping_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.id = cads_net_ping_next_id();
+    ctx.seq = 1u;
+
+    raw_recv(pcb, cads_net_ping_recv, &ctx);
+    raw_bind(pcb, IP_ADDR_ANY);
+
+    struct pbuf* p = pbuf_alloc(
+        PBUF_IP, (u16_t)(sizeof(struct icmp_echo_hdr) + CADS_NET_PING_PAYLOAD_SIZE), PBUF_RAM);
+    if(!p) {
+        raw_remove(pcb);
+        return false;
+    }
+
+    struct icmp_echo_hdr* icmp = (struct icmp_echo_hdr*)p->payload;
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0u;
+    icmp->chksum = 0u;
+    icmp->id = lwip_htons(ctx.id);
+    icmp->seqno = lwip_htons(ctx.seq);
+
+    uint8_t* payload = (uint8_t*)p->payload + sizeof(struct icmp_echo_hdr);
+    for(uint32_t i = 0; i < CADS_NET_PING_PAYLOAD_SIZE; i++) payload[i] = (uint8_t)i;
+
+    icmp->chksum = inet_chksum_pbuf(p);
+
+    ip4_addr_t dest;
+    ip4_addr_set_u32(&dest, lwip_htonl(ip));
+
+    ctx.sent_at_ms = cads_hal_ticks_ms();
+    err_t sent = raw_sendto(pcb, p, &dest);
+    pbuf_free(p);
+
+    if(sent != ERR_OK) {
+        raw_remove(pcb);
+        return false;
+    }
+
+    uint32_t deadline = ctx.sent_at_ms + timeout_ms;
+    while(!ctx.got_reply && (int32_t)(cads_hal_ticks_ms() - deadline) < 0) {
+        cads_net_poll();
+        cads_hal_delay_ms(2u);
+    }
+
+    raw_remove(pcb);
+
+    if(ctx.got_reply && rtt_ms) *rtt_ms = ctx.rtt_ms;
+    return ctx.got_reply;
 }
