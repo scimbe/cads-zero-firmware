@@ -152,6 +152,38 @@ static void test_signed_padding_places_the_sign_correctly(void) {
     TEST_ASSERT_EQUAL_STRING("-2147483648", out);
 }
 
+static void test_ipv4(void) {
+    TEST_ASSERT_EQUAL_size_t(15u, cads_fmt_ipv4(out, sizeof(out), 0xFFFFFFFFu));
+    TEST_ASSERT_EQUAL_STRING("255.255.255.255", out);
+
+    TEST_ASSERT_EQUAL_size_t(7u, cads_fmt_ipv4(out, sizeof(out), 0u));
+    TEST_ASSERT_EQUAL_STRING("0.0.0.0", out);
+
+    /* 192.168.1.5, most significant octet first. */
+    TEST_ASSERT_EQUAL_size_t(11u, cads_fmt_ipv4(out, sizeof(out), 0xC0A80105u));
+    TEST_ASSERT_EQUAL_STRING("192.168.1.5", out);
+
+    /* Truncation still terminates and still reports the untruncated length,
+     * the same contract every other function in this file keeps. */
+    char small[8];
+    TEST_ASSERT_EQUAL_size_t(15u, cads_fmt_ipv4(small, sizeof(small), 0xFFFFFFFFu));
+    TEST_ASSERT_EQUAL_STRING("255.255", small);
+}
+
+static void test_mac(void) {
+    const uint8_t addr[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+    TEST_ASSERT_EQUAL_size_t(17u, cads_fmt_mac(out, sizeof(out), addr));
+    TEST_ASSERT_EQUAL_STRING("02:CA:D5:5E:00:01", out);
+
+    const uint8_t zero[6] = {0, 0, 0, 0, 0, 0};
+    TEST_ASSERT_EQUAL_size_t(17u, cads_fmt_mac(out, sizeof(out), zero));
+    TEST_ASSERT_EQUAL_STRING("00:00:00:00:00:00", out);
+
+    char small[10];
+    TEST_ASSERT_EQUAL_size_t(17u, cads_fmt_mac(small, sizeof(small), addr));
+    TEST_ASSERT_EQUAL_STRING("02:CA:D5:", small);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_unsigned_decimal);
@@ -162,5 +194,7 @@ int main(void) {
     RUN_TEST(test_zero_size_and_null_write_nothing);
     RUN_TEST(test_padding);
     RUN_TEST(test_signed_padding_places_the_sign_correctly);
+    RUN_TEST(test_ipv4);
+    RUN_TEST(test_mac);
     return UNITY_END();
 }

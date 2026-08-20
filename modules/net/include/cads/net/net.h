@@ -54,6 +54,18 @@ void cads_net_poll(void);
 
 void cads_net_status(cads_net_status_t* status);
 
+/**
+ * Send one ARP request for `ip` (host byte order) and report whether the
+ * ARP table already holds, or comes to hold within `timeout_ms`, a
+ * resolved hardware address for it. Calls cads_net_poll() internally, so
+ * the caller does not need its own wait loop around this.
+ *
+ * `mac_out`, when not NULL, receives the resolved address on a true
+ * return. Returns false immediately (no request sent) if the link is not
+ * up - there is nothing to probe a subnet through yet.
+ */
+bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]);
+
 #ifdef __cplusplus
 }
 #endif

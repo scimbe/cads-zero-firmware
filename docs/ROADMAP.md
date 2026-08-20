@@ -552,8 +552,53 @@ driver above.
       real traffic - happens once M5's data path lands.
       UPDATE 2026-08-20: it landed. `tx_good` incremented by exactly 1 for
       one deliberately-sent probe frame - see M5's MAC/lwIP entry above.
-- [ ] ARP scan of the local subnet. Needs RMII + lwIP - landed 2026-08-20
-      (see M5 above), so this is now actually buildable, just not built yet.
+- [x] ARP scan of the local subnet. New explorer command `A <hex-base>
+      [count]` / `apps/bringup/explorer_arp_demo.c`, e.g. `A c0a80100 20`
+      scans 192.168.1.1-20. Fully portable, no board/sim split needed - the
+      new `cads_net_arp_probe()` (`modules/net`, `cads/net/net.h`) already
+      has an honest simulator answer ("never resolves anything") the same
+      way the rest of that module does. One sequential `etharp_request()` /
+      `etharp_find_addr()` round trip per host - lwIP's raw API has no
+      simpler way to surface ARP resolution to application code, and this
+      device has no RAM for tracking many requests in flight at once
+      anyway (`explorer_http_demo.c`'s notes on this firmware's RAM budget
+      apply here too). Added `cads_fmt_ipv4()`/`cads_fmt_mac()` to
+      `modules/toolbox` (with unit tests) rather than hand-rolling a fifth
+      copy of the same dotted-quad/hex-colon loop already duplicated
+      across `apps/netinfo`, `cads_cli`, and `explorer_http_demo.c` - three
+      near-identical copies was tolerable, a fourth was the point the
+      header itself says is worth one shared function instead. The three
+      existing call sites were deliberately left as they are rather than
+      refactored to use it - untouched, working, hardware-verified code,
+      out of scope for this task.
+      A real bug was found, not by reasoning but by cross-checking against
+      the MAC's own hardware MMC counter, the same technique that verified
+      the deliberate probe frame in the M5 MAC/lwIP task: the first version's
+      link-autonegotiation wait loop called `cads_net_status()` in a spin
+      without ever calling `cads_net_poll()` - and `cads_net_status()` only
+      reports the last poll's cached result, it does not itself detect
+      anything. The loop therefore burned its full 3 s doing nothing, link
+      state never actually transitioned to up, and every probe afterward
+      silently returned false before sending a single frame - "0 hosts
+      answered" for the wrong reason (nothing was ever asked), not the
+      right one (asked and unanswered). Running `m` (MMC counters) before
+      and after a scan and seeing `tx_good` had not moved at all - across
+      three separate scan attempts on three different subnets - is what
+      caught it; the scan alone, with no external ground truth to compare
+      against, looked exactly as "successful" broken as it would working
+      and empty. Fixed with one `cads_net_poll()` call added to the wait
+      loop.
+      VERIFIED on hardware, after the fix: `m` before a scan read
+      `tx_good=0`; an 8-host scan (`A c0a80100 8`) reported "0 host(s)
+      answered", and `m` immediately after read `tx_good=9` - 8 real ARP
+      requests plus the 1 DHCPDISCOVER `cads_net_init()`'s link-up
+      transition also sends, exactly accounted for. This bench's segment
+      answered none of them, consistent with every other finding this
+      session about it (no DHCP server, near-zero ambient traffic) - but
+      this time the "0 answered" is backed by hardware-counted evidence
+      that real requests genuinely went out, not just a plausible-looking
+      number. `d 8` immediately after confirmed no regression to the app
+      tree.
 - [ ] Ping / ICMP echo. lwIP ships an example to adapt. Needs RMII. S.
 - [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M.
 - [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
@@ -678,6 +723,37 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's sixth task: ARP scan of the local subnet. New explorer
+  command `A`, `apps/bringup/explorer_arp_demo.c`, driving a new
+  `cads_net_arp_probe()` in `modules/net` (one `etharp_request()` /
+  `etharp_find_addr()` round trip per host, sequential - no RAM for
+  tracking many requests at once). Fully portable, no board/sim split -
+  the simulator side of `cads/net/net.h` already has an honest "never
+  resolves anything" answer. Added `cads_fmt_ipv4()`/`cads_fmt_mac()` to
+  `modules/toolbox` (with tests) rather than writing a fourth near-copy of
+  the same formatting loop `apps/netinfo`, `cads_cli` and
+  `explorer_http_demo.c` each already had; left those three untouched
+  rather than refactoring working, verified code as a side effect of an
+  unrelated task.
+  Found a real bug via a technique worth repeating: cross-checking against
+  the MAC's own MMC hardware counter, not just trusting the scan's own
+  output. The link-autonegotiation wait loop called `cads_net_status()`
+  without ever calling `cads_net_poll()` - which is what actually detects
+  the link, `cads_net_status()` only reports the last poll's cached result
+  - so the loop always burned its full 3 s doing nothing, link state never
+  transitioned, and every probe silently returned false before sending
+  anything. "0 hosts answered" looked identical whether the scan asked and
+  got no answer, or never asked at all; only `m` before and after (`tx_good`
+  not moving across three separate attempts) exposed which one was
+  happening. One `cads_net_poll()` call fixed it.
+  VERIFIED on hardware after the fix: `tx_good` read 0, an 8-host scan ran,
+  and `tx_good` read 9 immediately after - 8 real ARP requests plus the 1
+  DHCPDISCOVER a fresh link-up always sends, exactly accounted for. Still
+  0 hosts answered - consistent with everything else this session has
+  found about this bench's segment - but now backed by hardware-counted
+  proof that real requests went out, not just a number that happened to
+  look plausible either way.
 
 - 2026-08-20 — M5's fifth task: HTTP status page. New explorer command `H`,
   `apps/bringup/explorer_http_demo.c` (board only). Found and fixed a real

@@ -26,3 +26,10 @@ void cads_net_status(cads_net_status_t* status) {
     memset(status, 0, sizeof(*status));
     memcpy(status->mac, cads_net_sim_mac, sizeof(status->mac));
 }
+
+bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
+    (void)ip;
+    (void)timeout_ms;
+    (void)mac_out;
+    return false; /* never a link, so never anything to probe - see this file's header */
+}

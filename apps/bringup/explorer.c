@@ -37,6 +37,7 @@
 #include "cads/toolbox/record.h"
 #include "cads/toolbox/str.h"
 #include "explorer_app_demo.h"
+#include "explorer_arp_demo.h"
 #include "explorer_cli_demo.h"
 #include "explorer_eth.h"
 #include "explorer_fault_test.h"
@@ -337,6 +338,7 @@ static void cads_help(void) {
         "#   j <sec>    cads_cli live: serial (this console) + TCP :4242, default 30s\r\n"
         "#   S <sec>    screen streaming: TCP :4244, framebuffer + moving marker, default 30s\r\n"
         "#   H <sec>    HTTP status page: TCP :80, default 30s\r\n"
+        "#   A <hex-base> [count]  ARP scan, e.g. A c0a80100 20, default count 32\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -385,6 +387,15 @@ void cads_explorer_run(void) {
             case 'j': cads_explorer_cli_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'S': cads_explorer_screencast_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'H': cads_explorer_http_demo(cads_parse_uint(argument) ?: 30u); break;
+            case 'A': {
+                uint32_t base = 0u, count = 0u;
+                const char* end = argument;
+                cads_str_to_hex(end, &base, &end);
+                end = cads_str_skip_spaces(end);
+                cads_str_to_uint(end, &count, &end);
+                cads_explorer_arp_demo(base, count);
+                break;
+            }
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;

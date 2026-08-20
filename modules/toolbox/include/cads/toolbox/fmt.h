@@ -11,6 +11,12 @@
  * knows: the result is always NUL terminated when `size` is non-zero, and the
  * return value is the length the complete output would have had. A caller
  * detects truncation with `result >= size`.
+ *
+ * IPv4 and MAC addresses (below) are here too, not off in a networking
+ * module: to this file they are just two more fixed structures of small
+ * integers, exactly what everything above already formats, and by the time
+ * a fourth call site needed the same dotted-quad loop it stopped being
+ * three-similar-lines-is-fine and started being worth one shared function.
  */
 
 #ifndef CADS_TOOLBOX_FMT_H
@@ -62,6 +68,17 @@ size_t cads_fmt_hex(char* out, size_t size, uint32_t value, uint8_t digits, bool
  */
 size_t cads_fmt_uint_pad(char* out, size_t size, uint32_t value, uint8_t width, char pad);
 size_t cads_fmt_int_pad(char* out, size_t size, int32_t value, uint8_t width, char pad);
+
+/**
+ * Dotted-quad IPv4 address, host byte order in ("a.b.c.d" out, most
+ * significant octet first). A pure formatter like every function above -
+ * 0 prints as "0.0.0.0" like any other value; a caller that wants to show
+ * "none" for an unset address checks that itself before calling this.
+ */
+size_t cads_fmt_ipv4(char* out, size_t size, uint32_t ip);
+
+/** Colon-separated hex MAC address, uppercase, e.g. "02:CA:D5:5E:00:01". */
+size_t cads_fmt_mac(char* out, size_t size, const uint8_t mac[6]);
 
 #ifdef __cplusplus
 }

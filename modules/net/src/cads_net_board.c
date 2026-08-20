@@ -184,3 +184,26 @@ void cads_net_status(cads_net_status_t* status) {
         status->ip_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&cads_netif)));
     }
 }
+
+bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
+    if(!cads_net_link_was_up) return false;
+
+    ip4_addr_t target;
+    ip4_addr_set_u32(&target, lwip_htonl(ip));
+
+    if(etharp_request(&cads_netif, &target) != ERR_OK) return false;
+
+    uint32_t deadline = cads_hal_ticks_ms() + timeout_ms;
+    while((int32_t)(cads_hal_ticks_ms() - deadline) < 0) {
+        cads_net_poll();
+
+        struct eth_addr* eth_ret;
+        const ip4_addr_t* ip_ret;
+        if(etharp_find_addr(&cads_netif, &target, &eth_ret, &ip_ret) >= 0) {
+            if(mac_out) memcpy(mac_out, eth_ret->addr, 6u);
+            return true;
+        }
+        cads_hal_delay_ms(5u);
+    }
+    return false;
+}

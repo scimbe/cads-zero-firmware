@@ -148,3 +148,27 @@ size_t cads_fmt_int_pad(char* out, size_t size, int32_t value, uint8_t width, ch
 
     return cads_fmt_pad(out, size, body, length, sign_length, width, pad);
 }
+
+size_t cads_fmt_ipv4(char* out, size_t size, uint32_t ip) {
+    char scratch[16]; /* "255.255.255.255" */
+    size_t length = 0u;
+
+    for(int octet = 3; octet >= 0; octet--) {
+        length += cads_fmt_digits(&scratch[length], (ip >> (octet * 8)) & 0xFFu);
+        if(octet > 0) scratch[length++] = '.';
+    }
+
+    return cads_fmt_emit(out, size, scratch, length);
+}
+
+size_t cads_fmt_mac(char* out, size_t size, const uint8_t mac[6]) {
+    char scratch[18]; /* "XX:XX:XX:XX:XX:XX" */
+    size_t length = 0u;
+
+    for(int i = 0; i < 6; i++) {
+        length += cads_fmt_hex(&scratch[length], sizeof(scratch) - length, mac[i], 2u, true);
+        if(i < 5) scratch[length++] = ':';
+    }
+
+    return cads_fmt_emit(out, size, scratch, length);
+}
