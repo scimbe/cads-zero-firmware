@@ -84,6 +84,9 @@ typedef enum {
     CadsHttpPhaseRowLink,
     CadsHttpPhaseRowMac,
     CadsHttpPhaseRowIp,
+    CadsHttpPhaseRowLease,
+    CadsHttpPhaseRowGateway,
+    CadsHttpPhaseRowDns,
     CadsHttpPhaseRowRx,
     CadsHttpPhaseRowTx,
     CadsHttpPhaseRowDropped,
@@ -154,18 +157,26 @@ static void cads_http_format_row_mac(void) {
     cads_http_format_row_text("MAC address", mac_text);
 }
 
-static void cads_http_format_row_ip(void) {
-    if(s_http.net.ip_addr == 0u) {
-        cads_http_format_row_text("IP address", "none");
+static void cads_http_format_row_ipv4(const char* label, uint32_t ip) {
+    if(ip == 0u) {
+        cads_http_format_row_text(label, "none");
         return;
     }
     char ip_text[16];
-    size_t pos = 0u;
-    for(int octet = 3; octet >= 0; octet--) {
-        pos += cads_fmt_uint(ip_text + pos, sizeof(ip_text) - pos, (s_http.net.ip_addr >> (octet * 8)) & 0xFFu);
-        if(octet > 0) pos = cads_str_append(ip_text, sizeof(ip_text), ".");
+    cads_fmt_ipv4(ip_text, sizeof(ip_text), ip);
+    cads_http_format_row_text(label, ip_text);
+}
+
+static void cads_http_format_row_lease(void) {
+    if(!s_http.net.link_up) {
+        cads_http_format_row_text("Lease", "-");
+    } else if(s_http.net.dhcp_bound) {
+        cads_http_format_row_text("Lease", "DHCP");
+    } else if(s_http.net.ip_addr != 0u) {
+        cads_http_format_row_text("Lease", "static");
+    } else {
+        cads_http_format_row_text("Lease", "none");
     }
-    cads_http_format_row_text("IP address", ip_text);
 }
 
 /* Writes at most one chunk from `data[offset..total)`, bounded by both
@@ -228,7 +239,25 @@ static void cads_http_pump(void) {
             next = CadsHttpPhaseRowIp;
             break;
         case CadsHttpPhaseRowIp:
-            if(s_http.offset == 0u) cads_http_format_row_ip();
+            if(s_http.offset == 0u) cads_http_format_row_ipv4("IP address", s_http.net.ip_addr);
+            data = (const uint8_t*)s_http.row;
+            total = s_http.row_length;
+            next = CadsHttpPhaseRowLease;
+            break;
+        case CadsHttpPhaseRowLease:
+            if(s_http.offset == 0u) cads_http_format_row_lease();
+            data = (const uint8_t*)s_http.row;
+            total = s_http.row_length;
+            next = CadsHttpPhaseRowGateway;
+            break;
+        case CadsHttpPhaseRowGateway:
+            if(s_http.offset == 0u) cads_http_format_row_ipv4("Gateway", s_http.net.gw_addr);
+            data = (const uint8_t*)s_http.row;
+            total = s_http.row_length;
+            next = CadsHttpPhaseRowDns;
+            break;
+        case CadsHttpPhaseRowDns:
+            if(s_http.offset == 0u) cads_http_format_row_ipv4("DNS server", s_http.net.dns_addr);
             data = (const uint8_t*)s_http.row;
             total = s_http.row_length;
             next = CadsHttpPhaseRowRx;
@@ -414,7 +443,22 @@ static void cads_http_selftest(void) {
     cads_probe_puts(s_http.row);
     cads_probe_puts("\r\n");
 
-    cads_http_format_row_ip();
+    cads_http_format_row_ipv4("IP address", s_http.net.ip_addr);
+    cads_probe_puts("#   ");
+    cads_probe_puts(s_http.row);
+    cads_probe_puts("\r\n");
+
+    cads_http_format_row_lease();
+    cads_probe_puts("#   ");
+    cads_probe_puts(s_http.row);
+    cads_probe_puts("\r\n");
+
+    cads_http_format_row_ipv4("Gateway", s_http.net.gw_addr);
+    cads_probe_puts("#   ");
+    cads_probe_puts(s_http.row);
+    cads_probe_puts("\r\n");
+
+    cads_http_format_row_ipv4("DNS server", s_http.net.dns_addr);
     cads_probe_puts("#   ");
     cads_probe_puts(s_http.row);
     cads_probe_puts("\r\n");

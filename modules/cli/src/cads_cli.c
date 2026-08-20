@@ -46,7 +46,7 @@ static const cads_cli_command_t cads_cli_commands[] = {
     {"help", cads_cli_cmd_help, "list commands"},
     {"version", cads_cli_cmd_version, "firmware build identity"},
     {"uptime", cads_cli_cmd_uptime, "milliseconds since boot"},
-    {"net", cads_cli_cmd_net, "link state, speed, IP address"},
+    {"net", cads_cli_cmd_net, "link state, speed, IP/gateway/DNS, lease"},
     {"echo", cads_cli_cmd_echo, "echo the rest of the line back"},
 };
 #define CADS_CLI_COMMAND_COUNT (sizeof(cads_cli_commands) / sizeof(cads_cli_commands[0]))
@@ -72,6 +72,16 @@ static void cads_cli_cmd_uptime(cads_cli_session_t* session, const char* args) {
     cads_cli_write(session, " ms\r\n");
 }
 
+static void cads_cli_write_ipv4(cads_cli_session_t* session, uint32_t ip) {
+    if(ip == 0u) {
+        cads_cli_write(session, "none");
+        return;
+    }
+    char text[16];
+    cads_fmt_ipv4(text, sizeof(text), ip);
+    cads_cli_write(session, text);
+}
+
 static void cads_cli_cmd_net(cads_cli_session_t* session, const char* args) {
     (void)args;
     cads_net_status_t status;
@@ -86,16 +96,15 @@ static void cads_cli_cmd_net(cads_cli_session_t* session, const char* args) {
     cads_cli_write_uint(session, status.speed_mbit);
     cads_cli_write(session, status.full_duplex ? "M full" : "M half");
 
-    if(status.ip_addr == 0u) {
-        cads_cli_write(session, " ip=none (no lease)\r\n");
-    } else {
-        cads_cli_write(session, " ip=");
-        for(int octet = 3; octet >= 0; octet--) {
-            cads_cli_write_uint(session, (status.ip_addr >> (octet * 8)) & 0xFFu);
-            if(octet > 0) cads_cli_write(session, ".");
-        }
-        cads_cli_write(session, "\r\n");
-    }
+    cads_cli_write(session, " ip=");
+    cads_cli_write_ipv4(session, status.ip_addr);
+    cads_cli_write(session, status.ip_addr == 0u ? " (no lease)" : (status.dhcp_bound ? " (dhcp)" : " (static)"));
+
+    cads_cli_write(session, " gw=");
+    cads_cli_write_ipv4(session, status.gw_addr);
+    cads_cli_write(session, " dns=");
+    cads_cli_write_ipv4(session, status.dns_addr);
+    cads_cli_write(session, "\r\n");
 }
 
 static void cads_cli_cmd_echo(cads_cli_session_t* session, const char* args) {

@@ -682,8 +682,52 @@ driver above.
       reaching the MAC, the identical structural cause already found and
       documented for ping, not a new bug. `d 8` immediately after
       confirmed no regression to the app tree.
-- [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
-      portable status struct and a UI. Needs RMII. S.
+- [x] DHCP lease/gateway/DNS display. Extended the portable
+      `cads_net_status_t` (`cads/net/net.h`) with `gw_addr`, `dns_addr`
+      and `dhcp_bound`, then wired all three into every display that
+      already showed `ip_addr`, not just one: `apps/netinfo` (three new
+      rows: Lease/Gateway/DNS server), `cads_cli`'s `net` command
+      (`gw=`/`dns=` appended, plus `(dhcp)`/`(static)`/`(no lease)` next to
+      the IP), and `explorer_http_demo.c`'s status page (three new table
+      rows, its selftest extended to match). `dhcp_bound` is
+      `dhcp_supplied_address(netif)`, an existing lwIP helper - free, no
+      new state. Gateway is `netif_ip4_gw()` - also free, DHCP already
+      writes it via `netif_set_addr()` as an ordinary part of binding a
+      lease.
+      DNS needed real new capability: `dns_getserver()` only exists with
+      `LWIP_DNS=1`, and DHCP only parses/stores the DNS option (via
+      `dns_setserver()`, called from inside `dhcp.c` itself) when
+      `LWIP_DHCP_MAX_DNS_SERVERS` is nonzero - there is no way to read a
+      DHCP-provided DNS address without both. Cost real RAM: lwIP's
+      default `dns_table_entry` carries a 256-byte hostname buffer per
+      slot (`DNS_TABLE_SIZE` slots) for active hostname *resolution*,
+      which this firmware never performs - trimmed `DNS_TABLE_SIZE` and
+      `DNS_MAX_SERVERS` to 1 each (this only ever needs to *display* the
+      one DNS address DHCP handed over) before linking, rather than
+      finding out the hard way for a fourth time this milestone that the
+      default cost more than the 48K headroom guard allows. Net RAM
+      change: +32 bytes over the last (already RAM-checked) task - well
+      inside the ~200+ byte margin that task left.
+      While touching `cads_http_format_row_ip()`/`apps/netinfo`'s own
+      `cads_netinfo_format_ip()` for the new rows, replaced both with the
+      shared `cads_fmt_ipv4()` toolbox formatter (added during the ARP
+      scan task) rather than leaving them as two more hand-rolled
+      dotted-quad loops - in scope this time because this task was
+      already rewriting both functions for the new fields, unlike the ARP
+      scan task where touching them would have been an unrelated,
+      unrequested refactor of working code.
+      VERIFIED on hardware: `explorer_http_demo.c`'s selftest printed
+      correct real rows for all three new fields (`Lease: none`,
+      `Gateway: none`, `DNS server: none` - honest, matching this bench's
+      already-established total absence of a DHCP server, not a bug);
+      `cads_cli`'s `net` command over a real interactive serial session
+      returned `link up 100M full ip=none (no lease) gw=none dns=none`,
+      confirming the same data through the second display path. `d 8`
+      (the app tree, now drawing `apps/netinfo`'s three extra rows)
+      completed fault-free. Not confirmed: the netinfo view's own visual
+      layout on the physical panel - this session's tooling cannot drive
+      touch/button input to navigate there, the same limit noted against
+      the filebrowser app earlier in M4/M5's log, not new to this task.
 - [ ] iperf-style throughput test via lwIP's lwiperf. Expect well under
       100 Mbit/s — the STM32 ETH has checksum offload but the CPU is still
       the bottleneck on small packets. Needs RMII. M. lwiperf's client mode
@@ -807,6 +851,33 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's ninth task: DHCP lease/gateway/DNS display. Extended
+  `cads_net_status_t` with `gw_addr`/`dns_addr`/`dhcp_bound` and wired all
+  three into every existing network display at once - `apps/netinfo`,
+  `cads_cli`'s `net` command, and the HTTP status page's selftest - rather
+  than just one. Gateway and lease-bound state were free
+  (`netif_ip4_gw()`, `dhcp_supplied_address()`, both already-existing lwIP
+  helpers over state DHCP already maintains); DNS needed real new
+  capability (`LWIP_DNS=1`, since `dns_getserver()`/DHCP's own DNS-option
+  parsing do not exist without it), trimmed to `DNS_TABLE_SIZE=1`,
+  `DNS_MAX_SERVERS=1` up front so the default's 256-byte-per-slot hostname
+  buffer (built for active resolution this firmware never does) did not
+  blow the 48K RAM guard for a fourth time this milestone - net cost this
+  time: +32 bytes, comfortably inside the margin the ping task fought to
+  win back. Also replaced two more hand-rolled dotted-quad loops
+  (`cads_http_format_row_ip()`, `apps/netinfo`'s own IP formatter) with
+  the shared `cads_fmt_ipv4()` - in scope here because this task was
+  already rewriting both for the new fields, unlike the ARP scan task
+  where the same duplication was correctly left alone as out of scope.
+  VERIFIED on hardware: the HTTP selftest and a real interactive `cads_cli`
+  `net` session both showed correct live data for all three new fields
+  (`none`/`none`/`none` - honest, matching this bench's already-established
+  lack of a DHCP server); the app tree, now drawing netinfo's three extra
+  rows, ran fault-free. The netinfo view's own on-panel layout was not
+  visually confirmed - this session's tooling has no way to drive
+  touch/button input to navigate there, the same pre-existing limit noted
+  against the filebrowser app in M4.
 
 - 2026-08-20 — M5's eighth task: traceroute (ICMP TTL sweep). New explorer
   command `T`, driving a new `cads_net_traceroute_probe()` in

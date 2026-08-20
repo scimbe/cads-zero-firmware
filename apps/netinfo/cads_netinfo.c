@@ -29,6 +29,9 @@ typedef struct {
     uint16_t speed_mbit; /**< 0 = unknown or down                           */
     bool full_duplex;
     char ip_address[16]; /**< "255.255.255.255" + NUL; "" = not assigned    */
+    char gateway[16];
+    char dns_server[16];
+    bool dhcp_bound;
 } cads_netinfo_status_t;
 
 typedef struct {
@@ -47,11 +50,7 @@ static void cads_netinfo_format_ip(uint32_t ip_addr, char* out, size_t size) {
         cads_str_copy(out, size, "");
         return;
     }
-    size_t pos = 0u;
-    for(int octet = 3; octet >= 0; octet--) {
-        pos += cads_fmt_uint(out + pos, size - pos, (ip_addr >> (octet * 8)) & 0xFFu);
-        if(octet > 0) pos = cads_str_append(out, size, ".");
-    }
+    cads_fmt_ipv4(out, size, ip_addr);
 }
 
 static void cads_netinfo_refresh(cads_netinfo_t* app) {
@@ -63,7 +62,10 @@ static void cads_netinfo_refresh(cads_netinfo_t* app) {
     app->status.link_up = net.link_up;
     app->status.speed_mbit = net.speed_mbit;
     app->status.full_duplex = net.full_duplex;
+    app->status.dhcp_bound = net.dhcp_bound;
     cads_netinfo_format_ip(net.ip_addr, app->status.ip_address, sizeof(app->status.ip_address));
+    cads_netinfo_format_ip(net.gw_addr, app->status.gateway, sizeof(app->status.gateway));
+    cads_netinfo_format_ip(net.dns_addr, app->status.dns_server, sizeof(app->status.dns_server));
 }
 
 static void cads_netinfo_draw_field(
@@ -115,6 +117,14 @@ static void cads_netinfo_draw(cads_rect_t area, void* context) {
     cads_netinfo_draw_field(area, row++, "Speed:", speed_text, CadsColorGray);
     cads_netinfo_draw_field(
         area, row++, "IP address:", s->ip_address[0] != '\0' ? s->ip_address : "-", CadsColorGray);
+    cads_netinfo_draw_field(
+        area, row++, "Lease:",
+        !s->link_up ? "-" : (s->dhcp_bound ? "DHCP" : (s->ip_address[0] != '\0' ? "static" : "none")),
+        CadsColorGray);
+    cads_netinfo_draw_field(
+        area, row++, "Gateway:", s->gateway[0] != '\0' ? s->gateway : "-", CadsColorGray);
+    cads_netinfo_draw_field(
+        area, row++, "DNS server:", s->dns_server[0] != '\0' ? s->dns_server : "-", CadsColorGray);
 
     row++;
     cads_netinfo_draw_line(area, row++, "Display and Ethernet time-share pin PA7 during a redraw.");

@@ -1,10 +1,11 @@
 /*
  * CaDS Zero - lwIP configuration for the itsboard target.
  *
- * v1 (docs/ROADMAP.md M5, "Bare-metal ETH MAC driver + lwIP netif") brought
- * the netif up and let IPv4/ARP/ICMP/UDP/TCP run with no address configured.
- * This is the next bullet ("DHCP, link state, status bar indicator"): DHCP is
- * now on, started/stopped by cads_net_board.c as the link comes up and down.
+ * Grown one M5 bullet at a time - each block below still carries the
+ * comment explaining why it exists and, where relevant, what it cost in
+ * RAM against targets/itsboard/linker/cads_itsboard.ld's own headroom
+ * guard, rather than being collapsed into a single "here is the config"
+ * dump once the shape settled.
  */
 
 #ifndef CADS_LWIPOPTS_H
@@ -61,7 +62,22 @@
 #define LWIP_RAW                    1
 #define LWIP_UDP                    1
 #define LWIP_TCP                    1
-#define LWIP_DNS                    0
+
+/* Needed to display the DHCP-provided DNS server address
+ * (docs/ROADMAP.md's "DHCP lease/gateway/DNS display"): dns_getserver()
+ * only exists when this is on, and dhcp.c only parses/stores the DNS
+ * option (via dns_setserver()) when LWIP_DHCP_MAX_DNS_SERVERS is nonzero
+ * below - neither has anything to do with actually resolving a hostname,
+ * which this firmware never does. DNS_TABLE_SIZE/DNS_MAX_SERVERS are
+ * trimmed to the minimum (1 each) because the default dns_table_entry
+ * carries a 256-byte hostname buffer per slot for exactly that unused
+ * resolution machinery - see targets/itsboard/linker/cads_itsboard.ld's
+ * `ASSERT(__cads_heap_size >= 48K, ...)` headroom guard, already hit
+ * three times this milestone (M5's MAC/lwIP, HTTP status page, ping). */
+#define LWIP_DNS                    1
+#define DNS_TABLE_SIZE              1
+#define DNS_MAX_SERVERS             1
+#define LWIP_DHCP_MAX_DNS_SERVERS   1
 
 #define LWIP_DHCP                   1
 
