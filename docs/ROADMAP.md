@@ -69,7 +69,7 @@ Prove the toolchain, the boot path and the display path on real silicon.
       measurable today. Revisit when the scheduler lands and those cycles are
       contended.
 
-## M2 — Kernel  `[~]`
+## M2 — Kernel  `[x]`
 
 - [x] FreeRTOS integration, static allocation only — no kernel heap at all.
       Task stacks in CCM (5 KB of 64 KB used), all DMA-capable SRAM left free.
@@ -128,11 +128,49 @@ Prove the toolchain, the boot path and the display path on real silicon.
       before `cads_tasks_start()` is silent at the default Info minimum by
       design, proving a suppressed level costs nothing on the wire on every
       single boot rather than something a test has to go looking for.
-- [ ] Fault handlers that dump the stacked frame before halting
+- [x] Fault handlers that dump the stacked frame before halting —
+      `targets/itsboard/startup/fault_handlers.c`, strong definitions that
+      override the generated vector table's weak
+      `HardFault`/`MemManage`/`BusFault`/`UsageFault` aliases (the generated
+      file itself is untouched). The standard Cortex-M technique, not
+      anything from flipperzero-firmware: a naked trampoline reads
+      `EXC_RETURN` out of `LR` to pick MSP or PSP *before* any C prologue can
+      overwrite it, branches to a plain C function with the stack pointer as
+      its argument, which dumps R0-R3/R12/LR/PC/xPSR plus `SCB->CFSR`/`HFSR`
+      (and `MMFAR`/`BFAR` when their validity bits say they mean something),
+      then `bkpt` and spins - same halt-don't-reset philosophy as
+      `Default_Handler`, so the evidence survives for an attached debugger.
+      `cads_fault_init()` (called from `hal_init.c`, right after the console
+      exists) enables the three sub-fault handlers in `SCB->SHCSR` - without
+      it every fault still gets caught, but only as an undifferentiated
+      HardFault, which is the reset default and defeats the point of having
+      four distinct handlers. Writes straight to `cads_hal_console_write()`
+      and `cads/toolbox/fmt.h`'s stateless hex formatter, nothing else - a
+      fault handler runs with unknown scheduler and stack state, not a place
+      to trust `cads_log`'s buffering or a mutex that might itself be the
+      thing that faulted. Board-only, no simulator equivalent (there is no
+      Cortex-M exception model to port).
+      VERIFIED on hardware, 2026-08-19: a new explorer command (`z FAULT`,
+      guarded - plain `z` refuses and explains why, since this halts the
+      firmware for good) executes `udf #0`, a deliberately-undefined
+      instruction whose only job is triggering this exact test. Real
+      captured output: `UsageFault`, `CFSR = 0x00010000` (bit 16 =
+      UNDEFINSTR, exactly what UDF should set and nothing else), `HFSR =
+      0x00000000` (proving this was handled as UsageFault directly, not
+      escalated - confirms `cads_fault_init()`'s `SHCSR` enable is really
+      working), `MMFAR`/`BFAR` correctly absent since their validity bits
+      were not set. Board then produced no further output, consistent with
+      a clean halt. Reflashed afterward and reverified: M0's boot self-test
+      still 10/10 PASS.
 - [x] **HARDWARE GATE M2 PASSED** 2026-08-18: 10 minutes under the scheduler
       with forced full-screen redraws, 30 samples, no silent interval, no task
       lost, stack high-water marks converged. Used: ui 224 B of 2048,
-      input 132 B of 1024, console 372 B of 2048.
+      input 132 B of 1024, console 372 B of 2048. Every checklist item above
+      is now also individually hardware-verified as of 2026-08-20
+      (`cads_pubsub`/`cads_record`, `cads_log`, the fault handlers), so this
+      milestone is complete rather than re-run as one combined soak - each
+      addition got its own real-hardware proof at the point it landed, and
+      M0's boot self-test stayed 10/10 PASS after every one of them.
 
 ## M3 — Input and GUI framework  `[~]`
 
@@ -362,6 +400,25 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — Built the fault handlers, closing the last open item in M2 -
+  the milestone is now `[x]`. `targets/itsboard/startup/fault_handlers.c`
+  provides strong `HardFault`/`MemManage`/`BusFault`/`UsageFault` handlers
+  that override the generated vector table's weak aliases without touching
+  the generated file. Standard Cortex-M technique (a naked trampoline reads
+  `EXC_RETURN`'s stack-pointer bit out of `LR` before any C prologue can
+  disturb it, branches to a C function that dumps the frame and
+  `CFSR`/`HFSR`, then halts) - textbook, not flipperzero-firmware.
+  `cads_fault_init()` enables the three sub-fault handlers in `SCB->SHCSR`,
+  without which every fault still gets caught but only as an
+  undifferentiated HardFault, the reset default. Verified for real, not
+  just linked: a new guarded explorer command (`z FAULT`) executes `udf #0`
+  and the captured hardware output shows exactly the right thing - genuine
+  `UsageFault` (not escalated to `HardFault`, proving the `SHCSR` enable
+  works), `CFSR` bit 16 (`UNDEFINSTR`) set and nothing else, `MMFAR`/`BFAR`
+  correctly suppressed since their validity bits were not set. Board went
+  silent afterward (a clean halt, not a crash loop); reflashed and
+  reverified M0's boot self-test still 10/10 PASS.
 
 - 2026-08-20 — Built `cads_log` (`modules/toolbox`), the last piece of M2's
   bundled service-registry line. One global sink rather than a caller-owned

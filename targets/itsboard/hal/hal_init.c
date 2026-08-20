@@ -13,11 +13,17 @@
 void cads_hal_time_init(void);
 void cads_hal_io_init(void);
 void cads_hal_touch_init(void);
+void cads_fault_init(void);
 
 void cads_hal_init(void) {
     cads_hal_time_init();
     cads_hal_io_init();
     cads_hal_console_init(CADS_CONSOLE_BAUD);
+    /* After the console, not before: a MemManage/Bus/UsageFault before this
+     * point would still be caught (everything escalates to HardFault until
+     * cads_fault_init() runs), but the dump it writes has nowhere to go
+     * until the console exists. See startup/fault_handlers.c. */
+    cads_fault_init();
     cads_hal_spi_init();
     cads_hal_touch_init();
     cads_hal_display_init();

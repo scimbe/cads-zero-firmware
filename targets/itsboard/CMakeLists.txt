@@ -3,6 +3,7 @@
 add_library(cads_hal_itsboard STATIC
     startup/startup_stm32f429.c
     startup/vectors_stm32f429.c
+    startup/fault_handlers.c
     hal/hal_clock.c
     hal/hal_time.c
     hal/hal_console.c
@@ -33,6 +34,12 @@ target_compile_definitions(cads_hal_itsboard PUBLIC
     CADS_TARGET_ITSBOARD=1
     CADS_SPI_MOSI_ON_PB5=${CADS_SPI_MOSI_ON_PB5}
 )
+
+# startup/fault_handlers.c formats hex dumps through cads/toolbox/fmt.h - the
+# one place this library reaches into the toolbox instead of staying purely
+# register-level, because hand-rolling hex formatting a second time is worse
+# than one small dependency on code already proven not to allocate or lock.
+target_link_libraries(cads_hal_itsboard PUBLIC cads_toolbox)
 
 # The generated vector table must track the CMSIS header it was derived from.
 add_custom_target(cads_regen_vectors

@@ -35,8 +35,10 @@
 #include "tasks.h"
 #include "cads/toolbox/pubsub.h"
 #include "cads/toolbox/record.h"
+#include "cads/toolbox/str.h"
 #include "explorer_app_demo.h"
 #include "explorer_eth.h"
+#include "explorer_fault_test.h"
 #include "explorer_gui_demo.h"
 #include "explorer_kernel_test.h"
 
@@ -330,6 +332,7 @@ static void cads_help(void) {
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
         "#   r          toolbox test: cads_pubsub + cads_record\r\n"
+        "#   z FAULT    trip UsageFault deliberately - HALTS FOR GOOD, needs a reflash\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
 }
 
@@ -440,6 +443,7 @@ void cads_explorer_run(void) {
             }
             case 'q': cads_touch_soak(cads_parse_uint(argument)); break;
             case 'r': cads_toolbox_selftest(); break;
+            case 'z': cads_explorer_fault_test(argument); break;
             default:
                 cads_probe_puts("# unknown, '?' for help\r\n");
                 break;
