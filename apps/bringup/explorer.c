@@ -44,6 +44,7 @@
 #include "explorer_filebrowser_demo.h"
 #include "explorer_gui_demo.h"
 #include "explorer_http_demo.h"
+#include "explorer_iperf_demo.h"
 #include "explorer_kernel_test.h"
 #include "explorer_ping_demo.h"
 #include "explorer_screencast_demo.h"
@@ -343,6 +344,7 @@ static void cads_help(void) {
         "#   A <hex-base> [count]  ARP scan, e.g. A c0a80100 20, default count 32\r\n"
         "#   P <hex-target> [count]  ping, e.g. P c0a80101 4, default count 4\r\n"
         "#   T <hex-target> [max-hops]  traceroute, e.g. T c0a80101 16, default 16\r\n"
+        "#   I <sec>    iperf2-compatible TCP server: TCP :5001, default 30s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -418,6 +420,7 @@ void cads_explorer_run(void) {
                 cads_explorer_traceroute_demo(target, max_hops);
                 break;
             }
+            case 'I': cads_explorer_iperf_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;

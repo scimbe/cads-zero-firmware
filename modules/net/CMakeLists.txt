@@ -31,7 +31,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # lwIP's own file lists (lwipcore/lwipcore4/lwipnetif) - only the pieces
     # this build actually turns on in lwipopts.h: core + IPv4 + the Ethernet
     # netif glue (ethernet.c). No lwipcore6 (LWIP_IPV6=0), no lwipapi
-    # (LWIP_NETCONN=LWIP_SOCKET=0 - raw API only), no apps.
+    # (LWIP_NETCONN=LWIP_SOCKET=0 - raw API only). One app, lwipiperf -
+    # apps/bringup/explorer_iperf_demo.c's lwiperf_start_tcp_server_default()
+    # call needs it; every other lwipallapps_SRCS entry (httpd, mdns, tftp,
+    # ...) stays out, this firmware hand-rolls its own HTTP/CLI/screencast
+    # protocols instead (see those files' own headers for why).
     set(LWIP_DIR ${CADS_ROOT}/lib/lwip)
     include(${LWIP_DIR}/src/Filelists.cmake)
 
@@ -39,7 +43,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # warnings are not ours to fix, so it gets its own library without
     # cads_flags (see modules/storage/CMakeLists.txt's cads_littlefs for the
     # same reasoning).
-    add_library(cads_lwip STATIC ${lwipcore_SRCS} ${lwipcore4_SRCS} ${lwipnetif_SRCS})
+    add_library(cads_lwip STATIC ${lwipcore_SRCS} ${lwipcore4_SRCS} ${lwipnetif_SRCS} ${lwipiperf_SRCS})
     target_include_directories(cads_lwip PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include       # lwipopts.h, arch/cc.h
         ${LWIP_DIR}/src/include

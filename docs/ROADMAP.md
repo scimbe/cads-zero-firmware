@@ -728,12 +728,38 @@ driver above.
       layout on the physical panel - this session's tooling cannot drive
       touch/button input to navigate there, the same limit noted against
       the filebrowser app earlier in M4/M5's log, not new to this task.
-- [ ] iperf-style throughput test via lwIP's lwiperf. Expect well under
-      100 Mbit/s — the STM32 ETH has checksum offload but the CPU is still
-      the bottleneck on small packets. Needs RMII. M. lwiperf's client mode
-      would hit the same routing precondition as ping/traceroute above on
-      this bench; server mode (this device answering an external iperf
-      client) does not need an outbound route at all and is unaffected.
+- [x] iperf-style throughput test via lwIP's lwiperf. New explorer command
+      `I <sec>` / `apps/bringup/explorer_iperf_demo.c`, server mode only -
+      `lwiperf_start_tcp_server_default()` on port 5001, the classic
+      iperf2 default, so a real `iperf -c <this device's IP>` (once it has
+      one) needs no non-default flags. Client mode intentionally not
+      built: it would hit the exact `ip4_route()` precondition ping and
+      traceroute already found and documented, for no benefit - there is
+      nothing on this bench for this device to measure throughput to
+      either way.
+      Genuinely free of the RAM cost every other M5 networking bullet
+      since the MAC/lwIP task has had to fight for: `lwiperf.c`'s per-
+      session state comes from `mem_malloc()` (lwIP's own heap, already
+      budgeted via `MEM_SIZE`) when a real connection arrives, not a
+      static allocation, and its one large buffer
+      (`lwiperf_txbuf_const[1600]`, client-mode filler data this server-
+      only build never even calls) is `const` - flash, not RAM. Confirmed,
+      not assumed: RAM usage was byte-for-byte identical before and after
+      wiring this in.
+      The measurement logic itself is not reimplemented here - vendored,
+      third-party lwIP code doing exactly what it already does for many
+      other projects, the same "wire in the well-tested thing" choice
+      already made for littlefs and for lwIP as a whole, rather than
+      hand-rolling a throughput test the way this file's CLI/HTTP/
+      screencast siblings hand-roll their own small protocols.
+      VERIFIED on hardware: `I 10` started the server on port 5001 and ran
+      the full window with no fault; `d 8` immediately after confirmed no
+      regression to the app tree. As with every other TCP server built
+      this milestone (`cads_cli`, the screencast, the HTTP status page),
+      a live external `iperf` client could not be run against it - no
+      network path from the agent's shell to the board's bench segment -
+      so no throughput report printed, which is the correct, expected
+      result of nothing ever connecting, not a defect in the server.
 - [ ] Configurable-rate packet generator (DMA descriptor ring + timer). Needs
       RMII. M.
 - [ ] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
@@ -851,6 +877,24 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's tenth task: iperf throughput test. New explorer command
+  `I`, wiring lwIP's own vendored `lwiperf.c` in server mode (port 5001,
+  iperf2's default) rather than reimplementing throughput measurement -
+  the same "use the well-tested vendored thing" choice already made for
+  littlefs and lwIP itself. Client mode deliberately not built: it would
+  hit the exact `ip4_route()` wall ping/traceroute already documented,
+  for no benefit on a bench with nothing to measure throughput to anyway.
+  First M5 networking bullet all milestone that did NOT need a RAM fight:
+  `lwiperf.c`'s session state is `mem_malloc()`'d from the pool already
+  budgeted, not statically allocated, and its one large buffer is `const`
+  (flash). Confirmed rather than assumed: RAM usage was identical before
+  and after.
+  VERIFIED on hardware: server started on port 5001, ran its full window
+  fault-free, app tree unaffected afterward. Same limit as every other
+  TCP server built this milestone: no live external iperf client could
+  be run against it from this environment, so no throughput number - the
+  honest, expected result of nothing connecting, not a defect.
 
 - 2026-08-21 — M5's ninth task: DHCP lease/gateway/DNS display. Extended
   `cads_net_status_t` with `gw_addr`/`dns_addr`/`dhcp_bound` and wired all
