@@ -391,7 +391,45 @@ Prove the toolchain, the boot path and the display path on real silicon.
       live together) ran fault-free for 15 s, 5 frames flushed - not
       photographed this round, same open camera-framing item as the
       filebrowser check.
-- [ ] `cads_cli` over TCP and over the serial console, shared command table
+- [x] `cads_cli` over TCP and over the serial console, shared command table.
+      New `modules/cli/`: `cads/cli/cli.h` is fully portable (no HAL, no
+      lwIP) - one `cads_cli_session_t` fed a byte at a time by whichever
+      transport owns it, dispatching into one static command table
+      (`help`, `version`, `uptime`, `net`, `echo`) compiled once and shared
+      by both transports. Deliberately NOT a merge with
+      `apps/bringup/explorer.c` - that is a ~30-command, hardware-verified
+      bring-up diagnostic tool with its own single-letter conventions;
+      `cads_cli` is a second, smaller, general-purpose command set that the
+      explorer specifically is not (reachable over the network). TCP
+      transport (`cads/cli/cli_tcp.h`) is lwIP raw-API, board only, same
+      board/host split as `cads/net/net.h` - one connection at a time, a
+      second concurrent attempt is closed immediately rather than let two
+      sessions dispatch into the same table unsynchronised. Serial
+      transport is a new explorer command (`j <sec>`,
+      `apps/bringup/explorer_cli_demo.c`) that hands `cads_hal_console_read()`
+      to a `cads_cli_session_t` for the run's duration, the same
+      one-owner-at-a-time discipline `explorer_gui_demo.c`/
+      `explorer_app_demo.c` already use for the display; fully portable
+      itself (no board/sim split needed) since `cads_hal_console_read/write()`
+      and `cads/net/net.h`/`cads/cli/cli_tcp.h` all already have honest
+      simulator-side answers.
+      VERIFIED on hardware: a scripted interactive serial session (`j 20`,
+      then `help`/`net`/`uptime`/`echo hello cads_cli`/an unrecognised
+      command, all sent as real lines over the real UART) got real
+      responses back for every one - `help` listed exactly the five
+      registered commands, `net` correctly reported "100M full" and
+      "no lease" (matching the DHCP task's own finding that this bench has
+      no DHCP server), `uptime` returned a plausible tick count, `echo`
+      round-tripped, the unknown command got a clear error instead of being
+      silently dropped, and the session ended cleanly and handed control
+      back to the explorer with no fault. TCP: `tcp_bind()`/`tcp_listen()`
+      on port 4242 succeeded on real hardware ("TCP listener on port 4242"
+      printed over serial) - a live remote round trip could not be
+      verified from this environment, honestly: the agent's own shell has
+      no network path to the board's isolated bench segment (a different,
+      new kind of limit from "no DHCP server on this bench" - the earlier
+      finding was about the board's environment, this one is about the
+      verifier's).
 - [ ] Screen streaming: framebuffer to a host viewer over TCP
 - [ ] HTTP status page
 
@@ -552,6 +590,29 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's third task: `cads_cli` over TCP and serial, shared
+  command table. New `modules/cli/`: a fully portable session core
+  (`cads/cli/cli.h`, no HAL/lwIP dependency) dispatching into one static
+  table of five commands, plus a board-only lwIP raw-API TCP transport
+  (`cads/cli/cli_tcp.h`) with the same board/host split `cads/net/net.h`
+  established. Deliberately kept separate from `apps/bringup/explorer.c` -
+  that stays the ~30-command bring-up diagnostic tool it already is;
+  `cads_cli` is a second, smaller, general-purpose set reachable over the
+  network, which the explorer specifically is not. Serial reaches it
+  through a new bounded explorer command (`j`), the same
+  hand-it-exclusive-ownership-for-the-duration pattern the GUI/app-tree
+  demos already use, and needed no board/sim split of its own since every
+  primitive underneath it already had an honest simulator answer.
+  VERIFIED on hardware with a real scripted interactive session: `help`,
+  `net`, `uptime`, `echo` and a deliberately-unknown command all sent as
+  real lines over the real UART, all got correct real responses back, and
+  the session tore down cleanly with no fault. TCP: the listener bound and
+  started on port 4242 for real; a live remote connection could not be
+  verified because the agent's own shell has no network path onto the
+  board's isolated bench segment - a different, newly-relevant limit from
+  "no DHCP server on this bench" (the previous task's finding was about
+  the board's environment; this one is about the verifier's).
 
 - 2026-08-20 — M5's second task: DHCP + link state + status bar indicator.
   `LWIP_DHCP=1`; link-up/down now starts/stops the DHCP client. Made

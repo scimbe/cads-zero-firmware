@@ -65,6 +65,10 @@ add_subdirectory(modules/storage)
 # for why the simulator does not pretend to have RMII hardware).
 add_subdirectory(modules/net)
 
+# cads_cli.c (the shared command table) is portable; its TCP transport has
+# the same board/host split as cads/net/net.h and for the same reason.
+add_subdirectory(modules/cli)
+
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(modules/kernel)
 endif()
@@ -122,6 +126,7 @@ add_library(cads_apps STATIC
     apps/bringup/explorer_app_demo.c
     apps/bringup/explorer_storage_test.c
     apps/bringup/explorer_filebrowser_demo.c
+    apps/bringup/explorer_cli_demo.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
@@ -134,7 +139,7 @@ else()
 endif()
 target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
-target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net)
+target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli)
 if(CADS_TARGET STREQUAL "itsboard")
     target_link_libraries(cads_apps PUBLIC cads_kernel)
 endif()
