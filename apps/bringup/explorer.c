@@ -42,6 +42,7 @@
 #include "explorer_fault_test.h"
 #include "explorer_filebrowser_demo.h"
 #include "explorer_gui_demo.h"
+#include "explorer_http_demo.h"
 #include "explorer_kernel_test.h"
 #include "explorer_screencast_demo.h"
 #include "explorer_storage_test.h"
@@ -335,6 +336,7 @@ static void cads_help(void) {
         "#   h <sec>    M5 net gate: bring up lwIP netif, poll, report counters, default 20s\r\n"
         "#   j <sec>    cads_cli live: serial (this console) + TCP :4242, default 30s\r\n"
         "#   S <sec>    screen streaming: TCP :4244, framebuffer + moving marker, default 30s\r\n"
+        "#   H <sec>    HTTP status page: TCP :80, default 30s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -382,6 +384,7 @@ void cads_explorer_run(void) {
             case 'h': cads_explorer_net_test(cads_parse_uint(argument) ?: 20u); break;
             case 'j': cads_explorer_cli_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'S': cads_explorer_screencast_demo(cads_parse_uint(argument) ?: 30u); break;
+            case 'H': cads_explorer_http_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;

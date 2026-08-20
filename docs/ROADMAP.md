@@ -466,7 +466,60 @@ Prove the toolchain, the boot path and the display path on real silicon.
       correctly reported "0 full frame(s) sent" (no viewer ever connected
       to drain any), which is the honest, expected result of that same
       limit, not a defect in the streaming code itself.
-- [ ] HTTP status page
+- [x] HTTP status page. New explorer command `H <sec>` /
+      `apps/bringup/explorer_http_demo.c` (board only, same "single
+      consumer, lives in apps/bringup" reasoning as the screencast). One
+      page, no routing - HTTP/1.0, `Connection: close`, deliberately no
+      `Content-Length` (the browser reads until the close, which is valid
+      HTTP/1.0 and means the body never has to be fully assembled before
+      sending starts). Shows uptime, link state, MAC/IP address, the
+      netif's rx/tx/dropped counters and the MAC's hardware MMC counters -
+      the same data `cads_cli`'s `net` command and `apps/netinfo` already
+      expose, laid out as a page in CaDS's brand colours
+      (#204C86 / #B5C4D8 / #9CB33B).
+      A real bug was found and fixed building this, by code review before
+      any hardware run - not by a crash: the first version assembled the
+      whole ~1.3 KB page in one buffer before sending. That buffer,
+      *including its scratch copy*, lived on the caller's stack at
+      `apps/bringup/tasks.c`'s `CADS_CONSOLE_STACK` (512 words = 2048
+      bytes) and totalled over 2.1 KB in one function's frame alone - a
+      guaranteed stack overflow the moment a real client connected, and
+      one that starting-the-listener-only verification (the bar the
+      `cads_cli`/screencast tasks were checked against) would never have
+      reached, since that code only runs from `tcp_accept()`. The same
+      buffer, as a new `static` global, also pushed this firmware's free
+      RAM under `targets/itsboard/linker/cads_itsboard.ld`'s own
+      `ASSERT(__cads_heap_size >= 48K, ...)` headroom guard - a real,
+      load-bearing check that correctly refused to link rather than a
+      false alarm to silence. Fixed by redesigning as a small phase-based
+      state machine (mirroring `cads_cli`'s/the screencast's already-
+      verified `tcp_sent()`-driven chunked-send pattern): literal HTML
+      segments stream straight out of flash, and only one ~96-byte row
+      buffer is ever live at a time - total added static state is under
+      150 bytes, and the largest local stack variable anywhere in the file
+      is 24 bytes.
+      Because that near-miss showed "the listener starts" is not enough
+      evidence for this class of bug, this task added a direct check
+      nothing else in this session's TCP work had: a selftest
+      (`cads_http_selftest()`, called from the `H` command itself) that
+      exercises the exact same row-formatting functions `cads_http_pump()`
+      calls on a real connection, with real live data, dumping each result
+      over the serial console - no TCP client needed, since these
+      functions are pure C with no `tcp_*` calls in them at all.
+      VERIFIED on hardware: the selftest correctly formatted every row
+      with real data in BOTH the link-down/no-IP state (checked first) and
+      the link-up/100M-full state (checked again after a 3 s
+      autonegotiation wait) - including the MAC address hex+colon
+      formatting, which the earlier CLI/netinfo work had a similar but not
+      identical implementation of and had not exercised in exactly this
+      form before. The listener bound and started on port 80. As with
+      `cads_cli`'s and the screencast's TCP transports, a live remote
+      browser request could not be verified - the agent's shell has no
+      network path to the board's isolated bench segment - so the
+      `tcp_accept()`/chunked-send half of this file rests on the selftest
+      above plus direct analogy to those two already-hardware-verified
+      TCP transports, not on an observed real request. `d 8` immediately
+      after confirmed no regression to the rest of the app tree.
 
 ### The network Swiss-army-knife (verified against DS00001989A, the LAN8742A datasheet)
 
@@ -625,6 +678,36 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's fifth task: HTTP status page. New explorer command `H`,
+  `apps/bringup/explorer_http_demo.c` (board only). Found and fixed a real
+  bug by code review, before any hardware run: the first draft rendered
+  the whole page into one buffer, and that buffer plus its build scratch
+  totalled over 2.1 KB in one function's stack frame - bigger than the
+  console task's entire 2048-byte stack, a guaranteed overflow the moment
+  a real client connected, and one "the listener starts" verification
+  (the bar the previous two TCP tasks were checked against) would never
+  have reached, since that code path only runs from `tcp_accept()`. The
+  same buffer, as a static global, also failed the linker script's own
+  `ASSERT(__cads_heap_size >= 48K, ...)` RAM-headroom guard - correctly,
+  not a false alarm. Redesigned as a small phase-based state machine
+  streaming literal HTML straight from flash plus one shared ~96-byte row
+  buffer, mirroring `cads_cli`'s/the screencast's already-verified
+  `tcp_sent()`-driven chunked-send pattern - total added static state
+  dropped from ~2 KB to under 150 bytes.
+  Because that near-miss showed the existing verification bar was not
+  enough for this class of bug, added something new: a selftest that
+  calls the exact row-formatting functions a real connection would use,
+  with real data, and prints each result over serial - no TCP client
+  needed, since none of those functions touch `tcp_*` at all.
+  VERIFIED on hardware: the selftest produced correct real output in both
+  link-down/no-IP and (after a 3 s autonegotiation wait) link-up/100M-full
+  states, MAC hex-formatting included. The listener bound on port 80. As
+  with the previous two TCP features, a live remote browser request could
+  not be verified - no network path from the agent's shell to the board's
+  bench segment - so the accept/chunked-send half rests on the selftest
+  plus analogy to those two already-verified transports, not on an
+  observed real request.
 
 - 2026-08-20 — M5's fourth task: screen streaming over TCP. New explorer
   command `S`, `apps/bringup/explorer_screencast_demo.c` - single-consumer,
