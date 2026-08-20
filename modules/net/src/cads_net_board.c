@@ -23,6 +23,7 @@
 #include "hal_eth_mdio.h"
 #include "hal_spi.h"
 
+#include "lwip/dhcp.h"
 #include "lwip/init.h"
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
@@ -87,6 +88,15 @@ uint32_t cads_lwip_rand(void) {
 }
 
 void cads_net_init(const uint8_t mac_address[6]) {
+    /* Idempotent: apps/bringup/explorer_eth.c's 'h' command and the real app
+     * tree (apps/bringup/explorer_app_demo.c) both want networking "on" and
+     * neither should have to know whether the other got there first -
+     * calling netif_add() a second time on the same static struct would
+     * corrupt lwIP's netif list, so only the first call does anything. */
+    static bool initialised = false;
+    if(initialised) return;
+    initialised = true;
+
     memcpy(cads_net_mac, mac_address, sizeof(cads_net_mac));
     cads_lwip_rand_state = cads_hal_ticks_ms() | 1u;
 
@@ -113,7 +123,15 @@ static void cads_net_link_check(void) {
         cads_hal_spi_set_eth_datapath_active(true);
         cads_hal_eth_mac_start();
         netif_set_link_up(&cads_netif);
+        /* dhcp_start() is itself safe to call repeatedly (it (re)starts
+         * negotiation rather than erroring on an existing client), so a new
+         * link session always gets a fresh lease attempt. */
+        dhcp_start(&cads_netif);
     } else if(!link_up && cads_net_link_was_up) {
+        /* dhcp_stop(), not dhcp_release_and_stop(): the link is already
+         * down by the time this runs, so there is no carrier left to send a
+         * DHCPRELEASE over - just drop the local client state. */
+        dhcp_stop(&cads_netif);
         cads_hal_eth_mac_stop();
         cads_hal_spi_set_eth_datapath_active(false);
         netif_set_link_down(&cads_netif);

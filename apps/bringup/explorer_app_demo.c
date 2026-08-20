@@ -11,6 +11,7 @@
 
 #include "explorer_app_demo.h"
 
+#include "cads/net/net.h"
 #include "cads_desktop.h"
 #include "cads_gpio.h"
 #include "cads_gui.h"
@@ -19,6 +20,7 @@
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
+#include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
 
 /* desktop, menu, settings, settings-confirm, about, gpio, netinfo. */
@@ -32,7 +34,33 @@ static cads_gui_t s_gui;
 static cads_statusbar_t s_statusbar;
 static cads_softkeys_t s_softkeys;
 
+/*
+ * Slot 0 is the rightmost cell (cads_statusbar.h's own numbering) and is
+ * this firmware's first indicator wired up at all - storage/battery/clock
+ * are still unclaimed slots 1..3 for whoever builds those next.
+ *
+ * Returns a literal string constant, never a formatted buffer:
+ * cads_statusbar_set_indicator() marks a slot dirty by comparing the
+ * pointer it is given against the one it already has (cads_statusbar.h -
+ * "Setting a slot to the pointer it already holds is free and marks
+ * nothing dirty"), so reusing the SAME literal address for an unchanged
+ * state is what makes that comparison work; a scratch buffer reformatted
+ * every call would report a fresh pointer - and therefore fresh damage -
+ * every single tick even when nothing changed.
+ */
+#define CADS_NET_STATUSBAR_SLOT 0u
+
+static const char* cads_net_indicator_text(void) {
+    cads_net_status_t net;
+    cads_net_status(&net);
+    if(!net.link_up) return "no link";
+    if(net.ip_addr == 0u) return "no lease";
+    return net.speed_mbit >= 100u ? "100M" : "10M";
+}
+
 void cads_explorer_app_demo(uint32_t seconds) {
+    cads_net_init(cads_explorer_net_mac());
+
     cads_view_dispatcher_init(
         &s_dispatcher, s_entries, CADS_APP_DEMO_VIEW_CAPACITY, s_stack, CADS_APP_DEMO_STACK_DEPTH);
 
@@ -66,6 +94,8 @@ void cads_explorer_app_demo(uint32_t seconds) {
 
     while(cads_hal_ticks_ms() - start < seconds * 1000u) {
         uint32_t now = cads_hal_ticks_ms();
+        cads_net_poll();
+        cads_statusbar_set_indicator(&s_statusbar, CADS_NET_STATUSBAR_SLOT, cads_net_indicator_text());
         cads_desktop_tick(now);
         cads_gpio_tick(now);
         uint32_t pixels = cads_gui_tick(&s_gui, now);

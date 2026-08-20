@@ -53,4 +53,15 @@ void cads_explorer_eth_mmc(void);
  */
 void cads_explorer_net_test(uint32_t seconds);
 
+/**
+ * The fixed, locally-administered MAC address this firmware calls
+ * cads_net_init() with, everywhere it is called (`h` above,
+ * apps/bringup/explorer_app_demo.c) - one source of truth, since
+ * cads_net_init() ignores the address on every call after the first and two
+ * different constants would make behaviour depend on which caller happened
+ * to run first. Board only, like the rest of this file; the sim never calls
+ * cads_net_init() with a real intent to bring anything up.
+ */
+const uint8_t* cads_explorer_net_mac(void);
+
 #endif /* CADS_EXPLORER_ETH_H */

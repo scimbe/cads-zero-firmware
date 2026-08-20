@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
 #include "cads_hal.h"
@@ -15,21 +16,19 @@
 #define CADS_NETINFO_LABEL_WIDTH 112
 
 /*
- * The Ethernet data path does not exist yet - only MDIO based PHY management
- * (targets/itsboard/hal/hal_eth_mdio.h), and this portable app must not
- * include a targets/ header (docs/reference/module-layout.md; this is the
- * exact mistake already found and fixed in apps/bringup/explorer.c). Every
- * field below is therefore a placeholder except has_network, which comes from
- * cads_hal_board_info(). Once the maintainer exposes PHY status through a
- * portable service, wiring it in is filling in these fields in
- * cads_netinfo_refresh() - the draw path already reads all of them.
+ * cads/net/net.h (modules/net) is the portable service this file's own
+ * comment used to say did not exist yet - two implementations behind one
+ * header, same as cads/storage/flash.h, so this app needs no targets/
+ * header to read real link state (docs/reference/module-layout.md).
+ * has_network still comes from cads_hal_board_info() - a hardware
+ * capability question, independent of whether a cable is plugged in.
  */
 typedef struct {
     bool has_network;    /**< board capability                              */
     bool link_up;
     uint16_t speed_mbit; /**< 0 = unknown or down                           */
     bool full_duplex;
-    const char* ip_address; /**< NULL = not assigned                        */
+    char ip_address[16]; /**< "255.255.255.255" + NUL; "" = not assigned    */
 } cads_netinfo_status_t;
 
 typedef struct {
@@ -43,13 +42,28 @@ static const cads_softkey_t cads_netinfo_keys[] = {
     {CadsKeyBack, "Back"},
 };
 
+static void cads_netinfo_format_ip(uint32_t ip_addr, char* out, size_t size) {
+    if(ip_addr == 0u) {
+        cads_str_copy(out, size, "");
+        return;
+    }
+    size_t pos = 0u;
+    for(int octet = 3; octet >= 0; octet--) {
+        pos += cads_fmt_uint(out + pos, size - pos, (ip_addr >> (octet * 8)) & 0xFFu);
+        if(octet > 0) pos = cads_str_append(out, size, ".");
+    }
+}
+
 static void cads_netinfo_refresh(cads_netinfo_t* app) {
     const cads_board_info_t* info = cads_hal_board_info();
     app->status.has_network = info->has_network;
-    app->status.link_up = false;
-    app->status.speed_mbit = 0u;
-    app->status.full_duplex = false;
-    app->status.ip_address = NULL;
+
+    cads_net_status_t net;
+    cads_net_status(&net);
+    app->status.link_up = net.link_up;
+    app->status.speed_mbit = net.speed_mbit;
+    app->status.full_duplex = net.full_duplex;
+    cads_netinfo_format_ip(net.ip_addr, app->status.ip_address, sizeof(app->status.ip_address));
 }
 
 static void cads_netinfo_draw_field(
@@ -100,7 +114,7 @@ static void cads_netinfo_draw(cads_rect_t area, void* context) {
         s->link_up ? CadsColorAccent : CadsColorRed);
     cads_netinfo_draw_field(area, row++, "Speed:", speed_text, CadsColorGray);
     cads_netinfo_draw_field(
-        area, row++, "IP address:", s->ip_address != NULL ? s->ip_address : "-", CadsColorGray);
+        area, row++, "IP address:", s->ip_address[0] != '\0' ? s->ip_address : "-", CadsColorGray);
 
     row++;
     cads_netinfo_draw_line(area, row++, "Display and Ethernet time-share pin PA7 during a redraw.");

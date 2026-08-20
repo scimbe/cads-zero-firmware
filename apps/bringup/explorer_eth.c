@@ -258,7 +258,11 @@ void cads_explorer_eth_status(void) {
  * this bullet scoped to "the netif exists and passes frames" per
  * modules/net/include/lwipopts.h's file header.
  */
-static const uint8_t cads_net_test_mac[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+static const uint8_t cads_net_mac_value[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+
+const uint8_t* cads_explorer_net_mac(void) {
+    return cads_net_mac_value;
+}
 
 /*
  * A deliberate, unambiguous TX proof, independent of whatever the LAN
@@ -278,7 +282,7 @@ static void cads_net_send_probe_frame(void) {
     uint8_t frame[60]; /* Ethernet minimum frame size, CRC excluded (the MAC appends that) */
     memset(frame, 0, sizeof(frame));
     memset(frame, 0xFFu, 6u); /* dest: broadcast */
-    memcpy(frame + 6, cads_net_test_mac, 6u); /* src */
+    memcpy(frame + 6, cads_net_mac_value, 6u); /* src */
     frame[12] = 0x88u;
     frame[13] = 0xB5u; /* ethertype */
     bool sent = cads_hal_eth_mac_transmit(frame, sizeof(frame));
@@ -288,7 +292,7 @@ static void cads_net_send_probe_frame(void) {
 void cads_explorer_net_test(uint32_t seconds) {
     static bool initialised = false;
     if(!initialised) {
-        cads_net_init(cads_net_test_mac);
+        cads_net_init(cads_net_mac_value);
         initialised = true;
         cads_probe_puts("# net: initialised, mac=02:CA:D5:5E:00:01\r\n");
     }

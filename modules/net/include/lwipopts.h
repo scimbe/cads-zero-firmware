@@ -1,12 +1,10 @@
 /*
  * CaDS Zero - lwIP configuration for the itsboard target.
  *
- * Scope for this v1 (docs/ROADMAP.md M5, "Bare-metal ETH MAC driver + lwIP
- * netif"): bring the netif up and let IPv4/ARP/ICMP/UDP/TCP run with no
- * address configured yet. DHCP and the status-bar link indicator are their
- * own, later roadmap bullets - not on by default here, so this bullet stays
- * scoped to "the netif exists and passes frames" rather than growing into
- * the next one.
+ * v1 (docs/ROADMAP.md M5, "Bare-metal ETH MAC driver + lwIP netif") brought
+ * the netif up and let IPv4/ARP/ICMP/UDP/TCP run with no address configured.
+ * This is the next bullet ("DHCP, link state, status bar indicator"): DHCP is
+ * now on, started/stopped by cads_net_board.c as the link comes up and down.
  */
 
 #ifndef CADS_LWIPOPTS_H
@@ -44,9 +42,7 @@
 #define LWIP_TCP                    1
 #define LWIP_DNS                    0
 
-/* Off for this bullet - see file header. cads_hal_eth_mac_init() is called
- * with a fixed address today; DHCP wiring is the next roadmap bullet. */
-#define LWIP_DHCP                   0
+#define LWIP_DHCP                   1
 
 #define LWIP_NETIF_LINK_CALLBACK    1
 #define LWIP_NETIF_STATUS_CALLBACK  1

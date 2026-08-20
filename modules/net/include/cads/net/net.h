@@ -32,13 +32,15 @@ typedef struct {
 } cads_net_status_t;
 
 /**
- * Bring the network stack up.
+ * Bring the network stack up: netif, DHCP client.
  *
  * `mac_address` is this device's 6-byte address on the wire; the caller owns
  * choosing it (see apps/bringup for the locally-administered scheme this
- * firmware uses). No IP address is configured by this call - see
- * modules/net/include/lwipopts.h's file header for why DHCP is a later
- * bullet, not this one.
+ * firmware uses). Idempotent - only the first call across the whole firmware
+ * image does anything, so independent callers that each just want
+ * networking "on" (a diagnostic command, the real app tree) do not need to
+ * coordinate who calls this first, and `mac_address` on any call after the
+ * first is ignored.
  */
 void cads_net_init(const uint8_t mac_address[6]);
 

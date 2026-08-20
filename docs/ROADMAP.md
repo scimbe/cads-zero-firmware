@@ -351,7 +351,46 @@ Prove the toolchain, the boot path and the display path on real silicon.
       yet been observed flowing through it. Revisit once DHCP or the ARP
       scanner give this device a reason to receive something, or once the
       bench has another active host on the same segment.
-- [ ] DHCP, link state, status bar indicator
+- [x] DHCP, link state, status bar indicator. `LWIP_DHCP=1`;
+      `cads_net_board.c`'s link-state machine now calls `dhcp_start()` on
+      every link-up (safe to call repeatedly - it restarts negotiation
+      rather than erroring) and `dhcp_stop()` on link-down (not
+      `dhcp_release_and_stop()` - by the time that branch runs the carrier
+      is already gone, so there is no link left to send a DHCPRELEASE over).
+      `cads_net_init()` is now idempotent (a static guard, first call wins,
+      `mac_address` ignored after) so the diagnostic command (`h`) and the
+      real app tree can both call it without coordinating who goes first.
+      `apps/netinfo/cads_netinfo.c` - which had documented its own
+      placeholder as waiting on exactly this - now reads real
+      `cads_net_status()` data instead of hardcoded "not connected"/`NULL`;
+      a small dotted-quad formatter was needed since the widget wants a
+      `const char*` and the status struct carries a `uint32_t`.
+      Status bar: `apps/bringup/explorer_app_demo.c` (the current stand-in
+      for a "real" production task loop - M6 has not wired one yet) now
+      calls `cads_net_poll()` and `cads_statusbar_set_indicator()` on slot 0
+      every tick. The widget marks a slot dirty by POINTER identity, not
+      content (`cads_statusbar.h`: "free and marks nothing dirty" when the
+      same pointer is set again) - so the indicator function returns one of
+      three fixed string literals ("no link" / "no lease" / "100M" or
+      "10M") rather than formatting into a scratch buffer, which would have
+      reported a fresh pointer, and therefore fresh damage, every tick even
+      when nothing changed. Slots 1-3 (storage, battery-or-load, clock per
+      `cads_statusbar.h`'s own comment) remain unclaimed for later.
+      VERIFIED on hardware: link came up 100 Mbit full duplex and the DHCP
+      client visibly did its job - 5 DHCPDISCOVER broadcasts went out
+      (`cads_net_status().tx_frames` and the MAC's own `tx_good` MMC counter
+      agree: `tx_good` = 5 DHCP + 1 deliberate probe frame = 6). No
+      DHCPOFFER ever came back in a 30 s window, and RX stayed at 0 the same
+      as the MAC/lwIP hardware gate's own test did - this bench segment
+      appears to have no DHCP server (or nothing else on it at all; ambient
+      broadcast traffic was equally absent in that earlier test). Reported
+      as-is rather than assumed broken: the client is retrying exactly as
+      DHCP is specified to when unanswered, which is itself evidence the
+      send path works, just not evidence a lease can be obtained on this
+      bench. `d 15` (the real app tree, statusbar + netinfo + net-poll all
+      live together) ran fault-free for 15 s, 5 frames flushed - not
+      photographed this round, same open camera-framing item as the
+      filebrowser check.
 - [ ] `cads_cli` over TCP and over the serial console, shared command table
 - [ ] Screen streaming: framebuffer to a host viewer over TCP
 - [ ] HTTP status page
@@ -513,6 +552,29 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's second task: DHCP + link state + status bar indicator.
+  `LWIP_DHCP=1`; link-up/down now starts/stops the DHCP client. Made
+  `cads_net_init()` idempotent (first call wins, rest are no-ops) so the
+  diagnostic command and the real app tree can both bring networking up
+  without coordinating. Wired `apps/netinfo` to real `cads_net_status()`
+  data - it had documented its own placeholder as waiting on exactly this
+  service. Wired the status bar's slot 0 to link state in
+  `explorer_app_demo.c` (still the stand-in for a real production loop -
+  M6 has not built one yet); learned the widget dedupes by POINTER, not
+  content, so the indicator returns one of three fixed string literals
+  rather than formatting into a buffer every tick, which would have
+  reported false damage constantly.
+  VERIFIED on hardware: 100 Mbit full duplex link, and the DHCP client
+  visibly at work - 5 real DHCPDISCOVER broadcasts, confirmed by both the
+  netif's own counter and the MAC's MMC `tx_good` register. No DHCPOFFER
+  came back in 30 s and RX stayed at 0, matching the previous task's
+  finding - this bench segment has no DHCP server and little to no ambient
+  traffic. Reported honestly rather than assumed broken: retrying
+  unanswered is correct DHCP behaviour, and the send path is now proven
+  twice over (the earlier deliberate probe frame, and now real protocol
+  traffic). The app tree with statusbar + netinfo + net-poll all live
+  together ran fault-free for 15 s on real hardware.
 
 - 2026-08-20 — M5's first task landed: bare-metal Ethernet MAC/DMA driver
   (`targets/itsboard/hal/hal_eth_mac.{h,c}`) plus a new target-neutral
