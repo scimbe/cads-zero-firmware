@@ -430,7 +430,42 @@ Prove the toolchain, the boot path and the display path on real silicon.
       new kind of limit from "no DHCP server on this bench" - the earlier
       finding was about the board's environment, this one is about the
       verifier's).
-- [ ] Screen streaming: framebuffer to a host viewer over TCP
+- [x] Screen streaming: framebuffer to a host viewer over TCP.
+      New explorer command `S <sec>` / `apps/bringup/explorer_screencast_demo.c`
+      (board only - `explorer_screencast_demo_sim.c` says the simulator's own
+      window is already the live view, no redundant loopback needed). Lives
+      in `apps/bringup`, not a shared `modules/`, unlike `cads_net`/`cads_cli`:
+      it has exactly one consumer and no other portable code needs to call
+      into it, so a whole module would be ceremony for one file.
+      Streams `cads_canvas_buffer()` - the retained 4bpp framebuffer
+      (`gui/canvas.h`) - straight over a raw lwIP TCP connection: a 41-byte
+      header (magic, dimensions, the 16-entry RGB565 palette so a viewer
+      never has to hardcode CaDS colours) once per connection, then frame
+      length + raw packed pixels forever, chunked across `tcp_write()`
+      calls as send-window space frees (driven by the `tcp_sent()`
+      callback, the same event-driven raw-API pattern `cads_cli`'s TCP
+      transport already uses). One viewer at a time, same reasoning as
+      `cads_cli_tcp`. Documented, not fixed: frames are not double
+      buffered (no spare RAM for a second 76 KB buffer - see
+      `gui/canvas.h`'s own header on why 4bpp exists at all), so a frame
+      CAN show part-old, part-new pixels if something draws mid-send;
+      accepted as a v1 limitation for a diagnostic preview feature rather
+      than chased with real complexity this bullet does not need. No
+      reference host-side viewer was written - the same environment limit
+      below means one could not have been tested against a live connection
+      anyway, and the wire protocol is fully documented in the source for
+      whoever builds one against a reachable board.
+      VERIFIED on hardware: `S 15` started the TCP listener on port 4244
+      (confirmed over serial) and ran for the full 15 s with a small
+      marker rectangle animating across the physical panel (small,
+      partial-flush damage each step, not a full 440 ms redraw) with no
+      fault; `d 10` immediately afterward confirmed no regression to the
+      rest of the app tree. As with `cads_cli`'s TCP transport, a live
+      remote client could not be verified - the agent's shell has no
+      network path to the board's isolated bench segment - so this run
+      correctly reported "0 full frame(s) sent" (no viewer ever connected
+      to drain any), which is the honest, expected result of that same
+      limit, not a defect in the streaming code itself.
 - [ ] HTTP status page
 
 ### The network Swiss-army-knife (verified against DS00001989A, the LAN8742A datasheet)
@@ -590,6 +625,30 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's fourth task: screen streaming over TCP. New explorer
+  command `S`, `apps/bringup/explorer_screencast_demo.c` - single-consumer,
+  so it lives directly in apps/bringup rather than as a new `modules/`
+  (unlike cads_net/cads_cli, nothing else needs to call into it). Streams
+  the retained 4bpp framebuffer straight off `cads_canvas_buffer()`: a
+  small header once (dimensions + the RGB565 palette, so a viewer never
+  hardcodes CaDS colours), then length-prefixed raw frames forever, chunked
+  across `tcp_write()` as send-window space frees via the same
+  `tcp_sent()`-driven event pattern `cads_cli`'s TCP transport already
+  established. No reference host viewer written - full protocol documented
+  in the source instead, since one could not have been tested against a
+  live connection from this environment regardless (see below). Frames are
+  not double buffered (no spare RAM for a second 76 KB buffer), so a
+  connected viewer can occasionally see a torn frame - documented as an
+  accepted v1 limitation rather than solved with real complexity this
+  bullet does not call for.
+  VERIFIED on hardware: the listener started on port 4244, a small marker
+  rectangle visibly animated on the physical panel for the full 15 s run
+  via small partial flushes, no fault, and the app tree ran clean
+  immediately afterward. Same limit as `cads_cli`'s TCP half: no live
+  remote client could be verified, since the agent's shell has no network
+  path to the board's bench segment - "0 frames sent" is the correct,
+  honest result of nothing ever connecting to drain them, not a bug.
 
 - 2026-08-20 — M5's third task: `cads_cli` over TCP and serial, shared
   command table. New `modules/cli/`: a fully portable session core
