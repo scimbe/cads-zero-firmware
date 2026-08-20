@@ -59,6 +59,12 @@ add_subdirectory(modules/toolbox)
 # selected the same way this top-level file already picks CADS_TARGET.
 add_subdirectory(modules/storage)
 
+# Net is target neutral in the same sense as storage: cads/net/net.h has two
+# implementations (src/cads_net_board.c, a real lwIP netif over hal_eth_mac.h;
+# src/cads_net_sim.c, an honest "no link" stub - see that file's own header
+# for why the simulator does not pretend to have RMII hardware).
+add_subdirectory(modules/net)
+
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(modules/kernel)
 endif()
@@ -128,7 +134,7 @@ else()
 endif()
 target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
-target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage)
+target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net)
 if(CADS_TARGET STREQUAL "itsboard")
     target_link_libraries(cads_apps PUBLIC cads_kernel)
 endif()
@@ -137,6 +143,15 @@ endif()
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(targets/itsboard)
     target_link_libraries(cads_gui PUBLIC cads_hal_itsboard)
+    # cads_net_board.c calls into hal_eth_mac.h/hal_eth_mdio.h/hal_spi.h, but
+    # modules/net/CMakeLists.txt cannot declare that dependency itself -
+    # cads_hal_itsboard is add_subdirectory'd later than modules/net (same
+    # reason it lists targets/itsboard's include paths by hand instead of
+    # linking the target). Declaring it here, now that the target exists,
+    # lets CMake's own link-line generation place cads_hal_itsboard whenever
+    # (and however many times) the final executable actually needs it,
+    # instead of trusting a fixed position in the hand-written link list.
+    target_link_libraries(cads_net PUBLIC cads_hal_itsboard)
 
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)
 

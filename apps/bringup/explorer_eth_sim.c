@@ -28,3 +28,8 @@ void cads_explorer_eth_linklog_poll_and_dump(void) {
 void cads_explorer_eth_mmc(void) {
     cads_probe_puts("# mmc: not available in the simulator\r\n");
 }
+
+void cads_explorer_net_test(uint32_t seconds) {
+    (void)seconds;
+    cads_probe_puts("# net: not available in the simulator (see cads_net_sim.c)\r\n");
+}

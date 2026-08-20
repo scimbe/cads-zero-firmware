@@ -11,7 +11,11 @@
 
 #include <stdint.h>
 
+#include <string.h>
+
+#include "cads/net/net.h"
 #include "cads_hal.h"
+#include "hal_eth_mac.h"
 #include "hal_eth_mdio.h"
 #include "hal_eth_aneg.h"
 #include "hal_eth_linklog.h"
@@ -241,5 +245,102 @@ void cads_explorer_eth_status(void) {
     cads_probe_puts(" speed=");
     cads_probe_put_uint(phy.speed_mbit);
     cads_probe_puts(phy.full_duplex ? "M full" : "M half");
+    cads_probe_puts("\r\n");
+}
+
+/*
+ * Locally-administered (bit 1 of the first byte set, per IEEE 802-2014
+ * clause 8.2.2), never-forwarded-by-standard-switches unicast (bit 0
+ * clear) address, fixed for now. Fine for the single board this firmware
+ * currently runs on; the day a second board is on the same segment, this
+ * needs to come from something per-device (the STM32's 96-bit UID would be
+ * the obvious source) instead of a shared constant - not done here to keep
+ * this bullet scoped to "the netif exists and passes frames" per
+ * modules/net/include/lwipopts.h's file header.
+ */
+static const uint8_t cads_net_test_mac[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+
+/*
+ * A deliberate, unambiguous TX proof, independent of whatever the LAN
+ * happens to be doing. Waiting on ambient broadcast/multicast traffic (ARP,
+ * mDNS, STP...) to prove RX works is honest but not reliable on a quiet
+ * bench segment - it can go quiet for the whole polling window with a
+ * perfectly working driver. There is no equivalent trick for RX (this
+ * device cannot make another one send it something), so that half stays
+ * opportunistic; see the "mmc delta rx_unicast" line below.
+ *
+ * EtherType 0x88B5 is IANA-registered "IEEE Std 802 - Local Experimental
+ * Ethertype 1" - built exactly for traffic like this, not a made-up value.
+ * Broadcast destination so it needs no ARP resolution and nothing on the
+ * segment treats it as anything other than noise to ignore.
+ */
+static void cads_net_send_probe_frame(void) {
+    uint8_t frame[60]; /* Ethernet minimum frame size, CRC excluded (the MAC appends that) */
+    memset(frame, 0, sizeof(frame));
+    memset(frame, 0xFFu, 6u); /* dest: broadcast */
+    memcpy(frame + 6, cads_net_test_mac, 6u); /* src */
+    frame[12] = 0x88u;
+    frame[13] = 0xB5u; /* ethertype */
+    bool sent = cads_hal_eth_mac_transmit(frame, sizeof(frame));
+    cads_probe_puts(sent ? "# net: probe frame queued\r\n" : "# net: probe frame FAILED to queue\r\n");
+}
+
+void cads_explorer_net_test(uint32_t seconds) {
+    static bool initialised = false;
+    if(!initialised) {
+        cads_net_init(cads_net_test_mac);
+        initialised = true;
+        cads_probe_puts("# net: initialised, mac=02:CA:D5:5E:00:01\r\n");
+    }
+    if(!seconds) seconds = 20u;
+
+    cads_eth_mmc_counters_t mmc_before, mmc_after;
+    cads_hal_eth_mmc_read(&mmc_before);
+
+    cads_probe_puts("# net: polling ");
+    cads_probe_put_uint(seconds);
+    cads_probe_puts("s\r\n");
+
+    uint32_t start = cads_hal_ticks_ms();
+    bool link_was_up = false;
+    while((cads_hal_ticks_ms() - start) < seconds * 1000u) {
+        cads_net_poll();
+
+        cads_net_status_t status;
+        cads_net_status(&status);
+        if(status.link_up != link_was_up) {
+            link_was_up = status.link_up;
+            if(link_was_up) {
+                cads_probe_puts("# net: link UP, speed=");
+                cads_probe_put_uint(status.speed_mbit);
+                cads_probe_puts(status.full_duplex ? "M full\r\n" : "M half\r\n");
+                cads_net_send_probe_frame();
+            } else {
+                cads_probe_puts("# net: link DOWN\r\n");
+            }
+        }
+        cads_hal_delay_us(500u);
+    }
+
+    cads_hal_eth_mmc_read(&mmc_after);
+
+    cads_net_status_t status;
+    cads_net_status(&status);
+    cads_probe_puts("# net: link=");
+    cads_probe_puts(status.link_up ? "UP" : "DOWN");
+    cads_probe_puts(" netif rx=");
+    cads_probe_put_uint(status.rx_frames);
+    cads_probe_puts(" tx=");
+    cads_probe_put_uint(status.tx_frames);
+    cads_probe_puts(" rx_dropped=");
+    cads_probe_put_uint(status.rx_dropped);
+    cads_probe_puts("\r\n# net: mmc delta rx_unicast=");
+    cads_probe_put_uint(mmc_after.rx_good_unicast_frames - mmc_before.rx_good_unicast_frames);
+    cads_probe_puts(" tx_good=");
+    cads_probe_put_uint(mmc_after.tx_good_frames - mmc_before.tx_good_frames);
+    cads_probe_puts(" rx_crc_err=");
+    cads_probe_put_uint(mmc_after.rx_crc_errors - mmc_before.rx_crc_errors);
+    cads_probe_puts(" rx_align_err=");
+    cads_probe_put_uint(mmc_after.rx_alignment_errors - mmc_before.rx_alignment_errors);
     cads_probe_puts("\r\n");
 }

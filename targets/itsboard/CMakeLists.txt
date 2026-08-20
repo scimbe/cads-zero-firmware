@@ -14,6 +14,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_ports.c
     hal/hal_board_info.c
     hal/hal_eth_mdio.c
+    hal/hal_eth_mac.c
     hal/hal_eth_tdr.c
     hal/hal_eth_aneg.c
     hal/hal_eth_linklog.c

@@ -167,9 +167,28 @@
 /* --- Ethernet: LAN8742A over RMII ------------------------------------------
  * PA1 REF_CLK, PA2 MDIO, PC1 MDC, PA7 CRS_DV, PC4 RXD0, PC5 RXD1,
  * PG2 RXER, PG11 TX_EN, PG13 TXD0, PB13 TXD1.
- * PA7 is the contended pin - see CADS_SPI_MOSI_ON_PB5 above.
+ * PA7 is the contended pin - see CADS_SPI_MOSI_ON_PB5 above; hal_spi.c owns
+ * its alternate-function switching, so it has no macro here.
+ * MDIO/MDC are hal_eth_mdio.c's own pins, also not listed here, since that
+ * driver predates this RMII data-path macro set and names them inline.
  */
 #define CADS_ETH_PHY_ADDR       0u
+#define CADS_ETH_AF             11u /* AF11 = ETH on every RMII pin on this part */
+
+#define CADS_PIN_ETH_REF_CLK_PORT GPIOA
+#define CADS_PIN_ETH_REF_CLK      1u
+#define CADS_PIN_ETH_RXD0_PORT    GPIOC
+#define CADS_PIN_ETH_RXD0         4u
+#define CADS_PIN_ETH_RXD1_PORT    GPIOC
+#define CADS_PIN_ETH_RXD1         5u
+#define CADS_PIN_ETH_RXER_PORT    GPIOG
+#define CADS_PIN_ETH_RXER         2u
+#define CADS_PIN_ETH_TX_EN_PORT   GPIOG
+#define CADS_PIN_ETH_TX_EN        11u
+#define CADS_PIN_ETH_TXD0_PORT    GPIOG
+#define CADS_PIN_ETH_TXD0         13u
+#define CADS_PIN_ETH_TXD1_PORT    GPIOB
+#define CADS_PIN_ETH_TXD1         13u
 
 /* --- internal flash storage volume ---------------------------------------- */
 /* Everything below CADS_FS_BASE - the firmware in bank 1 and the reserved gap

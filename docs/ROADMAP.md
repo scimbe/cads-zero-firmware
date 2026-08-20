@@ -305,7 +305,52 @@ Prove the toolchain, the boot path and the display path on real silicon.
       of RMII, so it needs neither PA7 nor a solder-bridge decision.
       VERIFIED on hardware: LAN8742A id 0007:C131, model 0x13 rev 1,
       link UP, autoneg done, 100 Mbit full duplex.
-- [ ] Bare-metal ETH MAC driver + lwIP netif, DMA descriptors in SRAM
+- [x] Bare-metal ETH MAC driver + lwIP netif, DMA descriptors in SRAM.
+      `targets/itsboard/hal/hal_eth_mac.{h,c}`: register-level MAC/DMA driver,
+      chained (not ring-mode) normal 16-byte descriptors, 4 RX + 4 TX
+      descriptors x 1536-byte buffers in ordinary `.bss` (real RAM, DMA-
+      reachable - no `.ramfunc`-style placement, see the file header on why
+      that specific caution does not apply here and did actively hurt
+      modules/storage's flash driver). Every register/descriptor bit
+      position checked against the archived RM0090 PDF rather than memory;
+      caught one real error doing this (RDES1.RER is bit 15, not 14).
+      `modules/net/`: portable `cads/net/net.h` (two implementations, same
+      pattern as `cads/storage/flash.h` - `cads_net_board.c` a real lwIP
+      NO_SYS=1 netif, `cads_net_sim.c` an honest "no link" stub, no fake
+      network in the simulator). lwIP vendored and built via its own
+      `Filelists.cmake`; `arch/cc.h` routes `LWIP_PLATFORM_ASSERT` through
+      `cads_hal_panic()` and no-ops `LWIP_PLATFORM_DIAG`, both to keep
+      newlib's printf/fflush/abort chain (and the `_sbrk`/heap it needs) out
+      of the link - the exact same failure class as the M4 `LFS_NO_ASSERT`
+      bug. Found a live instance of that same bug while building this:
+      `LWIP_RAND()`'s obvious choice, newlib-nano's `rand()`, turned out to
+      lazily `malloc()` its state table on first call, which pulled in
+      `_sbrk` and failed to link (`undefined reference to 'end'`) - replaced
+      with a self-contained xorshift32 in `cads_net_board.c`, no libc
+      involved. Scope for this bullet deliberately stops at "the netif
+      exists and passes frames" - no IP address is configured yet (DHCP is
+      the next bullet), and the MAC address is a fixed constant
+      (`02:CA:D5:5E:00:01`, single-board assumption, noted as a real
+      limitation for whenever a second board shares a segment).
+      VERIFIED on hardware (new explorer command `h <sec>`,
+      `apps/bringup/explorer_eth.c`): link came up at 100 Mbit full duplex
+      (matching the independent MDIO-only `e` reading exactly - the
+      `cads_net_status()` speed/duplex fields were briefly wrong, always
+      reporting 0/half, in the first hardware run; fixed by actually caching
+      the PHY result instead of leaving the status struct's fields at their
+      `memset` zero). A deliberate broadcast probe frame
+      (EtherType 0x88B5, IANA's "IEEE Std 802 Local Experimental Ethertype
+      1", sent straight through `cads_hal_eth_mac_transmit()` bypassing
+      lwIP) was queued successfully and the MAC's own MMC hardware counter
+      confirmed it: `tx_good` delta = 1, exactly the one frame sent - real,
+      register-observed proof the descriptor ring, DMA and PA7 arbitration
+      all work, independent of ambient LAN traffic. RX stayed at 0 frames
+      for the full 20 s window on the bench's current (quiet) segment -
+      honestly reported rather than assumed working: the code path is
+      exercised (descriptors are posted and ready), but no real frame has
+      yet been observed flowing through it. Revisit once DHCP or the ARP
+      scanner give this device a reason to receive something, or once the
+      bench has another active host on the same segment.
 - [ ] DHCP, link state, status bar indicator
 - [ ] `cads_cli` over TCP and over the serial console, shared command table
 - [ ] Screen streaming: framebuffer to a host viewer over TCP
@@ -340,7 +385,10 @@ driver above.
       the MAC's RX/TX are never enabled and no frames flow for the counters
       to count. The meaningful functional test - counters incrementing under
       real traffic - happens once M5's data path lands.
-- [ ] ARP scan of the local subnet. Needs RMII + lwIP. S once M5 lands.
+      UPDATE 2026-08-20: it landed. `tx_good` incremented by exactly 1 for
+      one deliberately-sent probe frame - see M5's MAC/lwIP entry above.
+- [ ] ARP scan of the local subnet. Needs RMII + lwIP - landed 2026-08-20
+      (see M5 above), so this is now actually buildable, just not built yet.
 - [ ] Ping / ICMP echo. lwIP ships an example to adapt. Needs RMII. S.
 - [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M.
 - [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
@@ -465,6 +513,40 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's first task landed: bare-metal Ethernet MAC/DMA driver
+  (`targets/itsboard/hal/hal_eth_mac.{h,c}`) plus a new target-neutral
+  `modules/net/` carrying a real lwIP `NO_SYS=1` netif on the board and an
+  honest "no link" stub on the simulator - the same board/host split
+  `modules/storage` established for littlefs. lwIP is vendored and built via
+  its own `Filelists.cmake`, wired to `cads_hal_panic()`/a hand-rolled
+  xorshift32 instead of libc's assert/printf/rand chain.
+  Two real bugs, both link-time, both instances of the same lesson M4's
+  `LFS_NO_ASSERT` fix already taught: (1) leaving `LWIP_PLATFORM_ASSERT` and
+  `LWIP_PLATFORM_DIAG` at their lwIP defaults pulls in printf/fflush/abort,
+  which needs `_sbrk` - this project's linker script deliberately has no
+  heap. (2) less obvious: `LWIP_RAND()`'s obvious implementation,
+  `rand()`, turned out to lazily `malloc()` its state table on arm-none-eabi's
+  newlib-nano (confirmed by inspecting `libc_a-rand.o`'s undefined symbols) -
+  same `_sbrk`/`end` link failure, reached through a function nobody would
+  guess touches the heap. A third bug found by hardware measurement, not
+  memory: descriptor bit positions were checked against the archived RM0090
+  PDF rather than trusted from memory, which caught RDES1.RER actually
+  sitting at bit 15, not the bit 14 a first guess landed on - a subtle
+  descriptor-ring corruption avoided before it ever ran.
+  VERIFIED on hardware (new explorer command `h <sec>`): link came up at
+  100 Mbit full duplex, matching the independent MDIO-only reading exactly
+  (`cads_net_status()` initially reported 0 Mbit/half unconditionally - a
+  real bug, the PHY result was read but never cached into the status
+  struct, fixed same session). A deliberate broadcast probe frame sent
+  directly through the driver (bypassing lwIP) was confirmed by the MAC's
+  own MMC hardware counter: `tx_good` delta of exactly 1. RX saw nothing in
+  20 s on the bench's current quiet segment - reported as-is rather than
+  assumed working; the receive path is exercised and ready but has not yet
+  had a real frame to prove itself against. Scope deliberately stops at "the
+  netif exists and passes frames": no IP configured yet (DHCP is the next
+  M5 bullet) and the MAC address is a fixed constant, single-board
+  assumption, noted as a real limitation rather than hidden.
 
 - 2026-08-20 — Built `apps/filebrowser`, the last open item in M4, which is
   now `[x]`. Read-only navigation of the littlefs volume: one menu view
