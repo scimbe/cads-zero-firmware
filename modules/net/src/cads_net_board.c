@@ -213,6 +213,46 @@ bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
 
 #define CADS_NET_PING_PAYLOAD_SIZE 32u
 
+static uint16_t cads_net_icmp_next_id(void) {
+    /* Varies per call so a late reply to an earlier, already-timed-out
+     * request (ping or traceroute) cannot be mistaken for the current
+     * one's answer. Shared by both, one counter, no risk of the two
+     * features handing out the same id at the same time. */
+    static uint16_t id = 0xC0DEu;
+    return ++id;
+}
+
+/* Builds and sends one ICMP echo request. `pcb->ttl` must already be set
+ * by the caller if it wants anything other than lwIP's default (255) -
+ * cads_net_traceroute_probe() is the reason this takes a pre-configured
+ * pcb rather than setting ttl itself. Shared by cads_net_ping() and
+ * cads_net_traceroute_probe(): identical packet, different pcb.ttl and
+ * different interpretation of what a reply means. */
+static err_t cads_net_icmp_echo_send(struct raw_pcb* pcb, uint32_t ip, uint16_t id, uint16_t seq) {
+    struct pbuf* p = pbuf_alloc(
+        PBUF_IP, (u16_t)(sizeof(struct icmp_echo_hdr) + CADS_NET_PING_PAYLOAD_SIZE), PBUF_RAM);
+    if(!p) return ERR_MEM;
+
+    struct icmp_echo_hdr* icmp = (struct icmp_echo_hdr*)p->payload;
+    icmp->type = ICMP_ECHO;
+    icmp->code = 0u;
+    icmp->chksum = 0u;
+    icmp->id = lwip_htons(id);
+    icmp->seqno = lwip_htons(seq);
+
+    uint8_t* payload = (uint8_t*)p->payload + sizeof(struct icmp_echo_hdr);
+    for(uint32_t i = 0; i < CADS_NET_PING_PAYLOAD_SIZE; i++) payload[i] = (uint8_t)i;
+
+    icmp->chksum = inet_chksum_pbuf(p);
+
+    ip4_addr_t dest;
+    ip4_addr_set_u32(&dest, lwip_htonl(ip));
+
+    err_t sent = raw_sendto(pcb, p, &dest);
+    pbuf_free(p);
+    return sent;
+}
+
 typedef struct {
     uint16_t id;
     uint16_t seq;
@@ -246,13 +286,6 @@ static u8_t cads_net_ping_recv(void* arg, struct raw_pcb* pcb, struct pbuf* p, c
     return 0u; /* somebody else's echo reply (or a stale one of ours) - not eaten */
 }
 
-static uint16_t cads_net_ping_next_id(void) {
-    /* Varies per call so a late reply to an earlier, already-timed-out
-     * ping cannot be mistaken for this one's answer. */
-    static uint16_t id = 0xC0DEu;
-    return ++id;
-}
-
 bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
     if(!cads_net_link_was_up) return false;
 
@@ -261,37 +294,14 @@ bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
 
     cads_net_ping_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
-    ctx.id = cads_net_ping_next_id();
+    ctx.id = cads_net_icmp_next_id();
     ctx.seq = 1u;
 
     raw_recv(pcb, cads_net_ping_recv, &ctx);
     raw_bind(pcb, IP_ADDR_ANY);
 
-    struct pbuf* p = pbuf_alloc(
-        PBUF_IP, (u16_t)(sizeof(struct icmp_echo_hdr) + CADS_NET_PING_PAYLOAD_SIZE), PBUF_RAM);
-    if(!p) {
-        raw_remove(pcb);
-        return false;
-    }
-
-    struct icmp_echo_hdr* icmp = (struct icmp_echo_hdr*)p->payload;
-    icmp->type = ICMP_ECHO;
-    icmp->code = 0u;
-    icmp->chksum = 0u;
-    icmp->id = lwip_htons(ctx.id);
-    icmp->seqno = lwip_htons(ctx.seq);
-
-    uint8_t* payload = (uint8_t*)p->payload + sizeof(struct icmp_echo_hdr);
-    for(uint32_t i = 0; i < CADS_NET_PING_PAYLOAD_SIZE; i++) payload[i] = (uint8_t)i;
-
-    icmp->chksum = inet_chksum_pbuf(p);
-
-    ip4_addr_t dest;
-    ip4_addr_set_u32(&dest, lwip_htonl(ip));
-
     ctx.sent_at_ms = cads_hal_ticks_ms();
-    err_t sent = raw_sendto(pcb, p, &dest);
-    pbuf_free(p);
+    err_t sent = cads_net_icmp_echo_send(pcb, ip, ctx.id, ctx.seq);
 
     if(sent != ERR_OK) {
         raw_remove(pcb);
@@ -308,4 +318,96 @@ bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
 
     if(ctx.got_reply && rtt_ms) *rtt_ms = ctx.rtt_ms;
     return ctx.got_reply;
+}
+
+typedef struct {
+    uint16_t id;
+    uint16_t seq;
+    uint32_t sent_at_ms;
+    bool got_reply;
+    bool reached_target;
+    uint32_t responder_ip;
+    uint32_t rtt_ms;
+} cads_net_traceroute_ctx_t;
+
+/*
+ * Recognises two ICMP message types, not just the one cads_net_ping_recv()
+ * does: ICMP_ER (echo reply) from the target itself once the probe's TTL
+ * is finally large enough to reach it, and ICMP_TE (time exceeded) from
+ * whichever router along the path decremented this probe's TTL to zero -
+ * that router's own source address (`addr`) is the hop this probe reveals.
+ *
+ * Deliberately does NOT parse into a time-exceeded message's payload to
+ * confirm it echoes this probe's own id/seqno (RFC 792: a time-exceeded
+ * message carries the original IP header and the first 8 bytes of its
+ * payload, one nesting level deeper than this function otherwise looks).
+ * One probe is in flight at a time with a short timeout, so trusting
+ * message type plus arrival order within that window is enough for a
+ * diagnostic tool on a LAN - not the adversarial-network-resistant
+ * validation a routing device's own ICMP handling would need.
+ */
+static u8_t cads_net_traceroute_recv(void* arg, struct raw_pcb* pcb, struct pbuf* p, const ip_addr_t* addr) {
+    (void)pcb;
+    cads_net_traceroute_ctx_t* ctx = (cads_net_traceroute_ctx_t*)arg;
+
+    u16_t iphdr_len = ip_current_header_tot_len();
+    struct icmp_echo_hdr hdr;
+    if(p->tot_len < (uint32_t)iphdr_len + sizeof(hdr)) return 0u;
+    pbuf_copy_partial(p, &hdr, sizeof(hdr), iphdr_len);
+
+    if(hdr.type == ICMP_ER && lwip_ntohs(hdr.id) == ctx->id && lwip_ntohs(hdr.seqno) == ctx->seq) {
+        ctx->got_reply = true;
+        ctx->reached_target = true;
+        ctx->responder_ip = lwip_ntohl(ip4_addr_get_u32(addr));
+        ctx->rtt_ms = cads_hal_ticks_ms() - ctx->sent_at_ms;
+        pbuf_free(p);
+        return 1u;
+    }
+    if(hdr.type == ICMP_TE) {
+        ctx->got_reply = true;
+        ctx->reached_target = false;
+        ctx->responder_ip = lwip_ntohl(ip4_addr_get_u32(addr));
+        ctx->rtt_ms = cads_hal_ticks_ms() - ctx->sent_at_ms;
+        pbuf_free(p);
+        return 1u;
+    }
+    return 0u;
+}
+
+cads_net_traceroute_result_t cads_net_traceroute_probe(
+    uint32_t ip, uint8_t ttl, uint32_t timeout_ms, uint32_t* responder_ip, uint32_t* rtt_ms) {
+    if(!cads_net_link_was_up) return CadsNetTracerouteNoReply;
+
+    struct raw_pcb* pcb = raw_new(IP_PROTO_ICMP);
+    if(!pcb) return CadsNetTracerouteNoReply;
+    pcb->ttl = ttl;
+
+    cads_net_traceroute_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.id = cads_net_icmp_next_id();
+    ctx.seq = 1u;
+
+    raw_recv(pcb, cads_net_traceroute_recv, &ctx);
+    raw_bind(pcb, IP_ADDR_ANY);
+
+    ctx.sent_at_ms = cads_hal_ticks_ms();
+    err_t sent = cads_net_icmp_echo_send(pcb, ip, ctx.id, ctx.seq);
+
+    if(sent != ERR_OK) {
+        raw_remove(pcb);
+        return CadsNetTracerouteNoReply;
+    }
+
+    uint32_t deadline = ctx.sent_at_ms + timeout_ms;
+    while(!ctx.got_reply && (int32_t)(cads_hal_ticks_ms() - deadline) < 0) {
+        cads_net_poll();
+        cads_hal_delay_ms(2u);
+    }
+
+    raw_remove(pcb);
+
+    if(!ctx.got_reply) return CadsNetTracerouteNoReply;
+    if(responder_ip) *responder_ip = ctx.responder_ip;
+    if(rtt_ms) *rtt_ms = ctx.rtt_ms;
+    return ctx.reached_target ? CadsNetTracerouteReachedTarget : CadsNetTracerouteHop;
 }

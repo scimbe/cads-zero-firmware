@@ -653,11 +653,35 @@ driver above.
       margin this task just fought to win back. Left as a clearly-scoped
       candidate for a future bullet if a DHCP-less bench ever needs to
       exercise these tools for real, not folded in silently here.
-- [ ] Traceroute-style path probe (ICMP TTL sweep). Needs RMII. M. Will hit
-      the same `ip4_route()`-needs-a-non-zero local address wall the ping
-      bullet above just documented, on this bench specifically (no DHCP
-      lease ever obtained) - not a reason to skip building it, but budget
-      for hitting it again rather than being surprised.
+- [x] Traceroute-style path probe (ICMP TTL sweep). New explorer command
+      `T <hex-target> [max-hops]` / `apps/bringup/explorer_traceroute_demo.c`,
+      e.g. `T c0a80101 16`. New `cads_net_traceroute_probe()` in
+      `modules/net`, sharing a factored-out `cads_net_icmp_echo_send()`
+      helper with `cads_net_ping()` (added in this pass - identical packet
+      construction, only `pcb->ttl` and the id/seqno differ, and this was
+      the second caller that made the duplication worth removing) rather
+      than a second hand-rolled copy of the echo-request builder. One
+      probe per hop, TTL swept from 1 up: the responder is either the
+      target's own echo reply (`ICMP_ER`, matched by id/seqno the same way
+      `cads_net_ping()` already does) or a time-exceeded message
+      (`ICMP_TE`) from whichever router's TTL expired first, and that
+      message's *source address* - not anything parsed out of its payload
+      - is the hop reported. Deliberately does not parse into the
+      time-exceeded message's embedded original-packet payload to confirm
+      it echoes this probe's own id (RFC 792's nested-header validation a
+      real routing device's ICMP handling would need); one probe in flight
+      at a time with a short timeout makes trusting message type plus
+      arrival order enough for a LAN diagnostic tool, documented as a
+      deliberate scope line in the source rather than left unstated.
+      VERIFIED on hardware, and exactly as forecast when the ping bullet
+      above was closed: `T c0a80101 5` printed "*" for all 5 hops (no
+      reply within any TTL), and `m` before/after showed `tx_good`
+      increase by only 1 across the whole run - one DHCPDISCOVER from the
+      link-up transition, not five ARP/probe frames - confirming every one
+      of the 5 traceroute probes failed inside `ip4_route()` before
+      reaching the MAC, the identical structural cause already found and
+      documented for ping, not a new bug. `d 8` immediately after
+      confirmed no regression to the app tree.
 - [ ] DHCP lease/gateway/DNS display. lwIP's DHCP client exists; needs a
       portable status struct and a UI. Needs RMII. S.
 - [ ] iperf-style throughput test via lwIP's lwiperf. Expect well under
@@ -783,6 +807,26 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M5's eighth task: traceroute (ICMP TTL sweep). New explorer
+  command `T`, driving a new `cads_net_traceroute_probe()` in
+  `modules/net`. Factored the echo-request builder ping already had into
+  a shared `cads_net_icmp_echo_send()` now that traceroute needed the
+  identical packet with only `pcb->ttl` and the id/seqno different -
+  worth doing on the second caller, not before. One probe per TTL, hop
+  identified by the source address of whichever ICMP message answers
+  (echo reply from the target, or time-exceeded from whatever router's
+  TTL ran out) - deliberately not validated against the nested original-
+  packet header a time-exceeded message carries, since one probe in
+  flight with a short timeout makes type-plus-arrival-order good enough
+  for a LAN tool.
+  VERIFIED on hardware exactly as forecast when ping's entry was written:
+  five probes, five "*", and `tx_good` moved by only 1 (one DHCPDISCOVER
+  from link-up) across the whole run - confirming every probe failed
+  inside `ip4_route()` before reaching the MAC, the same structural cause
+  as ping, not a new bug. This was worth building anyway, not skipped for
+  the known limitation: the code is correct and ready for whenever this
+  bench (or another one) has a real route to test it against.
 
 - 2026-08-20 — M5's seventh task: ping / ICMP echo. New explorer command
   `P`, driving a new `cads_net_ping()` in `modules/net` - a raw

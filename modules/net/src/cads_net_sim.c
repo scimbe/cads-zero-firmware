@@ -40,3 +40,13 @@ bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
     (void)rtt_ms;
     return false; /* never a link, so nothing ever answers - see this file's header */
 }
+
+cads_net_traceroute_result_t cads_net_traceroute_probe(
+    uint32_t ip, uint8_t ttl, uint32_t timeout_ms, uint32_t* responder_ip, uint32_t* rtt_ms) {
+    (void)ip;
+    (void)ttl;
+    (void)timeout_ms;
+    (void)responder_ip;
+    (void)rtt_ms;
+    return CadsNetTracerouteNoReply; /* never a link, so nothing ever answers - see this file's header */
+}

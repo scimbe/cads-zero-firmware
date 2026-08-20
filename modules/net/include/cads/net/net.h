@@ -77,6 +77,31 @@ bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]);
  */
 bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms);
 
+typedef enum {
+    CadsNetTracerouteNoReply = 0, /**< nothing answered within timeout_ms */
+    CadsNetTracerouteHop,         /**< an intermediate router's TTL-exceeded reply */
+    CadsNetTracerouteReachedTarget, /**< the target's own echo reply */
+} cads_net_traceroute_result_t;
+
+/**
+ * Send one ICMP echo request to `ip` (host byte order) with IP TTL set to
+ * `ttl`, and wait up to `timeout_ms` for a reply - either the target's own
+ * echo reply (TTL was enough to reach it) or a time-exceeded message from
+ * whichever router's TTL decremented this probe to zero first. Calls
+ * cads_net_poll() internally, so the caller does not need its own wait
+ * loop around this.
+ *
+ * A caller sweeps `ttl` from 1 upward, one call per hop, until it sees
+ * CadsNetTracerouteReachedTarget or gives up.
+ *
+ * `responder_ip`/`rtt_ms`, when not NULL, are set whenever the result is
+ * not CadsNetTracerouteNoReply. Returns CadsNetTracerouteNoReply
+ * immediately (no request sent) if the link is not up, the same
+ * "nothing to probe through yet" reasoning as cads_net_arp_probe().
+ */
+cads_net_traceroute_result_t cads_net_traceroute_probe(
+    uint32_t ip, uint8_t ttl, uint32_t timeout_ms, uint32_t* responder_ip, uint32_t* rtt_ms);
+
 #ifdef __cplusplus
 }
 #endif
