@@ -53,6 +53,12 @@ target_compile_options(cads_flags INTERFACE
 # the dependency graph.
 add_subdirectory(modules/toolbox)
 
+# Storage is target neutral too, in the same sense: cads_storage.c and
+# cads_kv.c are plain C11 against cads/storage/flash.h, and that header has
+# two implementations (src/cads_flash_stm32f4.c, src/cads_flash_host.c)
+# selected the same way this top-level file already picks CADS_TARGET.
+add_subdirectory(modules/storage)
+
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(modules/kernel)
 endif()
@@ -107,6 +113,7 @@ add_library(cads_apps STATIC
     apps/bringup/explorer.c
     apps/bringup/explorer_gui_demo.c
     apps/bringup/explorer_app_demo.c
+    apps/bringup/explorer_storage_test.c
     ${CADS_TASKS_SOURCE}
     ${CADS_EXPLORER_ETH_SOURCE}
 )
@@ -119,7 +126,7 @@ else()
 endif()
 target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
-target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags)
+target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage)
 if(CADS_TARGET STREQUAL "itsboard")
     target_link_libraries(cads_apps PUBLIC cads_kernel)
 endif()

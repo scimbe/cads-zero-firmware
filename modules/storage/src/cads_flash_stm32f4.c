@@ -16,14 +16,22 @@
  * cads_flash_erase_block() does the same against the block index and the
  * sector number.
  *
- * .ramfunc. The chip is dual bank, so erasing bank 2 while fetching
- * instructions from bank 1 is legal - but the two functions that actually
- * touch FLASH_CR/FLASH_SR while an operation is in flight
- * (cads_flash_ramfunc_erase, cads_flash_ramfunc_program_word) are placed in
- * .ramfunc anyway, so the question of whether a stall or a cache effect could
- * ever make that unsafe never comes up. Everything else in this file -
- * bounds checking, the source-buffer copy, the post-write verify - runs from
- * flash as normal, because flash is not busy while it runs.
+ * WHY THESE ROUTINES RUN FROM FLASH, NOT RAM. An earlier version placed
+ * cads_flash_erase() and cads_flash_program_word() in .ramfunc, on the
+ * reasoning that running from RAM "removes the question" of whether
+ * executing from bank 1 while writing bank 2 is safe. On real hardware it
+ * did the opposite: the identical operation, run from .ramfunc, produced an
+ * intermittent BusFault or a spurious IO/verify error a handful of runs in,
+ * with the CPU actually executing inside the RAM-resident routine when it
+ * happened (confirmed via the fault handler's stacked PC and the linker
+ * map). The same sequence run from flash - which is what these functions do
+ * now - has been reliable every time it has been tried. The chip is
+ * documented dual bank (erasing/programming bank 2 while fetching
+ * instructions from bank 1 is legal, RM0090), and that is what actually
+ * happens here; .ramfunc bought nothing but a less-tested code path.
+ * docs/SAFETY.md section 4 has been updated to match. .ramfunc itself is
+ * left wired up in the linker script for whatever future use turns out to
+ * genuinely need RAM residency - this file just does not.
  *
  * PSIZE. This board runs at 3.3 V (docs/SAFETY.md), which is
  * FLASH_VOLTAGE_RANGE_3 in ST's terminology and allows x32 (word) program
@@ -93,12 +101,38 @@ static uint32_t cads_flash_sector_to_snb(uint32_t sector) {
 }
 
 /*
- * Runs from RAM. Owns the sector erase from FLASH_CR write through BSY
- * clearing; nothing outside this function touches FLASH_CR/FLASH_SR while an
- * erase is in flight. Caller has already unlocked the controller and
- * validated the sector twice.
+ * The ART accelerator's data cache (FLASH_ACR.DCEN, enabled in
+ * hal_clock.c alongside the instruction cache and prefetch) caches flash
+ * reads and has no way to know when the underlying flash changed under it -
+ * erasing or programming a byte does not invalidate whatever the cache
+ * already holds for that address. A caller that read an address before this
+ * driver modified it - this module's own post-program verify included -
+ * would otherwise read back the value from *before* the write, not after.
+ * Found on real hardware: cads_flash_program()'s own memcmp() failed
+ * (CADS_FLASH_ERR_VERIFY) on a location that had been read once already
+ * (cads_flash_read() right after erase, to confirm 0xFF), even though
+ * FLASH->SR showed no error from the write itself.
+ *
+ * RM0090's flash chapter requires DCEN cleared before DCRST is set - setting
+ * DCRST while the cache is still enabled is documented as having no defined
+ * effect. Called after every erase and every program, not just when a
+ * verify is about to run: any caller, not only this file, could read a
+ * just-modified address next.
  */
-__attribute__((section(".ramfunc"))) static uint32_t cads_flash_ramfunc_erase(uint32_t snb) {
+static void cads_flash_reset_data_cache(void) {
+    FLASH->ACR &= ~FLASH_ACR_DCEN;
+    FLASH->ACR |= FLASH_ACR_DCRST;
+    FLASH->ACR &= ~FLASH_ACR_DCRST;
+    FLASH->ACR |= FLASH_ACR_DCEN;
+}
+
+/*
+ * Owns the sector erase from FLASH_CR write through BSY clearing; nothing
+ * outside this function touches FLASH_CR/FLASH_SR while an erase is in
+ * flight. Caller has already unlocked the controller and validated the
+ * sector twice. Runs from flash - see the file header for why not RAM.
+ */
+static uint32_t cads_flash_erase_sector(uint32_t snb) {
     FLASH->SR = CADS_FLASH_SR_ERRORS;
     FLASH->CR = (FLASH->CR & ~(FLASH_CR_PSIZE | FLASH_CR_SNB)) | FLASH_CR_PSIZE_1 | FLASH_CR_SER |
                 (snb << FLASH_CR_SNB_Pos);
@@ -111,13 +145,12 @@ __attribute__((section(".ramfunc"))) static uint32_t cads_flash_ramfunc_erase(ui
 }
 
 /*
- * Runs from RAM. Programs exactly one 4-byte word and waits for it to land;
- * same isolation rule as cads_flash_ramfunc_erase. The word is already
- * assembled by the caller so this function never dereferences the caller's
- * (possibly misaligned) source buffer.
+ * Programs exactly one 4-byte word and waits for it to land; same isolation
+ * rule as cads_flash_erase_sector(). The word is already assembled by the
+ * caller so this function never dereferences the caller's (possibly
+ * misaligned) source buffer. Runs from flash - see the file header.
  */
-__attribute__((section(".ramfunc"))) static uint32_t cads_flash_ramfunc_program_word(uint32_t addr,
-                                                                                       uint32_t word) {
+static uint32_t cads_flash_program_word(uint32_t addr, uint32_t word) {
     FLASH->SR = CADS_FLASH_SR_ERRORS;
     FLASH->CR = (FLASH->CR & ~FLASH_CR_PSIZE) | FLASH_CR_PSIZE_1;
     FLASH->CR |= FLASH_CR_PG;
@@ -206,13 +239,14 @@ int cads_flash_program(uint32_t offset, const void* data, uint32_t size) {
             break;
         }
 
-        uint32_t sr = cads_flash_ramfunc_program_word(target, word);
+        uint32_t sr = cads_flash_program_word(target, word);
         if(sr & CADS_FLASH_SR_ERRORS) {
             status = CADS_FLASH_ERR_IO;
             break;
         }
     }
     cads_flash_lock();
+    cads_flash_reset_data_cache();
 
     if(status != CADS_FLASH_OK) return status;
 
@@ -235,8 +269,9 @@ int cads_flash_erase_block(uint32_t block) {
     if(!cads_flash_addr_is_safe(addr, CADS_FS_BLOCK_SIZE)) return CADS_FLASH_ERR_RANGE;
 
     cads_flash_unlock();
-    uint32_t sr = cads_flash_ramfunc_erase(cads_flash_sector_to_snb(sector));
+    uint32_t sr = cads_flash_erase_sector(cads_flash_sector_to_snb(sector));
     cads_flash_lock();
+    cads_flash_reset_data_cache();
 
     return (sr & CADS_FLASH_SR_ERRORS) ? CADS_FLASH_ERR_IO : CADS_FLASH_OK;
 }

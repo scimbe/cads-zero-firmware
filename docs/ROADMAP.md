@@ -225,14 +225,52 @@ Prove the toolchain, the boot path and the display path on real silicon.
             touched the panel, not a failure. Same category as M0's open
             "visual confirmation ... by a human" item.
 
-## M4 — Storage  `[ ]`
+## M4 — Storage  `[~]`
 
-- [ ] littlefs on flash bank 2 (`0x08120000`, 896 KB, 7 × 128 KB blocks)
-- [ ] Flash driver in `.ramfunc`, erase/program bounded to the FS window
-- [ ] `storage` service, path API, config persistence
+- [x] littlefs on flash bank 2 (`0x08120000`, 896 KB, 7 × 128 KB blocks) —
+      `modules/storage`, littlefs as a git submodule (`lib/littlefs`),
+      wired in as its own `cads_littlefs` library so its vendored warnings
+      and its `-Wshadow` don't need fixing (same reasoning as `lib/Unity`).
+      `LFS_NO_MALLOC` + `LFS_NO_ASSERT` + `LFS_NO_{DEBUG,WARN,ERROR}` keep it
+      inside the no-heap, no-printf rules every other module here follows -
+      `LFS_NO_ASSERT` was a real, hard-won fix: without it, littlefs's
+      default `LFS_ASSERT(test)` expands to the real libc `assert()`, which
+      pulls in the fprintf/stdio chain and therefore `_sbrk`, and the board
+      build failed to *link* (not compile) over the undefined `end` symbol
+      this project's linker script leaves out on purpose. Invisible on the
+      host, which links a real libc with a real heap.
+- [x] Flash driver, erase/program bounded to the FS window —
+      `modules/storage/src/cads_flash_stm32f4.c`, register level, two
+      independent bounds checks per operation (offset-relative and
+      absolute-address), `_Static_assert`s tying the compiled-in window to
+      `docs/SAFETY.md` section 4 at build time. **Not** `.ramfunc`, despite
+      the roadmap line above having said so - see the real-hardware finding
+      below, which changed this after it was built and initially tested
+      clean on the host emulation (where there is no RAM-vs-flash execution
+      distinction to catch the bug).
+- [x] `storage` service, path API, config persistence —
+      `modules/storage/src/cads_storage.c` (littlefs glue, POSIX-ish
+      open/read/write/seek/stat/rename/remove/mkdir/dir_*, opaque handles
+      from fixed pools, no heap) and `cads_kv.c` (flat typed key/value store
+      for settings, one file rewritten in one shot rather than a database).
+      30 host unit tests across `test_flash.c`/`test_storage.c`/`test_kv.c`
+      (real littlefs, not a fake, over the RAM-backed `cads_flash_host.c`
+      emulation which enforces the same NOR "program only clears bits"
+      contract the real driver does).
 - [ ] File browser app
-- [ ] **HARDWARE GATE M4**: write, power-cycle, read back; verify the
-      firmware region is untouched by comparing a flash CRC before and after
+- [x] **HARDWARE GATE M4 PASSED**, 2026-08-20: write, reset (not a
+      reflash), read back; firmware-region CRC32 identical before and after
+      (`0x58A5B49C`, both within the write run and again after the reset).
+      Real protocol, not simulated: explorer command `u`
+      (`apps/bringup/explorer_storage_test.c`) formats the volume, writes a
+      known 64-byte test file, and prints the CRC32 of everything below
+      `CADS_FS_BASE` (bank 1 + the reserved bank-2 gap, docs/SAFETY.md
+      section 4) computed fresh each run. Run once: format + write + PASS.
+      Reset the board with `st-flash ... reset` (never `write` - that would
+      rewrite bank 1, making the comparison meaningless). Run again: mounts
+      the existing volume without reformatting, reads the same file back,
+      byte-for-byte match, PASS. See the log entry below for the real bug
+      this gate caught before it could ever have passed cleanly.
 
 ## M5 — Network (the hardware advantage)  `[~]`
 
@@ -400,6 +438,47 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-20 — M4 storage: littlefs on flash bank 2, real hardware gate
+  passed (write, reset, read back, firmware CRC identical before and
+  after). Reviewed and completed a `modules/storage` skeleton that already
+  existed but had never been build-verified (its own `tests/` referenced two
+  files, `test_storage.c` and `test_kv.c`, that did not exist yet). Two real
+  bugs found and fixed on the way, both invisible on the host and both the
+  reason this took several hardware-gate attempts rather than one:
+  (1) `cads_flash_host.c` was missing `#include <stdbool.h>` - compiled on
+  whatever host toolchain the code was last written against, never actually
+  built with this project's own CMake config until now.
+  (2) littlefs's default `LFS_ASSERT` expands to libc `assert()`, which
+  needs `_sbrk` for its fprintf-based failure message - the board build
+  failed to *link*, not compile, over the `end` symbol this project's linker
+  script leaves undefined on purpose (no heap, ever). Fixed with
+  `LFS_NO_ASSERT`, alongside the `LFS_NO_MALLOC`/`DEBUG`/`WARN`/`ERROR` the
+  skeleton already had.
+  The real finding, the reason a real hardware gate exists at all: the flash
+  erase/program routines were originally placed in `.ramfunc`, on the
+  documented reasoning that running from RAM would remove any doubt about
+  dual-bank read-while-write safety. On real hardware it did the opposite -
+  the identical operation, run from `.ramfunc`, produced a different failure
+  every few attempts (a genuine `BusFault` caught cleanly by M2's new fault
+  handler with `PC` pointing inside the RAM-resident routine per the linker
+  map; a spurious `CADS_FLASH_ERR_IO`; a spurious `CADS_FLASH_ERR_VERIFY`),
+  while manually replaying the identical register sequence from flash-
+  resident code worked every single time, five for five once switched over
+  for real. Moved the routines to run from flash instead - which is what
+  "dual bank" actually means is legal here - and every subsequent hardware
+  run has been clean. `docs/SAFETY.md` section 4 updated to match; it no
+  longer prescribes `.ramfunc` for this. A second, real, unrelated bug
+  surfaced along the way and is now fixed too: the ART accelerator's data
+  cache (`FLASH_ACR.DCEN`) doesn't know when flash content changes under it,
+  so an address read once and then modified could read back stale, cached
+  data - including inside this driver's own post-program verify. Every
+  erase and program now resets the data cache before returning
+  (`cads_flash_reset_data_cache()`, disable-reset-reenable, per RM0090's
+  documented sequence). Both faults were only ever reachable on real
+  silicon; the host's RAM-backed emulation has no execution-location
+  distinction and no cache to go stale, which is exactly why this milestone
+  waited for the real gate rather than calling the host tests sufficient.
 
 - 2026-08-20 — Built the fault handlers, closing the last open item in M2 -
   the milestone is now `[x]`. `targets/itsboard/startup/fault_handlers.c`

@@ -172,6 +172,12 @@
 #define CADS_ETH_PHY_ADDR       0u
 
 /* --- internal flash storage volume ---------------------------------------- */
+/* Everything below CADS_FS_BASE - the firmware in bank 1 and the reserved gap
+ * of bank 2 sectors 12..16 (docs/SAFETY.md section 4) - the storage driver
+ * never erases or programs. CADS_FLASH_APP_BASE names the start of that
+ * range for anything that wants to checksum it (the M4 hardware gate does),
+ * without repeating the address as an unexplained literal. */
+#define CADS_FLASH_APP_BASE     0x08000000u
 #define CADS_FS_BASE            0x08120000u  /* bank 2, sector 17 */
 #define CADS_FS_SIZE            (896u * 1024u)
 #define CADS_FS_BLOCK_SIZE      (128u * 1024u)

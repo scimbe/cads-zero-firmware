@@ -32,6 +32,23 @@ target_link_libraries(test_record PRIVATE cads_toolbox)
 cads_add_unit_test(test_log test_log.c)
 target_link_libraries(test_log PRIVATE cads_toolbox)
 
+# --- storage --------------------------------------------------------------
+#
+# Sources live in modules/storage/tests/, not here - modules/storage's own
+# CMakeLists.txt only adds that directory when configured standalone (see
+# its comment), so the same three files are wired in again here for the
+# combined `ctest --test-dir build/host` run, exactly the way toolbox's
+# tests already are.
+
+cads_add_unit_test(test_flash ${CADS_ROOT}/modules/storage/tests/test_flash.c)
+target_link_libraries(test_flash PRIVATE cads_storage)
+
+cads_add_unit_test(test_storage ${CADS_ROOT}/modules/storage/tests/test_storage.c)
+target_link_libraries(test_storage PRIVATE cads_storage)
+
+cads_add_unit_test(test_kv ${CADS_ROOT}/modules/storage/tests/test_kv.c)
+target_link_libraries(test_kv PRIVATE cads_storage)
+
 # --- portable firmware layers -------------------------------------------------
 #
 # The subjects are compiled into the test binaries rather than linked from

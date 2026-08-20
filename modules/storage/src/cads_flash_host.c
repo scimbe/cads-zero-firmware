@@ -18,6 +18,7 @@
 
 #include "cads/storage/flash.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 /* Same shape as CADS_FS_* in targets/itsboard/board.h. Not included from

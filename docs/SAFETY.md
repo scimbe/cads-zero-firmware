@@ -62,9 +62,17 @@ Rules:
   an image would run past bank 1 into the filesystem window.
 - **Never write option bytes.** Setting read protection (RDP level 1 or 2) is
   either annoying or permanent. Nothing in this repository writes `FLASH_OPTCR`.
-- Flash erase/program routines live in `.ramfunc`. The part is dual bank so
-  executing from bank 1 while erasing bank 2 is legal, but running the routine
-  from RAM removes the question entirely.
+- Flash erase/program routines run from flash (bank 1), not `.ramfunc`. The
+  part is dual bank, so executing from bank 1 while erasing/programming bank 2
+  is legal and is what actually happens. An earlier revision placed these
+  routines in `.ramfunc` on the reasoning that running from RAM would remove
+  any doubt about that; on real hardware it did the opposite - the identical
+  operation run from `.ramfunc` produced an intermittent BusFault or a
+  spurious IO/verify error, while the same sequence run from flash has been
+  reliable every time it has been tried (`modules/storage/src/
+  cads_flash_stm32f4.c` has the full account). `.ramfunc` remains available
+  in the linker script for anything that genuinely needs RAM residency in the
+  future; flash writes do not.
 
 ## 5. Display and touch
 

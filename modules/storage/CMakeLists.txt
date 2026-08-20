@@ -48,21 +48,13 @@ else()
     set(CADS_STORAGE_TARGET_DEFINES "")
 endif()
 
-add_library(cads_storage STATIC
-    src/cads_storage.c
-    src/cads_kv.c
-    ${CADS_STORAGE_FLASH_SOURCE}
-    ${CADS_ROOT}/lib/littlefs/lfs.c
-    ${CADS_ROOT}/lib/littlefs/lfs_util.c
-)
-
-target_include_directories(cads_storage
-    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
-            ${CADS_ROOT}/lib/littlefs
-            ${CADS_STORAGE_TARGET_INCLUDES})
-
-# LFS_NAME_MAX must be set before lfs.h is parsed by anything, hence a
+# littlefs is vendored, not ours - its warnings are not ours to fix, the same
+# reasoning tests/CMakeLists.txt already applies to lib/Unity. Built as its
+# own library rather than folded into cads_storage's sources so it never sees
+# cads_flags' -Wshadow (which its own internal `int err` reuse trips on
+# repeatedly - harmless, upstream's code, not worth carrying a diff for).
+#
+# LFS_NAME_MAX must be set before lfs.h is parsed by anything, hence a public
 # compile definition rather than a runtime value - see the _Static_assert in
 # src/cads_storage.c that keeps it honest against CADS_STORAGE_NAME_MAX.
 # LFS_NO_MALLOC makes any code path that would need the heap a build failure
@@ -70,16 +62,49 @@ target_include_directories(cads_storage
 # LFS_NO_{DEBUG,WARN,ERROR} trio keeps littlefs's optional printf tracing out
 # of a firmware that links no formatted output anywhere else (see
 # modules/toolbox/README.md).
-target_compile_definitions(cads_storage PRIVATE
+#
+# LFS_NO_ASSERT belongs to the same reasoning, found the hard way: without it
+# lfs_util.h's default LFS_ASSERT(test) expands to the real assert(test),
+# and newlib's assert() pulls in the fprintf/stdio machinery to report a
+# failure - which pulls in _sbrk to grow a heap for its buffers, which is
+# exactly the symbol this firmware's linker script leaves undefined on
+# purpose (no heap, ever). The board build only fails to *link* over this,
+# never to compile, so it was invisible until the ARM target was actually
+# built - the host build links a real libc with a real heap and never
+# noticed. A custom LFS_ASSERT that calls cads_hal_panic() instead of
+# assert() would keep the runtime check while staying heap-free; left as a
+# future improvement rather than done here, since core/cads_hal.h is not
+# currently a dependency of this module and wiring one in for this alone
+# deserves its own review pass, not a rushed addition while chasing a linker
+# error.
+add_library(cads_littlefs STATIC
+    ${CADS_ROOT}/lib/littlefs/lfs.c
+    ${CADS_ROOT}/lib/littlefs/lfs_util.c
+)
+target_include_directories(cads_littlefs PUBLIC ${CADS_ROOT}/lib/littlefs)
+target_compile_definitions(cads_littlefs PUBLIC
     LFS_NAME_MAX=63
     LFS_NO_MALLOC
+    LFS_NO_ASSERT
     LFS_NO_DEBUG
     LFS_NO_WARN
     LFS_NO_ERROR
-    ${CADS_STORAGE_TARGET_DEFINES}
 )
 
-target_link_libraries(cads_storage PRIVATE cads_flags)
+add_library(cads_storage STATIC
+    src/cads_storage.c
+    src/cads_kv.c
+    ${CADS_STORAGE_FLASH_SOURCE}
+)
+
+target_include_directories(cads_storage
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${CADS_STORAGE_TARGET_INCLUDES})
+
+target_compile_definitions(cads_storage PRIVATE ${CADS_STORAGE_TARGET_DEFINES})
+
+target_link_libraries(cads_storage PRIVATE cads_flags PUBLIC cads_littlefs)
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     enable_testing()
