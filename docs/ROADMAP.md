@@ -1105,10 +1105,62 @@ needs new hardware.
       display path itself (poll -> compute -> redraw) is now proven
       against real, freshly-read hardware registers, not assumed from
       the code alone.
-- [ ] Frequency/period counter on an INT line via timer input capture
+- [x] Frequency/period counter on an INT line via timer input capture
       (TIM2/TIM5 are 32-bit general-purpose timers with input capture on
       several AF mappings — confirm exact INT-pin-to-timer-channel mapping
       against ITS-BRD-NucleoPins.xlsx before wiring). S/M.
+      NOT ON AN INT LINE, AND ITS-BRD-NucleoPins.xlsx IS NOT ARCHIVED
+      HERE - both discovered while starting this task, resolved without
+      blocking on either. `ITS-BRD-NucleoPins.xlsx` does not exist in
+      this repository (only referenced, once, in a `targets/itsboard/
+      board.h` comment about a *different*, disputed pin claim). Checked
+      the F415/417 sibling datasheet's own alternate-function table for
+      PG0/1/3/4/5 (INT0/1/3/4/5, excluding INT2/PG2 - already on
+      `docs/SAFETY.md`'s RMII no-touch list, since PG2 is also
+      `ETH_RXER`) instead: none of them carry any timer alternate
+      function at all - their only non-GPIO AF is `FSMC_A1x`. So "an INT
+      line" was never going to work regardless of which one. This
+      exact tradeoff was already flagged, unprompted, in
+      `docs/HARDWARE.md`'s "Capability this board has that the firmware
+      does not yet use" section: the CN8 timer breakout exists "for this
+      kind of use... without having to repurpose an OUT/IN pin that
+      already has a job." Used it instead: `PB10` (CN8 pin 5),
+      confirmed via two independent sources - the project's own
+      schematic (`ITSBRD-schematic-Jaehnichen-HAW-rev02.pdf`, "timers"
+      page) labels the net "TIM2_3", and the sibling datasheet's AF
+      table independently confirms `PB10: TIM2_CH3` via `AF1`. TIM2 is
+      one of the two 32-bit timers this bullet's own text asks for.
+      Split the same way the MAC table task split sniffing from
+      learning: `cads/toolbox/freqcounter.h` (`cads_freqcounter_t`) is
+      the portable wraparound-safe delta / missed-edge-resync state
+      machine, HAL-free and unit-tested
+      (`tests/unit/test_freqcounter.c`, 7 cases including a real
+      32-bit-counter wraparound and an overcapture resync) since this
+      bench has no way to drive a known test frequency into CN8 without
+      a physical jumper wire; `targets/itsboard/hal/hal_freqcounter.c`
+      is only the TIM2 register layer (PSC=89 for a 1 MHz/1us tick, same
+      clock-doubling fact `hal_pktgen_timer.c` already verified for
+      TIM6 applies to TIM2 too since both are APB1; IC3F=0001, N=2 light
+      glitch filter, since CN8 is unbuffered straight to the MCU per
+      `docs/HARDWARE.md`). New explorer command `F <sec>` reports period
+      count, missed count, and min/max/avg Hz.
+      FOUND AND FIXED while verifying: `cads_hal_freqcounter_stop()`'s
+      own doc comment claimed it "releases PB10 back to a plain
+      pulled-down input", but the first implementation only stopped
+      TIM2's counter, leaving the pin in AF1 mode - fixed to actually
+      call `cads_gpio_set_mode()` back to plain input, matching what was
+      already documented.
+      RAM: +32 B (one small struct, no buffers) - margin 512 B over the
+      48K floor.
+      VERIFIED on hardware: itsboard links clean, M0 boot self-test
+      10/10, `d 8` app-tree regression clean. `F 5` ran fault-free
+      end-to-end and correctly reported "0 period(s), 0 missed" - honest
+      given nothing drives CN8 pin 5 on this bench (no physical jumper
+      access from this environment, the same class of limitation as the
+      sniffer/mactable tasks' zero ambient traffic), not a fabricated
+      reading. The actual capture-to-period logic has real,
+      hardware-independent proof instead: host `ctest` 19/19 (18 prior +
+      the new `test_freqcounter`, 7/7 cases).
 - [ ] Duty-cycle measurement, same input-capture channel, second capture
       compare register. S/M.
 - [ ] PWM generator on an OUT line (any adapter output pin on a timer channel
@@ -1156,6 +1208,32 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's frequency/period counter. Two
+  things this bullet's own text asked to check turned out both wrong
+  and resolvable: `ITS-BRD-NucleoPins.xlsx` (its named reference) is not
+  archived in this repo, and "an INT line" (PG0-5) turned out to have no
+  timer alternate function at all per the sibling datasheet's own AF
+  table (confirmed for INT0/1/3/4/5 - INT2/PG2 excluded regardless,
+  already on the RMII no-touch list as `ETH_RXER`). `docs/HARDWARE.md`
+  had already flagged the actual answer unprompted: the CN8 timer
+  breakout, specifically so this feature would not need to repurpose an
+  adapter pin. Used `PB10` (CN8 pin 5, net "TIM2_3" on the project's own
+  schematic, cross-checked against the sibling datasheet's AF table:
+  `TIM2_CH3` via `AF1`) - TIM2 being one of the two 32-bit timers the
+  bullet asked for.
+  Split the wraparound-safe delta / missed-edge-resync math into a
+  portable `cads/toolbox/freqcounter.h`, unit-tested
+  (`test_freqcounter.c`, 7 cases) since this bench has no way to drive a
+  known frequency into CN8 without a physical jumper wire - the same
+  "prove the logic host-side since hardware can't" move as the MAC
+  table task. New explorer command `F`. Found and fixed a real bug
+  while verifying: `cads_hal_freqcounter_stop()`'s own doc comment
+  promised it released the pin back to plain input, but the first cut
+  only stopped the timer - fixed.
+  VERIFIED on hardware: itsboard links clean (+32 B RAM), M0 boot 10/10,
+  `d 8` regression clean, `F 5` ran fault-free and honestly reported
+  zero periods (nothing drives CN8 pin 5 here). Host `ctest` 19/19.
 
 - 2026-08-21 — GPIO Swiss-army-knife's logic level display. No new code -
   the bullet itself already said this was "already the core of the

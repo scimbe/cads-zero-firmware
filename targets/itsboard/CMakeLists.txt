@@ -20,6 +20,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_eth_linklog.c
     hal/hal_eth_mmc.c
     hal/hal_pktgen_timer.c
+    hal/hal_freqcounter.c
     hal/hal_init.c
 )
 

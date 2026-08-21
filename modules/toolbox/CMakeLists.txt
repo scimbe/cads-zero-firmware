@@ -11,6 +11,7 @@ add_library(cads_toolbox STATIC
     src/record.c
     src/log.c
     src/mactable.c
+    src/freqcounter.c
 )
 
 target_include_directories(cads_toolbox

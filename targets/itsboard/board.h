@@ -145,6 +145,41 @@
 #define CADS_ADAPTER_IO_MASK    0x00FFu  /* bits 0..7 on each of the above */
 #define CADS_ADAPTER_INT_MASK   0x003Fu  /* bits 0..5 on GPIOG */
 
+/* --- CN8 timer breakout: frequency/period counter --------------------------
+ *
+ * docs/ROADMAP.md's "Frequency/period counter on an INT line via timer
+ * input capture" bullet asks for the exact pin-to-timer-channel mapping
+ * to be confirmed before wiring. Its own named source
+ * (ITS_BRD_HW/ITS-BRD-NucleoPins.xlsx) is not archived in this
+ * repository, so this was confirmed two other ways instead:
+ *
+ *   1. The project's own schematic (docs/reference/datasheets/
+ *      ITSBRD-schematic-Jaehnichen-HAW-rev02.pdf, the "timers" page)
+ *      labels CN8 pin 5 with the net name "TIM2_3" on physical pin PB10.
+ *   2. The archived F415/417 sibling datasheet's alternate function
+ *      table independently confirms PB10: TIM2_CH3 via AF1 (matching
+ *      the schematic's own net label) - a cross-check the README's own
+ *      caution about not trusting sibling-part *timing/electrical*
+ *      numbers does not cover, since AF pin routing is a shared-silicon
+ *      fact across the whole RM0090-covered family, not a per-part
+ *      electrical spec.
+ *
+ * NOT one of the adapter's INT0..5 lines (PG0..PG5) on purpose: none of
+ * them carry any timer alternate function at all per that same AF table
+ * (their only non-GPIO AF is FSMC_A1x), and this exact tradeoff was
+ * already flagged in docs/HARDWARE.md's "Capability this board has that
+ * the firmware does not yet use" section - the timer breakout exists
+ * "for this kind of use... without having to repurpose an OUT/IN pin
+ * that already has a job". PB10 is confirmed unclaimed elsewhere in this
+ * codebase: not on the RMII reserved-pin list
+ * (cads_hal_pin_is_reserved()/docs/SAFETY.md), and the disputed old
+ * "PB10 = touch panel BUSY" claim a few lines above this is explicitly
+ * not what any driver here actually uses.
+ */
+#define CADS_PIN_FREQCOUNTER_PORT GPIOB
+#define CADS_PIN_FREQCOUNTER_PIN  10u
+#define CADS_PIN_FREQCOUNTER_AF   1u
+
 /* --- Nucleo-144 on-board indicators --------------------------------------- */
 #define CADS_PIN_LED_GREEN_PORT GPIOB
 #define CADS_PIN_LED_GREEN      0u
