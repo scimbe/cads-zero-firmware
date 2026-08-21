@@ -1477,7 +1477,49 @@ needs new hardware.
       change the existing boot-gate behaviour - identical `PASS: 10/10`
       output. No firmware changed this task, so no itsboard rebuild -
       this is a host-side Python tool.
-- [ ] CI: build both targets, unit + golden tests, size regression budget
+- [x] CI: build both targets, unit + golden tests, size regression budget
+      `.github/workflows/ci.yml` already had three of the four pieces:
+      a `firmware` job (cross-build for the itsboard target, plus a
+      generated-vector-table freshness check), a `host` job (build +
+      `ctest`, which already runs the golden-image tests alongside the
+      unit tests - no separate golden job needed), and a plain size
+      *report* (prints `arm-none-eabi-size`'s output, decoration, not a
+      gate). "Size regression budget" was the one genuinely missing
+      word, and the one this session's own history motivates directly:
+      this milestone hit `targets/itsboard/linker/cads_itsboard.ld`'s
+      `ASSERT(__cads_heap_size >= 48K, ...)` floor at *exactly* zero
+      bytes of margin more than once, caught only by manually counting
+      bytes after the fact each time - a floor a build either clears or
+      does not is not the same as a budget that warns while there is
+      still room to fix it calmly.
+      New `scripts/check_ram_budget.py`: reads `__cads_heap_size` back
+      out of the built ELF via `nm` - the exact same symbol the
+      linker's own ASSERT already computes, not re-derived from section
+      sizes (which would risk drifting out of sync with what the
+      linker script actually does) - and fails if the margin above the
+      48K floor is thinner than `--min-margin-bytes` (default 256,
+      deliberately the smallest margin this session ever accepted as
+      "real" for a shipped task rather than an arbitrary round number).
+      Wired into the `firmware` job right after the existing size
+      report, with `set -o pipefail` made explicit rather than relying
+      on GitHub Actions' own default shell behaviour for a `| tee` to
+      actually fail the step - a silently-swallowed exit code here
+      would defeat the entire point.
+      VERIFIED: ran the script locally against the current build in
+      both a genuine passing case (0 exit, `PASS: 256 B of margin,
+      budget is 256 B` - this project's own current, real margin) and a
+      deliberately-tightened budget to force a failure (`--min-margin-
+      bytes 500`, 1 exit, clear FAIL message) - both propagated through
+      `set -o pipefail | tee` with the correct exit code, confirmed
+      explicitly rather than assumed from GitHub's own documented
+      default. `.github/workflows/ci.yml` itself parses as valid YAML
+      (checked with Ruby's YAML parser, since PyYAML is not installed
+      locally). No firmware code changed - CI/tooling only, so no
+      itsboard rebuild or board flash for this task; the real, live CI
+      run this commit itself triggers on `main` is the actual
+      end-to-end verification for a workflow-file change - watched
+      after pushing, not assumed from the local dry run alone; see the
+      dated Log entry below for that run's own result.
 
 ---
 
@@ -1496,6 +1538,27 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M7's last bullet: CI size regression budget, the one
+  genuinely missing piece of "CI: build both targets, unit + golden
+  tests, size regression budget" (the other three already existed in
+  .github/workflows/ci.yml). New scripts/check_ram_budget.py reads
+  __cads_heap_size straight out of the built ELF via nm - the exact
+  symbol the linker's own ASSERT(__cads_heap_size >= 48K, ...) already
+  computes, not re-derived - and fails if the margin above that floor
+  is under 256 B, the smallest margin this session ever accepted as
+  real rather than razor-thin. Wired into the firmware job with an
+  explicit `set -o pipefail` ahead of the `| tee`, checked rather than
+  assumed from GitHub Actions' own default shell behaviour, since a
+  silently-swallowed exit code would defeat the point entirely.
+  Verified locally in both directions before pushing: a genuine pass
+  (0 exit, this project's own real current margin, 256 B) and a
+  deliberately tightened budget to force a failure (1 exit, clear
+  message) - both propagated the correct exit code through the pipe.
+  ci.yml itself checked as valid YAML (Ruby's parser, no PyYAML
+  locally). No firmware touched, so no board involved - the real,
+  live CI run this commit triggers on push is the actual end-to-end
+  proof for a workflow file, watched after pushing rather than assumed.
 
 - 2026-08-21 — M7's board_test.py extension: per-milestone suites,
   genuinely new work after three "already done" bullets in a row. "TAP

@@ -49,6 +49,17 @@ jobs:
           arm-none-eabi-size build/cads-zero.elf >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
+      # The linker script's own ASSERT(__cads_heap_size >= 48K, ...) is a
+      # floor, not a budget - this milestone's own history hit that floor
+      # exactly (0 B of margin) more than once, caught only by a human
+      # counting bytes by hand afterward. This fails the build early
+      # instead, at a real margin, not just before the link outright
+      # refuses. See scripts/check_ram_budget.py's own file header.
+      - name: RAM regression budget
+        run: |
+          set -o pipefail
+          python3 scripts/check_ram_budget.py build/cads-zero.elf | tee -a $GITHUB_STEP_SUMMARY
+
       - name: Check the filesystem region is untouched
         run: |
           if arm-none-eabi-objdump -h build/cads-zero.elf | grep -qE '0810[2-9a-f]|081[1-9a-f]'; then
