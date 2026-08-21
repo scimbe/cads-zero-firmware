@@ -1429,7 +1429,54 @@ needs new hardware.
       VERIFIED: host `ctest` 19/19, run fresh for this bullet
       specifically, not cited from memory. No board hardware gate - no
       files changed, nothing here touches `targets/itsboard/`.
-- [ ] `scripts/board_test.py` extended: TAP over VCP, per-milestone suites
+- [x] `scripts/board_test.py` extended: TAP over VCP, per-milestone suites
+      "TAP over VCP" already existed (the boot-time self-test's own
+      `1..N`/`ok`/`not ok`/`# RESULT:` stream, parsed since this
+      script's very first version) - "per-milestone suites" was the
+      genuinely open half, and genuinely new work this time, unlike the
+      last three M6/M7 bullets. Added `--suite <name>` rather than a
+      separate script, matching the bullet's own wording ("`board_test.py`
+      extended", not a new file) and this project's precedent of one
+      script per concern (`board_cmd.py` for one-off commands,
+      `board_soak.py` for stability) - a suite runs *after* a clean boot
+      gate, over the same still-open console, so the boot gate is what
+      proves the explorer REPL a suite needs is actually alive rather
+      than a separate assumption.
+      Each check is (letter, argument, description, validator) - not
+      firmware-emitted TAP, since these commands mostly print ad hoc
+      "# foo: done" text, not `ok N`; `run_suite()` synthesises real TAP
+      output from a small Python-side validator function per check
+      instead. Every validator asks "did this command complete and
+      report a well-formed result", not "was the result unconditionally
+      good": several M6 commands have an environment-dependent correct
+      answer (this bench's own long-established no-DHCP-server, no-
+      physical-jumper limitations, see the frequency-counter and
+      continuity-tester tasks' own writeups), so asserting a specific
+      PASS would make a perfectly healthy board fail this gate forever.
+      The `m6` suite checks `F` (frequency/duty-cycle counter completes),
+      `D` (PWM generator completes), `L` (logic analyzer captures and
+      renders without a redraw timeout - the one check that verifies
+      something beyond "didn't crash"), and `K` (continuity tester
+      produces a well-formed PASS *or* FAIL, not specifically PASS).
+      FOUND AND FIXED WHILE VERIFYING: the first real run failed all
+      four checks. Cause was in the test harness, not the firmware -
+      `F`'s explorer command takes one argument (seconds) with no
+      user-selectable sample rate, unlike `L`'s two; the suite's first
+      draft passed it "25 2" as if it were "rate seconds", `F` parsed
+      "25" as seconds and ran for 25s instead of the intended 2, and the
+      suite's own 15s per-check timeout gave up before that finished -
+      corrupting every check after it, since the next command got typed
+      into a board still mid-way through the previous one. Fixed the
+      argument to the one `F` actually takes; the same reflash-and-rerun
+      then passed all four checks cleanly.
+      VERIFIED on hardware: `board_test.py --suite m6` (after a fresh
+      flash) reports `PASS: 10/10` for the boot gate followed by
+      `# RESULT: PASS` for all four suite checks, `K` correctly scored
+      `ok` for its own honest FAIL result. Re-ran the plain (no
+      `--suite`) invocation afterward to confirm the refactor did not
+      change the existing boot-gate behaviour - identical `PASS: 10/10`
+      output. No firmware changed this task, so no itsboard rebuild -
+      this is a host-side Python tool.
 - [ ] CI: build both targets, unit + golden tests, size regression budget
 
 ---
@@ -1449,6 +1496,34 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M7's board_test.py extension: per-milestone suites,
+  genuinely new work after three "already done" bullets in a row. "TAP
+  over VCP" already existed (the boot self-test's own stream); added
+  `--suite <name>` for the missing half rather than a new script,
+  matching the bullet's own "board_test.py extended" wording. A suite
+  runs after a clean boot gate over the same console, sending each
+  check's explorer command and validating with a small Python function
+  rather than expecting firmware-emitted TAP (these commands print ad
+  hoc text, not `ok N`) - synthesising the TAP stream in Python instead.
+  Every validator checks "completed with a well-formed result", not
+  "result was PASS", since several M6 commands have an environment-
+  dependent correct answer on this bench (no DHCP server, no physical
+  jumper - both already established facts from earlier tasks) and
+  asserting a specific PASS would fail a healthy board forever. `m6`
+  suite: F, D, L (checks the redraw actually completed, not just "didn't
+  crash"), K (accepts either a well-formed PASS or FAIL).
+  Found and fixed a real bug in the test harness on the first run, not
+  the firmware: passed F two arguments as if it took a configurable
+  rate like L does: F only takes one (seconds), so "25 2" was parsed as
+  25 seconds, ran long past the suite's own 15s timeout, and corrupted
+  every check after it. Fixed the argument shape; reflash-and-rerun then
+  passed all four checks cleanly.
+  VERIFIED on hardware: `--suite m6` gives boot-gate PASS followed by
+  RESULT: PASS for all four checks (K correctly scored ok for its own
+  honest FAIL). Re-ran the plain invocation to confirm the refactor left
+  the existing boot-gate behaviour unchanged. No firmware touched, so no
+  itsboard rebuild - a host-side Python tool only.
 
 - 2026-08-21 — M7's "Unit tests (Unity) for canvas, core, toolbox".
   Closed by counting, not assuming: toolbox already has all nine of its

@@ -13,12 +13,33 @@ write-only and whose SPI shares a pin with the Ethernet PHY.
 Every external command runs under a timeout. Debug probes and serial ports hang;
 a gate that can hang forever is worse than one that fails.
 
+PER-MILESTONE SUITES
+---------------------
+The boot-time self test is the one thing every milestone's firmware always
+emits, unconditionally, in real TAP - that half of "TAP over VCP, per-milestone
+suites" already existed. The other half did not: nothing tied a later
+milestone's own explorer commands (board_cmd.py's `f`/`d`/`l`/`k` and friends)
+into a repeatable, scriptable pass/fail check the way the boot self test is one.
+
+`--suite <name>` adds that without touching the firmware at all: after a clean
+boot-gate pass, it sends each suite's explorer commands over the same open
+console, and synthesises its own TAP stream from a small per-check validator
+function - not from the firmware, which mostly prints ad hoc "# foo: done"
+text, not `ok N`. See SUITES below for what each one checks and why each
+check's PASS/FAIL condition was chosen the way it was (several of this
+project's own explorer commands have an environment-dependent correct
+answer - see docs/ROADMAP.md's own repeated notes on this bench having no
+DHCP server and no way to attach a physical jumper wire - so a suite checks
+that a command *completed and reported a well-formed result*, not that the
+result was unconditionally "good").
+
 Usage:
     scripts/board_test.py                    # build, flash, run
     scripts/board_test.py --no-build         # flash the existing image and run
     scripts/board_test.py --no-flash         # reset whatever is on the board and listen
     scripts/board_test.py --port /dev/cu.usbmodem11303 --timeout 30
     scripts/board_test.py --list-ports
+    scripts/board_test.py --suite m6         # boot gate, then the M6 GPIO suite
 """
 
 from __future__ import annotations
@@ -41,6 +62,88 @@ DEFAULT_STLINK = "066FFF565282494867161033"
 RESULT_RE = re.compile(r"^#\s*RESULT:\s*(PASS|FAIL)\s*$")
 PLAN_RE = re.compile(r"^1\.\.(\d+)\s*$")
 TAP_RE = re.compile(r"^(ok|not ok)\s+(\d+)\s*-?\s*(.*)$")
+
+# A completion marker shared across every suite check below, so run_suite()
+# can stop reading as soon as a command is actually done rather than sitting
+# out its own worst-case timeout every time - the same reason the boot gate
+# itself stops on RESULT_RE rather than reading until args.timeout expires.
+SUITE_DONE_RE = re.compile(
+    r"^#\s*(freq|pwm|logic):\s*(done|captured)\b|^#\s*continuity:\s*(PASS|FAIL)\b"
+)
+
+
+def _seen(pattern: str):
+    """A validator: some line in the command's output matched `pattern`."""
+    rx = re.compile(pattern)
+    return lambda lines: any(rx.match(line) for line in lines)
+
+
+def _seen_and_not(pattern: str, forbidden: str):
+    """A validator: `pattern` matched, and `forbidden` never appeared -
+    e.g. "the capture finished" AND "the redraw never timed out"."""
+    rx, bad = re.compile(pattern), re.compile(forbidden)
+    return lambda lines: any(rx.match(line) for line in lines) and not any(
+        bad.search(line) for line in lines
+    )
+
+
+# Each check is (explorer letter, argument, description, validator). The
+# argument picks a short duration deliberately - this is a repeatable gate
+# meant to run every time, not a demo - and every validator asks "did this
+# command complete and report a well-formed result", not "was the result
+# unconditionally good": several of these commands have a correct answer
+# that depends on this bench's own environment (no DHCP server, no way to
+# attach a physical jumper wire - see docs/ROADMAP.md's own notes on both),
+# so asserting a specific PASS would make the suite fail on a perfectly
+# healthy board.
+SUITES: dict[str, list[tuple[str, str, str, object]]] = {
+    "m6": [
+        (
+            "F",
+            "2",
+            "frequency/duty-cycle counter (CN8 pin 5) completes cleanly",
+            _seen(r"^#\s*freq:\s*done,"),
+        ),
+        (
+            "D",
+            "1000 50 1",
+            "PWM generator (OUT13) completes cleanly",
+            _seen(r"^#\s*pwm:\s*done"),
+        ),
+        (
+            "L",
+            "25 1",
+            "logic analyzer captures and renders without a redraw timeout",
+            _seen_and_not(r"^#\s*logic:\s*captured", r"redraw did not complete"),
+        ),
+        (
+            "K",
+            "",
+            "continuity tester completes with a well-formed PASS/FAIL result",
+            _seen(r"^#\s*continuity:\s*(PASS|FAIL)\b"),
+        ),
+    ],
+}
+
+
+def run_suite(fd: int, name: str, per_check_timeout: float) -> int:
+    checks = SUITES[name]
+    print(f"\n# suite: {name} ({len(checks)} check(s))", flush=True)
+    print(f"1..{len(checks)}", flush=True)
+
+    passed = 0
+    for i, (letter, argument, description, validator) in enumerate(checks, start=1):
+        command = f"{letter} {argument}".strip() + "\r\n"
+        os.write(fd, command.encode())
+        lines = list(read_lines(fd, timeout=per_check_timeout, stop_when=SUITE_DONE_RE.match))
+        ok = validator(lines)
+        print(f"{'ok' if ok else 'not ok'} {i} - {description}", flush=True)
+        if ok:
+            passed += 1
+
+    result = "PASS" if passed == len(checks) else "FAIL"
+    print(f"# RESULT: {result}", flush=True)
+    return 0 if passed == len(checks) else 1
 
 
 def candidate_ports() -> list[str]:
@@ -102,6 +205,14 @@ def main() -> int:
     parser.add_argument("--no-flash", action="store_true")
     parser.add_argument("--build-type", default="Debug")
     parser.add_argument("--list-ports", action="store_true")
+    parser.add_argument(
+        "--suite",
+        choices=sorted(SUITES),
+        help="after a clean boot gate, also run this milestone's explorer-command suite",
+    )
+    parser.add_argument(
+        "--suite-timeout", type=float, default=15.0, help="per-check deadline within a suite"
+    )
     args = parser.parse_args()
 
     if args.list_ports:
@@ -143,37 +254,45 @@ def main() -> int:
                     failures.append(line)
             if done := RESULT_RE.match(line):
                 result = done.group(1)
+
+        print(flush=True)
+
+        if result is None:
+            print(
+                f"FAIL: no RESULT line within {args.timeout:.0f}s ({executed} assertions seen).\n"
+                f"      Check that {port} really is the ST-Link VCP "
+                f"(scripts/board_test.py --list-ports) and that the firmware got past init."
+            )
+            return 2
+
+        if planned is not None and executed != planned:
+            print(
+                f"FAIL: plan announced {planned} assertions but {executed} arrived - "
+                f"the firmware stopped part way through."
+            )
+            return 3
+
+        if failures:
+            print(f"FAIL: {len(failures)} assertion(s) failed:")
+            for line in failures:
+                print(f"  {line}")
+            return 1
+
+        if result != "PASS":
+            print(f"FAIL: firmware reported {result}")
+            return 1
+
+        print(f"PASS: {executed}/{planned or executed} assertions on real hardware")
+
+        # The suite runs over the same still-open console, on purpose: the
+        # boot gate above is what proves the explorer REPL this needs is
+        # actually alive to send commands to, not a separate concern.
+        if args.suite:
+            return run_suite(fd, args.suite, args.suite_timeout)
     finally:
         os.close(fd)
 
-    print(flush=True)
-
-    if result is None:
-        print(
-            f"FAIL: no RESULT line within {args.timeout:.0f}s ({executed} assertions seen).\n"
-            f"      Check that {port} really is the ST-Link VCP "
-            f"(scripts/board_test.py --list-ports) and that the firmware got past init."
-        )
-        return 2
-
-    if planned is not None and executed != planned:
-        print(
-            f"FAIL: plan announced {planned} assertions but {executed} arrived - "
-            f"the firmware stopped part way through."
-        )
-        return 3
-
-    if failures:
-        print(f"FAIL: {len(failures)} assertion(s) failed:")
-        for line in failures:
-            print(f"  {line}")
-        return 1
-
-    if result != "PASS":
-        print(f"FAIL: firmware reported {result}")
-        return 1
-
-    print(f"PASS: {executed}/{planned or executed} assertions on real hardware")
+    return 0
     return 0
 
 
