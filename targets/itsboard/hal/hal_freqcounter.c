@@ -1,5 +1,6 @@
 /*
- * CaDS Zero - TIM2 channel 3 input capture (CN8 pin 5, PB10).
+ * CaDS Zero - TIM2 channel 3 input capture (CN8 pin 5, PB10), plus
+ * channel 4 for duty cycle.
  *
  * CLOCK, THE SAME FACT hal_pktgen_timer.c ALREADY VERIFIED
  * ------------------------------------------------------------
@@ -28,17 +29,44 @@
  * filter table (Bits 7:4 IC1F, the same layout for IC3F): N=2 samples
  * at the internal timer clock - just enough to reject a single-sample
  * glitch without meaningfully limiting the top end of what this driver
- * can measure.
+ * can measure. IC4F below uses the same value, for the same reason.
+ *
+ * CHANNEL 4 CAPTURES THE SAME PIN, NOT A SECOND ONE
+ * -------------------------------------------------------
+ * docs/ROADMAP.md's duty-cycle bullet: "same input-capture channel,
+ * second capture compare register". TIM2_CH4 has no pin of its own in
+ * this driver at all - CCMR2's CC4S = 10 configures "IC4 is mapped on
+ * TI3" (confirmed against RM0090's own CC4S bit description, the same
+ * primary-source check already done for CC3S = 01 = "IC3 is mapped on
+ * TI3"), the timer's own channel-swap feature for exactly this PWM/duty
+ * measurement case. CC4P = 1 (falling edge, mirroring CC3's CC3P = 0
+ * rising) means CH3 and CH4 now capture the rising and falling edges of
+ * the identical PB10 signal, independently, into CCR3 and CCR4.
+ *
+ * FREE-RUNNING, NOT RESET-MODE
+ * -----------------------------------
+ * RM0090's own textbook PWM Input Mode additionally drives the slave
+ * mode controller into Reset mode (TI3FP3 resets CNT on every rising
+ * edge), so CCR4 reads the high time directly. Deliberately not done
+ * here: this driver's free-running configuration is exactly what the
+ * frequency counter above depends on, and reset-on-trigger would change
+ * what CCR3 itself means out from under it. The mathematically
+ * equivalent alternative - leave the counter free-running and compute
+ * high time as the wraparound-safe delta between a falling capture and
+ * the most recent rising one (cads_freqcounter_capture_high(),
+ * cads/toolbox/freqcounter.h) - gives the same answer without touching
+ * the period counter's own already-committed behaviour at all.
  *
  * WHAT THIS FILE DOES NOT DO
  * -------------------------------
- * The actual period/frequency math - the wraparound-safe delta, the
- * "a missed edge resynchronises rather than reporting a wrong period"
- * policy - lives in cads/toolbox/freqcounter.h, not here. This file
- * only reads TIM2's raw CCR3/SR and hands them to that state machine;
- * see its own file header for why, and tests/unit/test_freqcounter.c
- * for the proof, since there is no way to drive a known test frequency
- * into CN8 pin 5 without a physical jumper wire.
+ * The actual period/frequency/duty-cycle math - the wraparound-safe
+ * deltas, the "a missed edge resynchronises rather than reporting a
+ * wrong measurement" policy - lives in cads/toolbox/freqcounter.h, not
+ * here. This file only reads TIM2's raw CCR3/CCR4/SR and hands them to
+ * that state machine; see its own file header for why, and
+ * tests/unit/test_freqcounter.c for the proof, since there is no way to
+ * drive a known test frequency into CN8 pin 5 without a physical jumper
+ * wire.
  */
 
 #include "hal_freqcounter.h"
@@ -66,14 +94,22 @@ void cads_hal_freqcounter_start(void) {
     TIM2->PSC = CADS_FREQCOUNTER_PSC;
     TIM2->ARR = 0xFFFFFFFFu;
 
-    /* CC3S = 01: IC3 mapped directly to TI3 (this pin's own input, not
-     * the paired channel's). IC3PSC left at 00: capture every valid
-     * edge, not every Nth one - a period counter needs every edge. */
-    TIM2->CCMR2 = (TIM2->CCMR2 & ~(TIM_CCMR2_CC3S | TIM_CCMR2_IC3PSC | TIM_CCMR2_IC3F)) |
-                  TIM_CCMR2_CC3S_0 | (0x1u << TIM_CCMR2_IC3F_Pos);
+    /* CC3S = 01: IC3 mapped directly to TI3 (this pin's own input).
+     * CC4S = 10: IC4 mapped indirectly to TI3 (the same pin, via the
+     * channel swap - see this file's own header). IC3PSC/IC4PSC left
+     * at 00 on both: capture every valid edge, not every Nth one - a
+     * period/duty counter needs every edge. */
+    TIM2->CCMR2 = (TIM2->CCMR2 &
+                   ~(TIM_CCMR2_CC3S | TIM_CCMR2_IC3PSC | TIM_CCMR2_IC3F | TIM_CCMR2_CC4S |
+                     TIM_CCMR2_IC4PSC | TIM_CCMR2_IC4F)) |
+                  TIM_CCMR2_CC3S_0 | (0x1u << TIM_CCMR2_IC3F_Pos) | TIM_CCMR2_CC4S_1 |
+                  (0x1u << TIM_CCMR2_IC4F_Pos);
 
-    /* CC3P = 0, CC3NP = 0: capture on the rising edge. */
-    TIM2->CCER = (TIM2->CCER & ~(TIM_CCER_CC3P | TIM_CCER_CC3NP)) | TIM_CCER_CC3E;
+    /* CC3P = 0, CC3NP = 0: capture on the rising edge (the period).
+     * CC4P = 1, CC4NP = 0: capture on the falling edge (the high
+     * time), of the same signal via the indirect mapping above. */
+    TIM2->CCER = (TIM2->CCER & ~(TIM_CCER_CC3P | TIM_CCER_CC3NP | TIM_CCER_CC4NP)) |
+                 TIM_CCER_CC3E | TIM_CCER_CC4P | TIM_CCER_CC4E;
 
     /* Force PSC/ARR from their shadow registers into immediate effect,
      * then clear every flag the UG itself just set - the same two-step
@@ -103,6 +139,16 @@ bool cads_hal_freqcounter_poll(uint32_t* period_ticks) {
     return cads_freqcounter_capture(&s_freqcounter, capture, overcaptured, period_ticks);
 }
 
+bool cads_hal_freqcounter_poll_high(uint32_t* high_ticks) {
+    if(!(TIM2->SR & TIM_SR_CC4IF)) return false;
+
+    bool overcaptured = (TIM2->SR & TIM_SR_CC4OF) != 0u;
+    uint32_t capture = TIM2->CCR4; /* reading CCR4 clears CC4IF */
+    if(overcaptured) TIM2->SR &= ~TIM_SR_CC4OF; /* CC4OF needs an explicit clear */
+
+    return cads_freqcounter_capture_high(&s_freqcounter, capture, overcaptured, high_ticks);
+}
+
 uint32_t cads_hal_freqcounter_tick_hz(void) {
     return CADS_FREQCOUNTER_TICK_HZ;
 }
@@ -125,4 +171,24 @@ uint32_t cads_hal_freqcounter_max_period_ticks(void) {
 
 uint32_t cads_hal_freqcounter_avg_period_ticks(void) {
     return cads_freqcounter_avg_period_ticks(&s_freqcounter);
+}
+
+uint32_t cads_hal_freqcounter_high_count(void) {
+    return cads_freqcounter_high_count(&s_freqcounter);
+}
+
+uint32_t cads_hal_freqcounter_missed_high_count(void) {
+    return cads_freqcounter_missed_high_count(&s_freqcounter);
+}
+
+uint32_t cads_hal_freqcounter_min_high_ticks(void) {
+    return cads_freqcounter_min_high_ticks(&s_freqcounter);
+}
+
+uint32_t cads_hal_freqcounter_max_high_ticks(void) {
+    return cads_freqcounter_max_high_ticks(&s_freqcounter);
+}
+
+uint32_t cads_hal_freqcounter_avg_high_ticks(void) {
+    return cads_freqcounter_avg_high_ticks(&s_freqcounter);
 }

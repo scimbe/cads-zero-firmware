@@ -386,7 +386,7 @@ static void cads_help(void) {
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
         "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
-        "#   F <sec>    frequency/period counter on CN8 pin 5 (PB10, TIM2_CH3), default 5s\r\n"
+        "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"

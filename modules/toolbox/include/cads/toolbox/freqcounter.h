@@ -33,6 +33,23 @@
  * NO HEAP, NO CLOCK OF ITS OWN, for the same reasons cads/toolbox/
  * mactable.h gives: a plain struct, fed by the caller, testable on the
  * host with a scripted sequence of captures instead of a real timer.
+ *
+ * DUTY CYCLE REUSES THE SAME REFERENCE POINT, NOT A SECOND STATE MACHINE
+ * ---------------------------------------------------------------------
+ * docs/ROADMAP.md's own wording for the duty-cycle bullet: "same
+ * input-capture channel, second capture compare register" - a falling
+ * edge on the same physical pin as the rising edges above, captured via
+ * the timer's channel-swap (indirect) mapping rather than a second
+ * pin (see hal_freqcounter.c's own header for the register-level
+ * detail). cads_freqcounter_capture_high() measures the high time as
+ * the delta from the most recent RISING edge cads_freqcounter_capture()
+ * itself already tracked as `last_capture` - no separate rising-edge
+ * bookkeeping needed, and the same wraparound-safe unsigned subtraction
+ * applies. A falling edge is meaningless before any rising edge has
+ * been seen, or right after ITS OWN overcapture (a different flag than
+ * the rising edge's - the two can miss independently) - both cases
+ * return false rather than a guess, the same policy
+ * cads_freqcounter_capture() already applies to periods.
  */
 
 #ifndef CADS_TOOLBOX_FREQCOUNTER_H
@@ -54,6 +71,13 @@ typedef struct {
     uint32_t min_period_ticks;
     uint32_t max_period_ticks;
     uint64_t sum_period_ticks;
+
+    /* duty cycle - fed via cads_freqcounter_capture_high() */
+    uint32_t missed_high_count;
+    uint32_t high_count;
+    uint32_t min_high_ticks;
+    uint32_t max_high_ticks;
+    uint64_t sum_high_ticks;
 } cads_freqcounter_t;
 
 void cads_freqcounter_init(cads_freqcounter_t* fc);
@@ -80,6 +104,27 @@ uint32_t cads_freqcounter_missed_count(const cads_freqcounter_t* fc);
 uint32_t cads_freqcounter_min_period_ticks(const cads_freqcounter_t* fc);
 uint32_t cads_freqcounter_max_period_ticks(const cads_freqcounter_t* fc);
 uint32_t cads_freqcounter_avg_period_ticks(const cads_freqcounter_t* fc);
+
+/**
+ * Feed one falling-edge capture, for duty-cycle measurement - see this
+ * file's own header for how it relates to cads_freqcounter_capture().
+ *
+ * Returns true and fills `high_ticks` (the tick count the signal spent
+ * high, before this falling edge) when it can be measured against a
+ * trustworthy preceding rising edge. Returns false, leaving
+ * `high_ticks` untouched, before any rising edge has been captured yet,
+ * or when `overcaptured` is true for this falling edge itself.
+ */
+bool cads_freqcounter_capture_high(
+    cads_freqcounter_t* fc, uint32_t capture, bool overcaptured, uint32_t* high_ticks);
+
+uint32_t cads_freqcounter_high_count(const cads_freqcounter_t* fc);
+uint32_t cads_freqcounter_missed_high_count(const cads_freqcounter_t* fc);
+
+/** 0 when cads_freqcounter_high_count() is 0 - there is nothing to report yet. */
+uint32_t cads_freqcounter_min_high_ticks(const cads_freqcounter_t* fc);
+uint32_t cads_freqcounter_max_high_ticks(const cads_freqcounter_t* fc);
+uint32_t cads_freqcounter_avg_high_ticks(const cads_freqcounter_t* fc);
 
 #ifdef __cplusplus
 }

@@ -1161,8 +1161,42 @@ needs new hardware.
       reading. The actual capture-to-period logic has real,
       hardware-independent proof instead: host `ctest` 19/19 (18 prior +
       the new `test_freqcounter`, 7/7 cases).
-- [ ] Duty-cycle measurement, same input-capture channel, second capture
+- [x] Duty-cycle measurement, same input-capture channel, second capture
       compare register. S/M.
+      Literally the same channel: TIM2_CH4's CCMR2.CC4S=10 maps IC4
+      onto TI3 (RM0090's own words: "IC4 is mapped on TI3") - the
+      timer's channel-swap feature, not a second GPIO pin, so CH3
+      (rising, unchanged from the frequency-counter task) and CH4
+      (falling, new) both read CN8 pin 5. Deliberately NOT RM0090's
+      textbook PWM Input Mode, which additionally drives the slave mode
+      controller into Reset mode so CNT zeroes on every rising edge:
+      that would change what CCR3 itself means, reaching back into the
+      already-verified, already-committed frequency counter. Used the
+      mathematically equivalent alternative instead - leave TIM2
+      free-running exactly as it already was, and compute high time as
+      the wraparound-safe delta between a falling capture and the most
+      recent rising one, extending `cads/toolbox/freqcounter.h`
+      (`cads_freqcounter_capture_high()`) rather than the timer
+      configuration the period counter depends on.
+      One command, not two: the `F` explorer command now reports both
+      from the same capture session (period AND duty cycle are the same
+      signal's two halves, not separate measurements) - `#   duty avg=NN%
+      (avg high H of avg period P ticks)` alongside the existing
+      min/max/avg Hz line.
+      RAM: 0 B extra device-side static state beyond the same
+      `cads_freqcounter_t` instance (more fields in the same already-
+      allocated struct); host `ctest` gained 7 more cases (14 total in
+      `test_freqcounter`) covering the falling-edge-before-any-rising-edge
+      case, wraparound, its own independent overcapture counter, and
+      min/max/avg high-time tracking - again the only real proof
+      available, since this bench still has no physical jumper wire to
+      drive a known duty cycle into CN8 pin 5.
+      VERIFIED on hardware: itsboard links clean (RAM unchanged, 512 B
+      margin), M0 boot 10/10, `d 8` regression clean, `F 5` ran
+      fault-free and honestly reported zero periods and zero high-time
+      samples (nothing drives CN8 pin 5 here, same as the frequency
+      counter task). Host `ctest` 19/19 (same 19 test binaries as
+      before - `test_freqcounter` itself grew from 7 to 14 cases).
 - [ ] PWM generator on an OUT line (any adapter output pin on a timer channel
       can be reconfigured AF instead of GPIO push-pull — verify against the
       pin table which OUT pins have timer AFs; PD/PE pins have mixed timer
@@ -1208,6 +1242,27 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's duty-cycle measurement, directly
+  on top of the frequency counter. TIM2_CH4's CCMR2.CC4S=10 maps IC4
+  onto TI3 (RM0090: "IC4 is mapped on TI3") - the timer's own
+  channel-swap, so CH3 (rising) and CH4 (falling, new) both read CN8
+  pin 5 with no second pin involved, exactly this bullet's own "same
+  input-capture channel, second capture compare register". Deliberately
+  skipped RM0090's textbook PWM Input Mode (reset-mode-on-trigger, so
+  CCR4 reads high time directly): it would change what CCR3 itself
+  means, reaching into the already-committed frequency counter. Used
+  the same wraparound-safe delta technique instead, extended into
+  `cads_freqcounter_capture_high()` (`cads/toolbox/freqcounter.h`) -
+  mathematically equivalent, zero risk to the period side. One `F`
+  command reports both now, not two commands.
+  VERIFIED on hardware: itsboard links clean (RAM unchanged), M0 boot
+  10/10, `d 8` regression clean, `F 5` fault-free with an honest zero
+  for both channels (still no jumper access to CN8). `test_freqcounter`
+  grew from 7 to 14 cases - the only real proof for the falling-edge
+  wraparound and its own independent overcapture handling, the same
+  "prove it host-side since hardware can't" reasoning as every capture
+  driver this milestone.
 
 - 2026-08-21 — GPIO Swiss-army-knife's frequency/period counter. Two
   things this bullet's own text asked to check turned out both wrong

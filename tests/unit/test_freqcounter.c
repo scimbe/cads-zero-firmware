@@ -112,6 +112,95 @@ static void test_null_arguments_are_refused(void) {
     cads_freqcounter_init(NULL);
 }
 
+/* --- duty cycle (falling edge, "the second capture compare register") --- */
+
+static void test_falling_edge_before_any_rising_edge_reports_nothing(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    uint32_t high = 0u;
+    TEST_ASSERT_FALSE(cads_freqcounter_capture_high(&fc, 500u, false, &high));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_high_count(&fc));
+    /* Not a loss - there was never a rising edge to lose. */
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_missed_high_count(&fc));
+}
+
+static void test_falling_edge_reports_high_time_since_the_rising_edge(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    uint32_t period = 0u, high = 0u;
+    cads_freqcounter_capture(&fc, 1000u, false, &period); /* rising */
+    TEST_ASSERT_TRUE(cads_freqcounter_capture_high(&fc, 1300u, false, &high)); /* falling */
+
+    TEST_ASSERT_EQUAL_UINT32(300u, high);
+    TEST_ASSERT_EQUAL_UINT32(1u, cads_freqcounter_high_count(&fc));
+}
+
+static void test_high_time_is_correct_across_a_counter_wraparound(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    uint32_t period = 0u, high = 0u;
+    cads_freqcounter_capture(&fc, 0xFFFFFFFFu - 50u, false, &period); /* rising */
+    TEST_ASSERT_TRUE(cads_freqcounter_capture_high(&fc, 49u, false, &high)); /* falling, past the wrap */
+
+    TEST_ASSERT_EQUAL_UINT32(100u, high); /* 50 up to the wrap + 1 for the wrap + 49 */
+}
+
+static void test_falling_edge_overcapture_does_not_report_and_is_counted(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    uint32_t period = 0u, high = 0u;
+    cads_freqcounter_capture(&fc, 1000u, false, &period); /* rising */
+    TEST_ASSERT_FALSE(cads_freqcounter_capture_high(&fc, 1900u, true, &high));
+
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_high_count(&fc));
+    TEST_ASSERT_EQUAL_UINT32(1u, cads_freqcounter_missed_high_count(&fc));
+    /* The rising-edge side is a separate counter, untouched by this. */
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_missed_count(&fc));
+}
+
+static void test_duty_cycle_min_max_avg_track_across_varying_cycles(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    uint32_t period = 0u, high = 0u;
+    cads_freqcounter_capture(&fc, 0u, false, &period);
+    cads_freqcounter_capture_high(&fc, 25u, false, &high);   /* high 25 of period 100 */
+    cads_freqcounter_capture(&fc, 100u, false, &period);
+    cads_freqcounter_capture_high(&fc, 175u, false, &high);  /* high 75 of period 100 */
+    cads_freqcounter_capture(&fc, 200u, false, &period);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, cads_freqcounter_high_count(&fc));
+    TEST_ASSERT_EQUAL_UINT32(25u, cads_freqcounter_min_high_ticks(&fc));
+    TEST_ASSERT_EQUAL_UINT32(75u, cads_freqcounter_max_high_ticks(&fc));
+    TEST_ASSERT_EQUAL_UINT32(50u, cads_freqcounter_avg_high_ticks(&fc));
+    TEST_ASSERT_EQUAL_UINT32(100u, cads_freqcounter_avg_period_ticks(&fc));
+}
+
+static void test_empty_high_stats_report_zero_not_garbage(void) {
+    cads_freqcounter_t fc;
+    cads_freqcounter_init(&fc);
+
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_high_count(&fc));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_missed_high_count(&fc));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_min_high_ticks(&fc));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_max_high_ticks(&fc));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_avg_high_ticks(&fc));
+}
+
+static void test_null_arguments_are_refused_for_high_time_too(void) {
+    uint32_t high = 0u;
+    TEST_ASSERT_FALSE(cads_freqcounter_capture_high(NULL, 100u, false, &high));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_high_count(NULL));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_missed_high_count(NULL));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_min_high_ticks(NULL));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_max_high_ticks(NULL));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_freqcounter_avg_high_ticks(NULL));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_first_capture_reports_nothing);
@@ -121,5 +210,12 @@ int main(void) {
     RUN_TEST(test_min_max_avg_track_across_varying_periods);
     RUN_TEST(test_empty_counter_reports_zero_not_garbage);
     RUN_TEST(test_null_arguments_are_refused);
+    RUN_TEST(test_falling_edge_before_any_rising_edge_reports_nothing);
+    RUN_TEST(test_falling_edge_reports_high_time_since_the_rising_edge);
+    RUN_TEST(test_high_time_is_correct_across_a_counter_wraparound);
+    RUN_TEST(test_falling_edge_overcapture_does_not_report_and_is_counted);
+    RUN_TEST(test_duty_cycle_min_max_avg_track_across_varying_cycles);
+    RUN_TEST(test_empty_high_stats_report_zero_not_garbage);
+    RUN_TEST(test_null_arguments_are_refused_for_high_time_too);
     return UNITY_END();
 }
