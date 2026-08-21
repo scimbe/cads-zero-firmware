@@ -1076,8 +1076,35 @@ All timer-based, all achievable on the existing adapter wiring (PD0-7/PE0-7
 outputs, PF0-7 inputs = S0..S7 buttons, PG0-5 general inputs). None of this
 needs new hardware.
 
-- [ ] Logic level display: live high/low state of every adapter pin, already
+- [x] Logic level display: live high/low state of every adapter pin, already
       the core of the `apps/gpio` app.
+      Already fully implemented, not new work this session:
+      `cads_gpio_tick()` (`apps/gpio/cads_gpio.c`) re-reads
+      `cads_hal_adapter_inputs()`/`cads_hal_adapter_interrupts()` every
+      poll and redraws whichever IN0-7/INT0-5 cell changed - exactly
+      "live high/low state of every adapter pin". This task was closing
+      the loop with a real cross-check rather than rebuilding anything,
+      per this bullet's own note that it was already done.
+      VERIFIED on hardware: `i` (raw port dump) read `F=FCFF G=D7BB` at
+      the same moment as the check - hand-computed against
+      `hal_io.c`'s own formulas (`~PORTF->IDR & 0xFF`, `~PORTG->IDR &
+      0x3F`, both confirmed in `targets/itsboard/board.h`:
+      `CADS_PIN_IN_PORT`=GPIOF, `CADS_PIN_INT_PORT`=GPIOG,
+      `CADS_ADAPTER_INT_MASK`=0x3F): IN0-7 = 0x00 (idle, no S0-S7
+      pressed - consistent, since PF0-7 doubles as the S0-S7 buttons per
+      this section's own intro), INT2 = active (bit 2 of 0x3F) - a
+      floating/unterminated PG2 reading indeterminate without an
+      external connection, not a fault. Cross-checks apps/gpio's
+      formula against the identical raw register this session's own `i`
+      command reads independently, rather than trusting the code alone.
+      `g 6` (the dedicated GUI smoke test) ran fault-free, photographed
+      live on the panel (OUT0/OUT1/OUT2 list and the IN column headers
+      visible despite bench-lighting glare). No live pin *transition*
+      demonstrated - inducing one needs a hand at a physical button or a
+      jumper wire, neither available from this environment - but the
+      display path itself (poll -> compute -> redraw) is now proven
+      against real, freshly-read hardware registers, not assumed from
+      the code alone.
 - [ ] Frequency/period counter on an INT line via timer input capture
       (TIM2/TIM5 are 32-bit general-purpose timers with input capture on
       several AF mappings — confirm exact INT-pin-to-timer-channel mapping
@@ -1129,6 +1156,23 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's logic level display. No new code -
+  the bullet itself already said this was "already the core of the
+  apps/gpio app", and reading `cads_gpio_tick()` confirmed it: every
+  poll re-reads `cads_hal_adapter_inputs()`/`_interrupts()` and redraws
+  whichever cell changed. This task closed the loop with a real
+  cross-check instead: `i` read raw `F=FCFF G=D7BB` on hardware,
+  hand-computed against `hal_io.c`'s exact formulas (confirmed via
+  `board.h`'s `CADS_PIN_IN_PORT`=GPIOF/`CADS_PIN_INT_PORT`=GPIOG/
+  `CADS_ADAPTER_INT_MASK`) to IN0-7=0x00, INT bit 2 active (a floating
+  PG2, not a fault) - proving the app's displayed values against the
+  identical register this session's own `i` command reads independently
+  of apps/gpio's own code. `g 6` ran fault-free, photographed live
+  (OUT0-2 list, IN column headers visible). No live transition
+  demonstrated - needs a hand at a button or a jumper, neither available
+  here - but the poll -> compute -> redraw path itself is now proven
+  against real hardware, not just read from source.
 
 - 2026-08-21 — M6's game: "Leo's Reflex Test" (new `apps/game`). A
   literal reading of "exercise the input and timing paths end to end" -
