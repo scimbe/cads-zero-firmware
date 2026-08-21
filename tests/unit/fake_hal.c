@@ -82,6 +82,32 @@ void cads_hal_delay_ms(uint32_t ms) {
     cads_fake_advance_ms(ms);
 }
 
+/* --- board identity ----------------------------------------------------------- */
+
+/* Structurally valid, not board-accurate - the only caller that reads this
+ * at init time (apps/about/cads_about.c, building its text once on entry)
+ * just needs a non-NULL descriptor with sane fields, not the real
+ * ITSboard numbers. */
+static const cads_board_info_t cads_fake_board_info = {
+    .board_name = "fake board (host test)",
+    .mcu_name = "none",
+    .cpu_hz = 180000000u,
+    .display_width = CADS_DISPLAY_WIDTH,
+    .display_height = CADS_DISPLAY_HEIGHT,
+    .display_readable = false,
+    .button_count = 8u, /* CADS_BUTTON_COUNT (services/input/cads_input.h) - not included here to avoid a new dependency for one constant */
+    .has_touch = true,
+    .has_network = false,
+    .has_storage = false,
+    .flash_bytes = 1024u * 1024u,
+    .ram_bytes = 192u * 1024u,
+    .display_pixels_per_second = 342000u,
+};
+
+const cads_board_info_t* cads_hal_board_info(void) {
+    return &cads_fake_board_info;
+}
+
 /* --- lifecycle -------------------------------------------------------------- */
 
 void cads_hal_early_init(void) {

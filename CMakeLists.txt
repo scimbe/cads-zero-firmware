@@ -118,10 +118,11 @@ else()
 endif()
 
 # GUI stack: view/dispatcher/compositor, widgets, and the full M6 app tree -
-# desktop, settings, about, gpio and netinfo, plus the menu that ties them
-# together. apps/gpio was the first wired in (the initial hardware smoke test,
-# no Ethernet dependency, directly hardware-observable); the rest followed once
-# that stack was proven on real silicon. See docs/ROADMAP.md M3/M6.
+# desktop, settings, about, gpio, netinfo, filebrowser and game, plus the menu
+# that ties them together. apps/gpio was the first wired in (the initial
+# hardware smoke test, no Ethernet dependency, directly hardware-observable);
+# the rest followed once that stack was proven on real silicon. See
+# docs/ROADMAP.md M3/M6.
 add_subdirectory(gui/view)
 add_subdirectory(gui/widgets)
 add_subdirectory(apps/desktop)
@@ -130,6 +131,7 @@ add_subdirectory(apps/about)
 add_subdirectory(apps/netinfo)
 add_subdirectory(apps/gpio)
 add_subdirectory(apps/filebrowser)
+add_subdirectory(apps/game)
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -161,7 +163,7 @@ else()
     target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test_sim.c)
     target_sources(cads_apps PRIVATE apps/bringup/explorer_fault_test_sim.c)
 endif()
-target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser)
+target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser cads_app_game)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli)
 if(CADS_TARGET STREQUAL "itsboard")

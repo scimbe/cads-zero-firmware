@@ -13,18 +13,42 @@
 
 #include "cads/net/net.h"
 #include "cads_desktop.h"
+#include "cads_game.h"
 #include "cads_gpio.h"
 #include "cads_gui.h"
 #include "cads_hal.h"
-#include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo */
+#include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo, filebrowser, game */
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
 #include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
 
-/* desktop, menu, settings, settings-confirm, about, gpio, netinfo. */
-#define CADS_APP_DEMO_VIEW_CAPACITY 7u
+/*
+ * desktop, menu, settings, settings-confirm, about, gpio, netinfo,
+ * filebrowser, filebrowser-info, game - 10 registrations total.
+ *
+ * This constant was 7 (only accounting for desktop through netinfo) from
+ * when this file was first wired to the full app tree, and was never
+ * updated when apps/filebrowser (2 views) was added later in M4 - found
+ * while adding this game's own view, not by this bullet's own testing.
+ * cads_view_dispatcher_add() fails silently past capacity (returns
+ * false, every caller here discards it with `(void)`), so with the old
+ * value of 7 the LAST TWO registration calls in this file's own startup
+ * order - filebrowser's info view, and cads_menu_app_init()'s own MENU
+ * view itself - never actually registered. That means CADS_VIEW_ID_MENU
+ * was never findable in this file's dispatcher: pressing OK on the
+ * desktop to open the menu (cads_view_dispatcher_push()) would have
+ * failed silently every single time the `d` command ran, on every
+ * hardware check this whole session has done with it - none of those
+ * checks ever pressed a button to actually exercise that path (see
+ * tests/unit/test_app_tree.c, added alongside this fix, for a host-side
+ * regression guard: it feeds a synthetic OK keypress through the exact
+ * same dispatcher/menu code and asserts the menu view actually becomes
+ * current, so this class of bug fails a build next time rather than
+ * requiring a human at the panel to notice a dead OK button).
+ */
+#define CADS_APP_DEMO_VIEW_CAPACITY 10u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
@@ -98,6 +122,7 @@ void cads_explorer_app_demo(uint32_t seconds) {
         cads_statusbar_set_indicator(&s_statusbar, CADS_NET_STATUSBAR_SLOT, cads_net_indicator_text());
         cads_desktop_tick(now);
         cads_gpio_tick(now);
+        cads_game_tick(now);
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {
             total_pixels += pixels;

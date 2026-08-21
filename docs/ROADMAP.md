@@ -1002,7 +1002,69 @@ does not yet use" for the full table and sourcing.
       speed, IP all fixed until the maintainer exposes PHY status through a
       portable service - see the comment in cads_netinfo.c) because the
       Ethernet data path does not exist yet, only MDIO-based PHY management.
-- [ ] A game, to exercise the input and timing paths end to end
+- [x] A game, to exercise the input and timing paths end to end
+      "Leo's Reflex Test" (new `apps/game`, menu item "Reflex Test"): a
+      literal reading of this bullet's own wording rather than a loose
+      one - the whole game IS measuring the time between a stimulus
+      (the "GO" signal) and an input event (the OK release), using
+      `cads_hal_ticks_ms()` the same way this session's own hardware
+      verification has throughout. The "wait for it..." phase has to end
+      on its own, with no key pressed at all, which `cads_view_t` (draw/
+      input/enter/exit, nothing else) cannot do by itself - solved the
+      same way `apps/desktop`'s blink clock already had to be: a
+      `cads_game_tick(now_ms)` exported alongside `cads_desktop_tick()`/
+      `cads_gpio_tick()`, called from the same one place in
+      `explorer_app_demo.c`'s main loop, not a new framework capability.
+      A small local xorshift32 (seeded from `cads_hal_ticks_us()`) picks
+      each round's 0.8-2.8s delay; nothing else in this codebase needed
+      randomness yet, so it lives in `cads_game.c` rather than a new
+      toolbox module.
+
+      FOUND AND FIXED, NOT PART OF THIS BULLET BUT DISCOVERED WHILE
+      WIRING IT IN: `explorer_app_demo.c`'s view-registry array
+      (`CADS_APP_DEMO_VIEW_CAPACITY`) was sized 7 - correct when this
+      file was first wired to desktop+settings+settings_confirm+about+
+      gpio+netinfo, but never updated when `apps/filebrowser` (2 more
+      views) was added later in M4. `cads_view_dispatcher_add()` fails
+      *silently* past capacity (every caller here discards the `bool`
+      with `(void)`), so with the stale value of 7 the last two
+      registrations attempted - filebrowser's info view, and
+      `cads_menu_app_init()`'s own MENU view - never actually happened.
+      That means `CADS_VIEW_ID_MENU` was never findable in this file's
+      dispatcher: pressing OK on the desktop
+      (`cads_view_dispatcher_push(dispatcher, CADS_VIEW_ID_MENU)`) would
+      have failed silently on every single `d` hardware check this whole
+      session has run - none of them ever pressed a button (no way to
+      inject one without real touch/GPIO hardware, see below), so "no
+      fault, N frames flushed" was all any of them could have shown
+      either way. Bumped to 10 (the correct count including this game's
+      own view), with a comment naming all ten and explaining exactly
+      why the old value hid this.
+      Added `tests/unit/test_app_tree.c` as the actual proof, and as a
+      regression guard against this exact class of bug recurring
+      silently again: it builds the real dispatcher via the same two
+      calls (`cads_desktop_init()`/`cads_menu_app_init()`) in the same
+      order `explorer_app_demo.c` uses, feeds a *synthetic* OK-release
+      `cads_input_event_t` through `cads_view_dispatcher_input()`, and
+      asserts the current view actually becomes MENU - something no
+      hardware check this session has run could do without a human
+      finger. One test in the same file rebuilds the tree against the
+      old capacity of 7 and asserts MENU does *not* register, proving
+      the new test would have caught the original bug. Needed one small
+      addition to the host test harness: `tests/unit/fake_hal.c` gained
+      a `cads_hal_board_info()` stub (only `apps/about`'s `_init()`
+      touches the HAL at registration time; every other app's `_init()`
+      is HAL-free) - everything else needed to link the real app tree on
+      host (the real `cads_gui`/canvas, not `canvas_host.c`) was already
+      reachable transitively through `cads_app_desktop`/`cads_app_menu`,
+      the same link graph `cads-zero-sim` itself already proves works.
+
+      RAM: +128 B (a handful of `uint32_t` fields, no buffers) - margin
+      544 B over the 48K floor, no lwipopts.h trim needed this time.
+      VERIFIED on hardware: itsboard links clean; host `ctest` 18/18 (17
+      prior + the new `test_app_tree`, 4/4 cases, including the "would
+      have caught the old bug" one); M0 boot self-test 10/10; `d 8`
+      app-tree regression clean (photographed live on the panel).
 - [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
       five apps below the menu build, flash, and run without fault; a human
       walkthrough of each one by touch and by button is the same open item
@@ -1067,6 +1129,38 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M6's game: "Leo's Reflex Test" (new `apps/game`). A
+  literal reading of "exercise the input and timing paths end to end" -
+  the game measures the time between a "GO" signal and the OK release,
+  via `cads_hal_ticks_ms()`. Needed its own `cads_game_tick(now_ms)`,
+  following `cads_desktop_tick()`/`cads_gpio_tick()`'s exact precedent
+  (a view cannot wake itself; the app exports a tick called from the
+  same main loop instead), not a new framework capability.
+  Found and fixed a real, silent bug while wiring it in, unrelated to
+  the game itself: `explorer_app_demo.c`'s view-registry capacity was
+  stale at 7 (correct before `apps/filebrowser` added 2 more views in
+  M4, never updated after). `cads_view_dispatcher_add()` fails silently
+  past capacity, so the LAST two registrations - filebrowser's info
+  view, and the MENU view itself - never actually happened. Pressing OK
+  on the desktop to open the menu would have failed silently on every
+  `d` hardware check this session has run; none of them ever pressed a
+  button, so "no fault, N frames flushed" was all any of them could have
+  shown regardless. Fixed the capacity (7 -> 10) and added
+  `tests/unit/test_app_tree.c`: it builds the real app tree host-side
+  and feeds a *synthetic* OK-release event through the real dispatcher
+  to prove MENU actually becomes current - something no hardware check
+  this session has been able to do without a human finger - plus a
+  companion test proving the same setup against the old capacity of 7
+  would have caught the bug. `tests/unit/fake_hal.c` gained a
+  `cads_hal_board_info()` stub, the only HAL touch point among all six
+  app `_init()` functions; everything else needed to link the real
+  `cads_gui` (not `canvas_host.c`) on host was already reachable through
+  `cads_app_desktop`/`cads_app_menu`, the same graph `cads-zero-sim`
+  already proves works.
+  VERIFIED on hardware: itsboard links clean (+128 B RAM, 544 B margin,
+  no lwipopts.h trim needed), M0 boot 10/10, `d 8` app-tree regression
+  clean (photographed live on the panel). Host `ctest` 18/18.
 
 - 2026-08-21 — M5's fourteenth (last non-gate) task: Wake-on-LAN
   magic-packet sender. New `explorer_wol_demo.c` (command `W`): the

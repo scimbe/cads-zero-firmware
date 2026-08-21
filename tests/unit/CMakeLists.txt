@@ -84,6 +84,28 @@ cads_add_unit_test(test_input
 target_include_directories(test_input PRIVATE ${CADS_ROOT}/services/input)
 target_link_libraries(test_input PRIVATE cads_fake_hal)
 
+# --- M6 app tree ---------------------------------------------------------------
+#
+# Unlike test_canvas, this links the real cads_gui (not canvas_host.c): it
+# never compiles canvas.c itself as one of this binary's own translation
+# units, only links the already-built library transitively through
+# cads_app_desktop/cads_app_menu, so there is no duplicate-symbol conflict
+# to work around - the exact link graph cads-zero-sim itself already
+# proves works on host, with cads_fake_hal standing in for cads_hal_sim.
+
+cads_add_unit_test(test_app_tree test_app_tree.c)
+target_link_libraries(test_app_tree PRIVATE
+    cads_fake_hal
+    cads_app_desktop
+    cads_app_menu
+    cads_app_settings
+    cads_app_about
+    cads_app_gpio
+    cads_app_netinfo
+    cads_app_filebrowser
+    cads_app_game
+)
+
 # --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------
 #
 # hal_eth_aneg.c and hal_eth_linklog.c only ever call cads_hal_eth_mdio_read(),
