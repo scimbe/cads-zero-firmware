@@ -40,6 +40,7 @@
 #include "explorer_app_demo.h"
 #include "explorer_arp_demo.h"
 #include "explorer_cli_demo.h"
+#include "explorer_continuity_demo.h"
 #include "explorer_eth.h"
 #include "explorer_fault_test.h"
 #include "explorer_filebrowser_demo.h"
@@ -391,6 +392,7 @@ static void cads_help(void) {
         "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
         "#   D <hz> <duty%> [sec]  PWM generator on OUT13 (PE5, TIM9_CH1), e.g. D 1000 50, default 1000Hz/50%/5s\r\n"
         "#   L <hz> [sec]  logic analyzer, IN0..7/INT0..5 -> waveform on panel, default 25Hz/5s\r\n"
+        "#   K          continuity test: jumper OUT0 to INT0, drives low then high, reads back\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -505,6 +507,7 @@ void cads_explorer_run(void) {
                 cads_explorer_logic_demo(rate_hz, secs);
                 break;
             }
+            case 'K': cads_explorer_continuity_demo(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;

@@ -1297,10 +1297,52 @@ needs new hardware.
       buffer and rendering geometry are both already-tested/
       straightforward enough not to need one, unlike the mactable/
       freqcounter tasks' genuinely subtle wraparound logic).
-- [ ] Simple continuity/cable tester using two adapter pins: drive one OUT
+- [x] Simple continuity/cable tester using two adapter pins: drive one OUT
       pin, read it back on an IN pin through an external jumper/cable under
       test — same operator-in-the-loop pattern the manufacturer's own
       GPIOTest already uses for the OUT0-to-INTx test. S.
+      Last GPIO Swiss-army-knife bullet, and the only one that needed
+      no new HAL driver at all: `cads_hal_adapter_outputs()`/
+      `_interrupts()` are already portable (implemented on both
+      `hal_io.c` and `targets/sim/hal_sim.c`), so
+      `explorer_continuity_demo.c` is a single file, no board/sim split,
+      wired straight into `cads_apps`' unconditional source list the
+      same way `explorer_arp_demo.c`/`explorer_ping_demo.c` already
+      are - the simulator does not model a virtual jumper, so it always
+      reports FAIL, the same honest result an un-jumpered real board
+      gives. New command `K`: drives OUT0 (PD0) low then high and
+      requires INT0/AUX0 (PG0) to follow *both* transitions before
+      calling it PASS, not just one - INT0's own pull-up would give a
+      false PASS to a test that only ever checked the high level.
+      FOUND AND FIXED ON THE FIRST HARDWARE RUN, NOT FROM READING THE
+      SOURCE FIRST: an un-jumpered board reported "low ok, high not
+      seen" - backwards from "INT0 is pulled up, so it reads high
+      regardless of OUT0". `hal_io.c`'s own
+      `cads_hal_adapter_interrupts()` is `(~IDR) & mask`, the identical
+      active-low inversion `cads_hal_adapter_inputs()` already carries
+      a comment for ("active low on the wire; report active high so
+      callers read naturally") but that this function does not repeat -
+      bit=1 means the pin is being pulled LOW, bit=0 means it is at its
+      own idle HIGH. Fixed the test's own expectations to match (low on
+      the wire -> expect bit=1; high on the wire -> expect bit=0) and
+      renamed the internal parameter to `want_active`, in the
+      function's own bit sense, specifically so this does not have to
+      be re-derived a second time.
+      RAM: 0 B (no static state at all).
+      VERIFIED on hardware, and the fix itself is the verification: a
+      fresh flash with the corrected polarity reports "FAIL - no
+      continuity (low not seen, high ok)" - now the mirror image of the
+      pre-fix run and exactly what an un-jumpered, pulled-up-idle INT0
+      predicts, where the pre-fix version's inverted, backwards-matching
+      result was the bug. A genuine PASS needs a human to place a
+      jumper or a cable under test between OUT0 and INT0, not available
+      from this environment - same class of limitation as every earlier
+      GPIO Swiss-army-knife bullet's own hardware ceiling, not specific
+      to this one. itsboard links clean (RAM unchanged), M0 boot 10/10,
+      `d 8` app-tree regression clean, host `ctest` 19/19.
+      This closes out every M6 GPIO Swiss-army-knife bullet; only
+      **HARDWARE GATE M6** below (a human touch/button walkthrough) is
+      still open in this milestone.
 
 ## M7 — Simulator and test pipeline  `[ ]`
 
@@ -1334,6 +1376,33 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's continuity/cable tester, the
+  last bullet in the section. The only one needing no new HAL driver:
+  cads_hal_adapter_outputs()/_interrupts() are already portable
+  (hal_io.c and targets/sim/hal_sim.c both implement them), so
+  explorer_continuity_demo.c is one file, no board/sim split, wired
+  into cads_apps' unconditional sources the same way
+  explorer_arp_demo.c/explorer_ping_demo.c already are. New command K
+  drives OUT0 low then high and requires INT0/AUX0 to follow both
+  transitions before calling it PASS.
+  Found and fixed a real bug on the very first hardware run: an
+  un-jumpered board reported "low ok, high not seen" - backwards from
+  what "INT0 is pulled up" predicts. hal_io.c's own
+  cads_hal_adapter_interrupts() carries the identical active-low
+  inversion cads_hal_adapter_inputs() has a comment for but this
+  function does not repeat (bit=1 = pulled low, bit=0 = idle high).
+  Fixed the test's own expectations to match and renamed the internal
+  parameter to want_active, in the function's own bit sense.
+  VERIFIED on hardware, the fix itself being the verification: after
+  the fix, an un-jumpered board reports "low not seen, high ok" - the
+  mirror image of the pre-fix run and exactly what the physics predicts,
+  confirming the earlier result was the bug, not reality. A genuine
+  PASS needs a human to place a jumper, not available here - the same
+  ceiling every earlier bullet this section hit. itsboard links clean
+  (0 B RAM), M0 boot 10/10, d 8 regression clean, host ctest 19/19.
+  Closes out the whole GPIO Swiss-army-knife section - only HARDWARE
+  GATE M6 (a human touch/button walkthrough) is left open in M6.
 
 - 2026-08-21 — GPIO Swiss-army-knife's simple logic analyzer, the
   largest of this section's bullets. Chose capture-then-render over
