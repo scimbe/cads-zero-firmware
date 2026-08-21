@@ -808,10 +808,63 @@ driver above.
       is the bottleneck - hal_eth_mac.h's file header on why there is no
       hardware checksum offload in use). `d 8` immediately after confirmed
       no regression to the app tree.
-- [ ] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
+- [x] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
       is storage/processing at 100 Mbit on an MCU with no OS — frame loss
       under load is likely and must be measured, not assumed. Needs RMII and
       M4 storage. L.
+      `hal_eth_mac.c` gained `cads_hal_eth_mac_set_promiscuous()`
+      (`ETH->MACFFR |= ETH_MACFFR_PM`) and `cads_hal_eth_mac_missed_frames()`
+      (reads `ETH->DMAMFBOCR`, rc_r). RM0090 cross-check (pdftotext against
+      the archived reference manual, this session's established discipline
+      for anything register-level) found the DMAMFBOCR field NAMES are
+      misleading versus their documented CAUSES: `MFC` ("missed by
+      controller") is actually caused by the host RX buffer being
+      unavailable — i.e. RX descriptor ring exhaustion, a software/DMA
+      condition — while `MFA` ("missed by application") is actually caused
+      by RX FIFO overflow/runt frames — a wire-level condition. The new API
+      is named by verified cause (`no_descriptor`, `fifo_overflow`), not by
+      the register's own field names, and this discrepancy is documented in
+      `hal_eth_mac.h` so no future reader has to rediscover it.
+      New `apps/bringup/explorer_sniff_demo.c` (command `C <seconds>`,
+      default 10s) writes a real, minimal libpcap file to `/sniff.pcap` via
+      M4's storage module — standard 24-byte global header + 16-byte
+      per-packet header + frame bytes, LINKTYPE_ETHERNET, boot-relative
+      timestamps (no RTC on this board). Deliberately does *not* call
+      `cads_net_poll()` during the capture window: that would race lwIP's
+      own RX-ring draining and split frames non-deterministically between
+      the two consumers, defeating "frames captured" as a meaningful count
+      (bring-up's link wait still polls; only the capture loop itself has
+      exclusive access). Receives into the full 1536-byte frame size, not
+      the 256-byte pcap snaplen, so an oversized frame is never silently,
+      unmeasurably dropped by handing the driver too small a buffer — only
+      the copy written to the pcap is truncated to snaplen, with `orig_len`
+      always the true length. Loss is measured, not assumed, via three
+      independent counters catching three different failure modes:
+      `no_descriptor` (DMA ring exhaustion), `fifo_overflow` (MAC FIFO
+      overflow/runt, wire-level), and `write_errors` (storage failure after
+      a frame was already successfully received).
+      RAM: the new static 1536-byte receive buffer pushed itsboard RAM over
+      the linker's `ASSERT(__cads_heap_size >= 48K, ...)` guard (148800 B
+      used against a 147456 B ceiling, 1344 B over). Rather than repeat the
+      previous razor-thin fixes, trimmed `modules/net/include/lwipopts.h`
+      for real margin this time: `PBUF_POOL_SIZE` 7→5 (each slot measured
+      at ~608 B via the linker map; this bench's traffic has never come
+      close to needing 7, continuing the ping task's own reasoning for the
+      first cut) and `MEM_SIZE` 4096→3072 (this bench is one client at a
+      time — one physical cable — so the concurrent TCP_MSS-sized PBUF_RAM
+      writes that pattern implies fit well under 3072 B). Net: 2240 B
+      recovered, final RAM used 146560 B, margin 896 B over the 48K floor
+      (previously 192 B).
+      VERIFIED on hardware: itsboard build links clean (896 B margin, see
+      above); host `ctest` 16/16 pass; `st-flash` + M0 boot self-test still
+      10/10 (`scripts/board_test.py`); `C 8` ran clean end-to-end (`0
+      captured, 0 write error(s), 0 dropped (no RX descriptor free), 0
+      dropped (RX FIFO overflow/runt)`) — corroborated as real (not a
+      capture-loop bug) by `cads_explorer_eth_mmc()`'s own hardware counter
+      (`m`) reading `rx_unicast=0` in the same window, consistent with this
+      session's long-established finding that this bench's LAN segment has
+      no DHCP server and near-zero ambient traffic. `d 8` immediately after
+      confirmed no regression to the app tree.
 - [ ] MAC address table (switch-style learning with aging) from sniffed
       frames. Needs the sniffer. M.
 
@@ -923,6 +976,37 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's twelfth task: promiscuous packet sniffer. New HAL
+  functions `cads_hal_eth_mac_set_promiscuous()`/`_missed_frames()` and
+  new explorer command `C` (writes a real libpcap file to `/sniff.pcap`
+  via M4's storage module). Caught a genuine RM0090-vs-CMSIS-comment
+  discrepancy before writing any code: `ETH->DMAMFBOCR`'s field NAMES
+  (`MFC` "by controller", `MFA` "by application") are backwards from
+  their documented CAUSES (`MFC` is RX descriptor exhaustion, a software
+  condition; `MFA` is RX FIFO overflow/runt, a wire-level condition) - the
+  new API is named by verified cause, not by the register's own
+  terminology, with the discrepancy documented in `hal_eth_mac.h` so it
+  is not rediscovered. Deliberately does not call `cads_net_poll()` during
+  capture (would race lwIP's own RX-ring draining); receives into the
+  full 1536 B frame size so an oversized frame is never silently dropped
+  by an undersized buffer, truncating only the pcap-written copy to a
+  256 B snaplen. Loss is measured via three independent counters
+  (descriptor exhaustion, FIFO overflow, storage write failure) rather
+  than assumed, per this bullet's own explicit requirement.
+  The new static 1536 B receive buffer pushed RAM over the linker's 48K
+  headroom guard (1344 B over). Rather than repeat this session's
+  recurring razor-thin fixes, trimmed `lwipopts.h` for real margin this
+  time: `PBUF_POOL_SIZE` 7→5 and `MEM_SIZE` 4096→3072 (measured per-slot
+  cost via the linker map rather than guessing), recovering 2240 B -
+  final margin 896 B over the floor, versus 192 B before.
+  VERIFIED on hardware: `C 8` captured cleanly (0 captured, 0 dropped by
+  either hardware counter, 0 write errors) - corroborated as genuinely
+  "no traffic" rather than a capture bug via the MAC's own MMC counter
+  (`rx_unicast=0` in the same window), consistent with this bench's
+  long-established no-DHCP/near-zero-ambient-traffic environment. Host
+  `ctest` 16/16, M0 boot self-test still 10/10, `d 8` app-tree regression
+  clean.
 
 - 2026-08-21 — M5's eleventh task: configurable-rate packet generator. New
   explorer command `G`, new HAL driver

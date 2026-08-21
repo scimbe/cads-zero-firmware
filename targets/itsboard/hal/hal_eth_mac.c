@@ -234,3 +234,17 @@ uint16_t cads_hal_eth_mac_receive(uint8_t* buffer, uint16_t buffer_size) {
     cads_eth_rx_next = (cads_eth_rx_next + 1u) % CADS_ETH_RX_COUNT;
     return result;
 }
+
+void cads_hal_eth_mac_set_promiscuous(bool enable) {
+    if(enable) {
+        ETH->MACFFR |= ETH_MACFFR_PM;
+    } else {
+        ETH->MACFFR &= ~ETH_MACFFR_PM;
+    }
+}
+
+void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+    uint32_t reg = ETH->DMAMFBOCR; /* reading this clears both fields (RM0090: rc_r) */
+    if(no_descriptor) *no_descriptor = reg & ETH_DMAMFBOCR_MFC_Msk;
+    if(fifo_overflow) *fifo_overflow = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
+}

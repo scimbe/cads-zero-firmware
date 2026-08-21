@@ -63,4 +63,44 @@ bool cads_hal_eth_mac_transmit(const uint8_t* data, uint16_t length);
  */
 uint16_t cads_hal_eth_mac_receive(uint8_t* buffer, uint16_t buffer_size);
 
+/**
+ * Set or clear promiscuous mode (MACFFR.PM): with it set, the MAC hands
+ * every frame it hears to the DMA regardless of destination address,
+ * instead of filtering to only frames addressed to this device (unicast/
+ * broadcast/joined-multicast). Takes effect immediately; safe to call
+ * with the receiver already running.
+ */
+void cads_hal_eth_mac_set_promiscuous(bool enable);
+
+/**
+ * Frames the DMA discarded before software ever saw them - the real,
+ * hardware-counted answer to "how much load is this driver actually
+ * losing", read from ETH->DMAMFBOCR (RM0090).
+ *
+ * `no_descriptor`, when not NULL, receives DMAMFBOCR.MFC: frames dropped
+ * because every RX descriptor was still owned by software - this is the
+ * number that answers "is software (a promiscuous capture, most of all)
+ * keeping up". `fifo_overflow`, when not NULL, receives DMAMFBOCR.MFA:
+ * frames dropped to Rx FIFO overflow or a runt frame - a MAC/wire-level
+ * condition, not a software one.
+ *
+ * Deliberately not named after DMAMFBOCR's own MFC/MFA field names in
+ * this API: RM0090's prose describes MFC (whose field name literally
+ * reads "missed frames by the controller") as counting host-receive-
+ * buffer-unavailable drops, and MFA ("missed frames by the application")
+ * as counting Rx FIFO overflow/runt frames - the field names are each
+ * describing the OTHER field's naming intuition. Confirmed by reading
+ * RM0090's per-bit descriptions directly rather than trusting the more
+ * ambiguous field names (or the CMSIS header's own field comments, which
+ * repeat the same names without the clarifying detail) - passing this
+ * mismatch on as `no_descriptor`/`fifo_overflow` here means no caller has
+ * to rediscover it.
+ *
+ * Reading ETH->DMAMFBOCR clears both counters as a hardware side effect
+ * (RM0090: both fields are `rc_r`, read-clears) - like
+ * cads_hal_eth_mmc_read()'s counters, a caller that wants a total across
+ * more than one read must accumulate the deltas itself.
+ */
+void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow);
+
 #endif /* CADS_HAL_ETH_MAC_H */

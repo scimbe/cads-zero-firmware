@@ -23,7 +23,17 @@
 #define SYS_LIGHTWEIGHT_PROT        0
 
 #define MEM_ALIGNMENT               4
-#define MEM_SIZE                    (4 * 1024)
+/* Was 4096; trimmed to buy back RAM for explorer_sniff_demo.c's static
+ * 1536-byte capture buffer (targets/itsboard/linker/cads_itsboard.ld's
+ * `ASSERT(__cads_heap_size >= 48K, ...)` guard again - see
+ * PBUF_POOL_SIZE's own comment below for the running total this session).
+ * This heap backs mem_malloc(), which lwIP uses for PBUF_RAM allocations
+ * (TCP's own header+payload pbuf on the way out) and small one-off
+ * structs like the DHCP client state and an lwiperf session - this bench
+ * is one client at a time (there is exactly one physical cable), so the
+ * handful of concurrent TCP_MSS-sized (536 B) writes that pattern implies
+ * fit well inside 3072 B with room to spare. */
+#define MEM_SIZE                    (3 * 1024)
 
 #define MEMP_NUM_PBUF               16
 #define MEMP_NUM_UDP_PCB            4
@@ -39,14 +49,19 @@
  * budget lesson that guard already taught once this session). */
 #define MEMP_NUM_RAW_PCB            1
 
-/* Was 8; trimmed by one to buy back RAM for cads_net_ping()'s raw pcb pool
- * (see MEMP_NUM_RAW_PCB below) without breaking the linker's 48K headroom
- * guard - each pool slot is a full PBUF_POOL_BUFSIZE buffer (~600 bytes),
- * by far the most expensive thing in this file per unit, and this bench's
- * traffic (this whole session's own measurements: no DHCP server, near-zero
- * ambient traffic) has never come close to needing 8 RX buffers in flight
- * at once. */
-#define PBUF_POOL_SIZE              7
+/* Was 8, then 7 (see the ping task's own note on the first cut, still
+ * true); now 5, again for explorer_sniff_demo.c's capture buffer (see
+ * MEM_SIZE's own comment above) - each pool slot is a full
+ * PBUF_POOL_BUFSIZE buffer (measured via the linker map: ~608 B), by far
+ * the most expensive thing in this file per unit, and this bench's
+ * traffic (this whole session's own measurements: no DHCP server,
+ * near-zero ambient traffic) has never come close to needing even 7 RX
+ * buffers in flight at once, let alone 8. The sniffer itself does not
+ * draw from this pool at all - it reads the DMA ring directly via
+ * cads_hal_eth_mac_receive(), bypassing cads_net_poll() entirely during
+ * capture (see explorer_sniff_demo.c's own file header) - so this cut is
+ * pure headroom recovery, not a capture-path change. */
+#define PBUF_POOL_SIZE              5
 
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
