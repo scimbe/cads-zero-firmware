@@ -865,8 +865,51 @@ driver above.
       session's long-established finding that this bench's LAN segment has
       no DHCP server and near-zero ambient traffic. `d 8` immediately after
       confirmed no regression to the app tree.
-- [ ] MAC address table (switch-style learning with aging) from sniffed
+- [x] MAC address table (switch-style learning with aging) from sniffed
       frames. Needs the sniffer. M.
+      Split into a portable half and a board-only half, unlike every
+      earlier M5 bullet: the learn/refresh/evict policy itself
+      (`cads_mactable_t`, new `modules/toolbox/{include/cads/toolbox,src}/
+      mactable.{h,c}`) takes no HAL dependency at all - caller-supplied
+      storage (same convention as `cads_record_t`) and an explicit
+      `now_ms` passed by the caller rather than read from a clock inside
+      it, so the policy is unit-testable on the host with a fake clock
+      (new `tests/unit/test_mactable.c`, 10 cases, wired into
+      `tests/unit/CMakeLists.txt`) independent of whether this bench has
+      any real traffic to learn from. New `explorer_mactable_demo.c`
+      (command `M <seconds>`, default 15s) is only the board-specific
+      capture loop: promiscuous mode, direct
+      `cads_hal_eth_mac_receive()` reads (same non-polling exclusive-
+      access reasoning as the sniffer - see its own file header, not
+      re-derived here), extracting each frame's source address
+      (`frame + 6`) and handing it to `cads_mactable_learn()`.
+      Deliberately receives into the full 1536 B frame size rather than
+      something smaller: even the smallest real Ethernet frame (an ARP
+      request, padded to the 802.3 minimum) is well past what a
+      "header only" buffer would hold, and `cads_hal_eth_mac_receive()`
+      drops an oversized frame entirely rather than truncating it - a
+      small buffer would have silently biased the table toward whichever
+      sources happen to only ever send undersized frames. Aging is
+      scaled down from a real switch's ~300s default to 5s so a single
+      run can actually demonstrate eviction, not just implement it; the
+      policy's correctness against that number is what
+      `test_mactable.c` actually proves, independent of the exact value.
+      RAM: the new static 1536 B frame buffer plus the table's own
+      16-entry storage array (1856 B total) again pushed itsboard RAM
+      over the 48K linker guard (960 B over this time). Continued the
+      same two levers as the sniffer task, one more step each rather
+      than reaching for new ones: `MEM_SIZE` 3072→2048 and
+      `PBUF_POOL_SIZE` 5→4 (2048+608 = 1656 B recovered) - final RAM
+      146784 B, margin 672 B over the floor.
+      VERIFIED on hardware: `M 8` ran clean end-to-end (`0 frame(s) seen,
+      0 address(es) live, 0 aged out, 0 dropped`), corroborated as
+      genuinely "no traffic" (not a listening-loop bug) via
+      `cads_explorer_eth_mmc()`'s `rx_unicast=0` in the same window - the
+      same bench-environment finding the sniffer task already
+      established. The learning/aging policy itself has real,
+      traffic-independent proof instead: host `ctest` 17/17 (16 prior +
+      the new `test_mactable`, 10/10 cases). M0 boot self-test still
+      10/10, `d 8` app-tree regression clean.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -976,6 +1019,32 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's thirteenth task: MAC address table with aging, built
+  from sniffed frames. First M5 bullet split into a portable half and a
+  board-only half: the learn/refresh/evict policy (new
+  `modules/toolbox/{include,src}/mactable.{h,c}`, `cads_mactable_t`) has
+  no HAL dependency - caller-supplied storage like `cads_record_t`, and
+  an explicit `now_ms` rather than reading a clock itself - so it is
+  unit-tested on the host with a fake clock (new `test_mactable.c`, 10
+  cases) rather than relying on this bench's own traffic, which the
+  sniffer task already established is near zero. New `explorer_
+  mactable_demo.c` (command `M`) is only the capture loop: promiscuous
+  mode, direct `cads_hal_eth_mac_receive()` reads (same non-polling
+  exclusive-access argument as the sniffer), full 1536 B receive buffer
+  for the same "don't silently bias toward undersized frames" reason
+  that file's header gives. Aging scaled to 5s (a real switch's default
+  is closer to 300s) so one run can actually demonstrate eviction.
+  RAM: the new capture buffer plus the table's own storage (1856 B)
+  again crossed the linker's 48K guard. Continued the sniffer task's own
+  two levers one step further rather than reaching for new ones:
+  `MEM_SIZE` 3072→2048, `PBUF_POOL_SIZE` 5→4 - final RAM 146784 B,
+  672 B of margin.
+  VERIFIED on hardware: `M 8` ran clean (0 frames, matching `rx_unicast=
+  0` on the MAC's own MMC counter in the same window - genuinely no
+  traffic, not a bug, the same corroboration technique the sniffer task
+  used). Host `ctest` 17/17. M0 boot self-test 10/10, `d 8` app-tree
+  regression clean.
 
 - 2026-08-21 — M5's twelfth task: promiscuous packet sniffer. New HAL
   functions `cads_hal_eth_mac_set_promiscuous()`/`_missed_frames()` and

@@ -23,17 +23,18 @@
 #define SYS_LIGHTWEIGHT_PROT        0
 
 #define MEM_ALIGNMENT               4
-/* Was 4096; trimmed to buy back RAM for explorer_sniff_demo.c's static
- * 1536-byte capture buffer (targets/itsboard/linker/cads_itsboard.ld's
- * `ASSERT(__cads_heap_size >= 48K, ...)` guard again - see
- * PBUF_POOL_SIZE's own comment below for the running total this session).
- * This heap backs mem_malloc(), which lwIP uses for PBUF_RAM allocations
- * (TCP's own header+payload pbuf on the way out) and small one-off
- * structs like the DHCP client state and an lwiperf session - this bench
- * is one client at a time (there is exactly one physical cable), so the
- * handful of concurrent TCP_MSS-sized (536 B) writes that pattern implies
- * fit well inside 3072 B with room to spare. */
-#define MEM_SIZE                    (3 * 1024)
+/* Was 4096, then 3072 (see the sniffer task's own note on the first cut,
+ * still true - this heap backs mem_malloc(), used for TCP's own
+ * PBUF_RAM output pbufs plus small one-off structs like the DHCP client
+ * state and an lwiperf session); now 2048, again for
+ * `ASSERT(__cads_heap_size >= 48K, ...)` - explorer_mactable_demo.c's
+ * own static state this time (see PBUF_POOL_SIZE's own comment below for
+ * the running total). Still comfortably above the ~150 B DHCP struct
+ * plus lwIP's own default in-flight TCP send window (2 x TCP_MSS =
+ * ~1072 B, since this file leaves TCP_SND_BUF/TCP_WND at their lwIP
+ * defaults) that a single client on this bench's one physical cable
+ * actually needs at once. */
+#define MEM_SIZE                    (2 * 1024)
 
 #define MEMP_NUM_PBUF               16
 #define MEMP_NUM_UDP_PCB            4
@@ -49,19 +50,21 @@
  * budget lesson that guard already taught once this session). */
 #define MEMP_NUM_RAW_PCB            1
 
-/* Was 8, then 7 (see the ping task's own note on the first cut, still
- * true); now 5, again for explorer_sniff_demo.c's capture buffer (see
- * MEM_SIZE's own comment above) - each pool slot is a full
+/* Was 8, then 7, then 5 (see the ping and sniffer tasks' own notes on
+ * those cuts, still true); now 4, again for
+ * `ASSERT(__cads_heap_size >= 48K, ...)`, this time for
+ * explorer_mactable_demo.c's static state - each pool slot is a full
  * PBUF_POOL_BUFSIZE buffer (measured via the linker map: ~608 B), by far
  * the most expensive thing in this file per unit, and this bench's
  * traffic (this whole session's own measurements: no DHCP server,
- * near-zero ambient traffic) has never come close to needing even 7 RX
- * buffers in flight at once, let alone 8. The sniffer itself does not
- * draw from this pool at all - it reads the DMA ring directly via
- * cads_hal_eth_mac_receive(), bypassing cads_net_poll() entirely during
- * capture (see explorer_sniff_demo.c's own file header) - so this cut is
- * pure headroom recovery, not a capture-path change. */
-#define PBUF_POOL_SIZE              5
+ * near-zero ambient traffic) has never come close to needing even 5 RX
+ * buffers in flight at once, let alone 8. Neither the sniffer nor the
+ * MAC table demo draws from this pool at all - both read the DMA ring
+ * directly via cads_hal_eth_mac_receive(), bypassing cads_net_poll()
+ * entirely during their own capture windows (see explorer_sniff_demo.c's
+ * file header) - so this cut is pure headroom recovery, not a
+ * capture-path change, for either of them. */
+#define PBUF_POOL_SIZE              4
 
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1

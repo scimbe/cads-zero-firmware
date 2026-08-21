@@ -10,6 +10,7 @@ add_library(cads_toolbox STATIC
     src/pubsub.c
     src/record.c
     src/log.c
+    src/mactable.c
 )
 
 target_include_directories(cads_toolbox

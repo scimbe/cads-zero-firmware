@@ -46,6 +46,7 @@
 #include "explorer_http_demo.h"
 #include "explorer_iperf_demo.h"
 #include "explorer_kernel_test.h"
+#include "explorer_mactable_demo.h"
 #include "explorer_ping_demo.h"
 #include "explorer_pktgen_demo.h"
 #include "explorer_screencast_demo.h"
@@ -349,6 +350,7 @@ static void cads_help(void) {
         "#   I <sec>    iperf2-compatible TCP server: TCP :5001, default 30s\r\n"
         "#   G <pps> [sec]  packet generator, TIM6-paced, e.g. G 1000 5, default 100pps/5s\r\n"
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
+        "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -435,6 +437,7 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'C': cads_explorer_sniff_demo(cads_parse_uint(argument) ?: 10u); break;
+            case 'M': cads_explorer_mactable_demo(cads_parse_uint(argument) ?: 15u); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;
