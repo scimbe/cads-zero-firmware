@@ -1388,7 +1388,47 @@ needs new hardware.
       far: boot splash, bring-up self-test pattern. apps/gpio deliberately
       not captured yet - it postdates this branch's fork point from main, see
       targets/sim/golden/README.md for the recipe to add it.
-- [ ] Unit tests (Unity) for canvas, core, toolbox
+- [x] Unit tests (Unity) for canvas, core, toolbox
+      Already substantially done, not new work - closed the loop by
+      actually counting coverage rather than assuming it, the same
+      diligence as the last two "already implemented" M6/M7 bullets.
+      `toolbox`: every one of its nine source files
+      (`fmt/freqcounter/log/mactable/pubsub/record/ring/str/tap.c`) has
+      a matching test - 89 cases total (6 to 14 each; the newest two,
+      `test_mactable`/`test_freqcounter`, were written this session for
+      their own roadmap bullets, not for this one). `canvas`:
+      `test_canvas.c` has 25 cases covering pixel round-trips, every
+      `fill_rect` edge/clip case, nested clip intersection, damage
+      tracking, bitmap4 unpacking, text layout/clipping, and the
+      dirty-rectangle flush path - genuinely thorough, not a stub,
+      confirmed by reading it rather than trusting the file's
+      existence.
+      `core` was the genuinely open question, and turned out to have
+      nothing further to add rather than a gap to fill:
+      `core/cads_hal.h` is a pure interface with no logic of its own to
+      unit-test - every function it declares has real logic only in a
+      target-specific implementation (`targets/itsboard/hal/*.c` or
+      `targets/sim/hal_sim.c`), and this project's own established way
+      to unit-test *against* that interface is already built and in
+      heavy use: `tests/unit/fake_hal.c`/`fake_mdio.c` implement it for
+      the host, and `test_input.c`/`test_eth_aneg.c`/
+      `test_eth_linklog.c`/`test_app_tree.c`/`test_canvas.c` already
+      exercise real portable logic through it. The only other plausible
+      reading of "core" - `modules/kernel` - is deliberately,
+      permanently board-only: its own header says so outright ("a thin
+      layer over FreeRTOS... the simulator, where there is no FreeRTOS
+      at all"), and its CMakeLists.txt only ever adds it for the
+      itsboard target. Porting or faking FreeRTOS for a host Unity test
+      would be a disproportionate side-project for this one bullet, and
+      this project's own established verification for it is already
+      the right one for what it actually is: a real hardware test
+      (`explorer_kernel_test.c`, command `x`, "cads_timer + cads_event
+      under the scheduler"), not a host unit test standing in for
+      something that only means anything with a real scheduler
+      underneath it.
+      VERIFIED: host `ctest` 19/19, run fresh for this bullet
+      specifically, not cited from memory. No board hardware gate - no
+      files changed, nothing here touches `targets/itsboard/`.
 - [ ] `scripts/board_test.py` extended: TAP over VCP, per-milestone suites
 - [ ] CI: build both targets, unit + golden tests, size regression budget
 
@@ -1409,6 +1449,24 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M7's "Unit tests (Unity) for canvas, core, toolbox".
+  Closed by counting, not assuming: toolbox already has all nine of its
+  source files covered (89 cases total), canvas already has 25 genuine
+  cases (pixel round-trips, every fill_rect edge case, nested clips,
+  damage tracking, text layout, the dirty-rectangle flush path - read
+  the file, not just its existence). "core" was the real question:
+  core/cads_hal.h is a pure interface with nothing of its own to test
+  (real logic lives only in target-specific implementations, and this
+  project already unit-tests against the interface via fake_hal.c/
+  fake_mdio.c in four other test files); modules/kernel, the other
+  plausible reading, is deliberately board-only (a thin FreeRTOS
+  wrapper, its own header says so, never built for host) - porting or
+  faking FreeRTOS for one Unity test would be a disproportionate
+  side-project, and its actual verification is already the right one:
+  the hardware explorer test (command x), not a host stand-in for
+  something that only means anything with a real scheduler under it.
+  Host ctest 19/19, run fresh. No board gate, no files changed.
 
 - 2026-08-21 — M7's SDL2 simulator bullet (panel, touch, adapter I/O
   panel, console). No new work - targets/sim/hal_sim.c and its own
