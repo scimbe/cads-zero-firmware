@@ -1344,7 +1344,7 @@ needs new hardware.
       **HARDWARE GATE M6** below (a human touch/button walkthrough) is
       still open in this milestone.
 
-## M7 — Simulator and test pipeline  `[ ]`
+## M7 — Simulator and test pipeline  `[x]`
 
 - [x] SDL2 simulator: panel, touch via mouse, adapter I/O panel, console
       Already fully implemented, not new work this session -
@@ -1538,6 +1538,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M7 marked `[x]`: with the CI budget bullet done, every
+  bullet in the milestone is now `[x]` and it has no hardware gate of
+  its own (unlike M1/M3/M5/M6) - the header marker was just out of sync
+  with its own content, fixed rather than left stale.
+  Checked every other in-progress milestone while here, not assumed:
+  M1, M3, M5 and M6 each have zero remaining `[ ]` bullets too - the
+  *only* things left open anywhere in this roadmap are M1's own
+  deliberately-deferred DMA2D item (`[!]`, a closed decision with its
+  own written rationale, not an open question), and three hardware
+  gates (M3, M5 `[!]`, M6) that all need a human physically at the
+  bench - a touch/button walkthrough, a DHCP server and an external
+  client on this segment, or a jumper wire, none of which this
+  environment can provide. Every autonomous task this roadmap describes
+  is now done.
 
 - 2026-08-21 — M7's last bullet: CI size regression budget, the one
   genuinely missing piece of "CI: build both targets, unit + golden
