@@ -1556,9 +1556,14 @@ _None outstanding._
   deliberately tightened budget to force a failure (1 exit, clear
   message) - both propagated the correct exit code through the pipe.
   ci.yml itself checked as valid YAML (Ruby's parser, no PyYAML
-  locally). No firmware touched, so no board involved - the real,
-  live CI run this commit triggers on push is the actual end-to-end
-  proof for a workflow file, watched after pushing rather than assumed.
+  locally). No firmware touched, so no board involved - the real, live
+  CI run (github.com/scimbe/cads-zero, run 32525160645) is the actual
+  end-to-end proof for a workflow file, watched after pushing rather
+  than assumed: the "RAM regression budget" step's log shows the exact
+  same output as the local dry run (`__cads_heap_size = 49408 B`,
+  `margin = 256 B`, `PASS: 256 B of margin, budget is 256 B`), and
+  arm-none-eabi-nm auto-detected correctly from the CI-installed
+  toolchain with no --nm override needed there.
 
 - 2026-08-21 — M7's board_test.py extension: per-milestone suites,
   genuinely new work after three "already done" bullets in a row. "TAP
