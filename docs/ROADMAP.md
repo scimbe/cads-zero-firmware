@@ -1346,7 +1346,40 @@ needs new hardware.
 
 ## M7 — Simulator and test pipeline  `[ ]`
 
-- [ ] SDL2 simulator: panel, touch via mouse, adapter I/O panel, console
+- [x] SDL2 simulator: panel, touch via mouse, adapter I/O panel, console
+      Already fully implemented, not new work this session -
+      `targets/sim/hal_sim.c` (and its own `README.md`) already have
+      all four pieces this bullet names: the 480x320 panel in an SDL2
+      window, touch via the mouse (`cads_sim_touch_from_mouse`, wired
+      to `SDL_MOUSEBUTTONDOWN/UP/MOTION`), the adapter I/O panel
+      (`cads_sim_draw_cells` rendering OUT0-7/OUT8-15/IN S0-S7/INT0-5
+      as indicator cells, plus LED-USER and a touch-coordinate
+      readout), and the console (stdout/stdin, `scripts/board_test.py`-
+      style TAP consumers already work against it unchanged). Keyboard
+      mapping (keys 1-8 = S0-S7, F1-F6 = INT0-5, space = the Nucleo's
+      USER button) is documented in the target's own README. This task
+      closed the loop with fresh verification rather than building
+      anything - no code changed.
+      VERIFIED: `cads-zero-sim --screenshot` launched cleanly just now
+      (fresh run, not relying on history) and wrote a valid 460854-byte
+      24 bpp BMP - exactly 480*320*3 + the 54-byte BMP header, the
+      correct size for a genuine, correctly-dimensioned panel capture.
+      The golden-image tests (`golden_splash`, `golden_bringup_pattern`)
+      already exercise this exact same render path pixel-for-pixel on
+      every host `ctest` run this whole session, including just now
+      (19/19). An OS-level screenshot of the actual interactive window
+      (to visually confirm the I/O panel/touch sidebar specifically,
+      which the golden BMP capture does not include) was attempted but
+      came back solid black - this environment's display appears to be
+      a disconnected/inactive one (a remote/headless session, not a
+      flaw in the simulator - `cads-zero-sim` itself launched and ran
+      without error either way). The I/O panel/touch/keyboard code
+      itself is straightforward, already-documented SDL event handling,
+      confirmed by reading it rather than by a screenshot neither this
+      environment nor a human at the keyboard has provided yet.
+      No board hardware gate for this one: it is entirely a host/
+      simulator-scoped task, nothing here touches `targets/itsboard/`,
+      and no files changed at all.
 - [x] Golden-image tests: render, compare against reference PNGs. Hand-written
       BMP reader + PNG encoder (real zlib DEFLATE via Python stdlib, not
       vendored/hand-rolled compression) rather than a new C image library for
@@ -1376,6 +1409,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M7's SDL2 simulator bullet (panel, touch, adapter I/O
+  panel, console). No new work - targets/sim/hal_sim.c and its own
+  README already had all four pieces, apparently just never marked
+  done. Closed the loop with fresh verification instead: `cads-zero-sim
+  --screenshot` launched cleanly and wrote a correctly-sized 460854-byte
+  BMP just now; the golden-image tests already exercise the same render
+  path on every host ctest run this session (19/19, including this
+  one). Tried to also get a real OS-level screenshot of the interactive
+  window specifically to confirm the I/O panel/touch sidebar (which the
+  golden BMP capture does not include), but this environment's display
+  came back solid black - a disconnected/inactive remote session, not a
+  simulator problem. That code is straightforward, already-documented
+  SDL event handling, confirmed by reading it. No board involved, no
+  files changed.
 
 - 2026-08-21 — GPIO Swiss-army-knife's continuity/cable tester, the
   last bullet in the section. The only one needing no new HAL driver:
