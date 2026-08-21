@@ -760,8 +760,54 @@ driver above.
       network path from the agent's shell to the board's bench segment -
       so no throughput report printed, which is the correct, expected
       result of nothing ever connecting, not a defect in the server.
-- [ ] Configurable-rate packet generator (DMA descriptor ring + timer). Needs
-      RMII. M.
+- [x] Configurable-rate packet generator (DMA descriptor ring + timer). New
+      explorer command `G <pps> [seconds]` / `apps/bringup/explorer_pktgen_demo.c`,
+      e.g. `G 1000 5`. New HAL driver
+      `targets/itsboard/hal/hal_pktgen_timer.{h,c}` - the first packet-level
+      tool this session to genuinely need the "timer" half of the roadmap's
+      own bullet name, not a software delay loop: `cads_hal_delay_ms()` is
+      a calibrated busy-wait, fine for "roughly this long" but wrong for
+      "exactly this rate", so this paces transmission with TIM6 (a basic
+      timer - no GPIO, nothing docs/SAFETY.md restricts) instead, polling
+      its own update flag rather than delaying. Also the first file this
+      session to touch raw STM32 registers from outside
+      `targets/itsboard/hal/` at all - correctly kept out: the clean
+      `cads_hal_pktgen_timer_start/stop/elapsed()` API lives in the HAL
+      where every other register-level driver already does, and
+      `explorer_pktgen_demo.c` only calls that, matching the same
+      board/sim explorer split (`_sim.c` says plainly there is nothing to
+      pace or send in the simulator) used throughout M5's networking
+      bullets. TIM6's clock was verified against the primary source, not
+      assumed: RM0090's RCC chapter states timer clocks double the APB
+      clock when that APB's prescaler is not 1 (default `TIMPRE=0`, never
+      touched by this project) - APB1's prescaler is 4, so TIM6CLK =
+      2 x 45 MHz = 90 MHz, checked in the archived PDF via `pdftotext`
+      rather than trusted from memory, the same discipline already applied
+      to the Ethernet DMA descriptor layout. Prescaled to an exact 1 MHz
+      (1 us) tick, the 16-bit auto-reload register gives an achievable
+      range of roughly 16..65536 pps at this resolution; clamped to
+      16..10000 as a practical ceiling well beyond what this MCU's
+      software-checksummed TX path could sustain regardless.
+      Frame content reuses the M5 MAC/lwIP hardware gate's own deliberate-
+      probe-frame choices (broadcast destination, EtherType 0x88B5 -
+      IANA's "IEEE Std 802 Local Experimental Ethertype 1") plus a 4-byte
+      sequence number, so a real capture (or this file's own MMC check)
+      can see loss or reordering, not just a count. Sent straight through
+      `cads_hal_eth_mac_transmit()`, bypassing lwIP entirely - a MAC-layer
+      rate test, not an application-layer one.
+      VERIFIED on hardware with the same MMC-counter cross-check this
+      session has used for every TX-path claim: `G 100 3` reported 299
+      sent, 0 dropped, and `tx_good` increased by 301 (299 generator
+      frames + 2 independent DHCP retries during the run - not a pktgen
+      artifact); `G 2000 5` reported 3998 sent, 0 dropped, and `tx_good`
+      increased by *exactly* 3998 with no link-up event in between to
+      explain any difference - the closest to a byte-perfect confirmation
+      this session has gotten for a TX-path claim. 2000 pps x 60 bytes ~=
+      0.96 Mbit/s with zero drops, consistent with this bullet's own
+      "expect well under 100 Mbit/s" prediction (the CPU, not the silicon,
+      is the bottleneck - hal_eth_mac.h's file header on why there is no
+      hardware checksum offload in use). `d 8` immediately after confirmed
+      no regression to the app tree.
 - [ ] Promiscuous packet sniffer using the MAC's PM bit in MACFFR. Bottleneck
       is storage/processing at 100 Mbit on an MCU with no OS — frame loss
       under load is likely and must be measured, not assumed. Needs RMII and
@@ -877,6 +923,31 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's eleventh task: configurable-rate packet generator. New
+  explorer command `G`, new HAL driver
+  `targets/itsboard/hal/hal_pktgen_timer.{h,c}` (TIM6, polled update flag,
+  not a software delay loop - the first tool this session to actually
+  need the "timer" half of this bullet's own name for precise, not just
+  approximate, pacing). Also the first file this session to touch raw
+  STM32 registers outside `targets/itsboard/hal/` at all, and correctly
+  kept out: the register work lives in the new HAL file, the explorer
+  command only calls its clean start/stop/elapsed API - the same
+  board/sim split every other M5 networking bullet already used.
+  Verified TIM6's clock against RM0090 rather than memory (via
+  `pdftotext`, the same primary-source discipline already used for the
+  Ethernet DMA descriptors): APB1's prescaler is 4 (not 1), so per RM0090
+  TIM6CLK = 2 x PCLK1 = 90 MHz, not 45 MHz - confirmed, not assumed.
+  Frame content reuses the M5 MAC/lwIP hardware gate's own probe-frame
+  choices (broadcast, EtherType 0x88B5) plus a sequence number, sent
+  straight through `cads_hal_eth_mac_transmit()`, bypassing lwIP - a
+  MAC-layer rate test.
+  VERIFIED on hardware with the closest thing to a byte-perfect
+  confirmation this session has gotten for a TX-path claim: `G 2000 5`
+  reported 3998 sent, 0 dropped, and the MAC's own MMC `tx_good` counter
+  increased by *exactly* 3998, no link-up event in between to explain any
+  difference. 2000 pps x 60 B ~= 0.96 Mbit/s with zero drops, consistent
+  with this bullet's own "expect well under 100 Mbit/s" prediction.
 
 - 2026-08-21 — M5's tenth task: iperf throughput test. New explorer command
   `I`, wiring lwIP's own vendored `lwiperf.c` in server mode (port 5001,
