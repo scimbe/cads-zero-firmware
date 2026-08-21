@@ -240,13 +240,22 @@ Prove the toolchain, the boot path and the display path on real silicon.
             pixels, no fault, no lost task, explorer still responsive
             afterwards. Photographed: the desktop, Leo, the status bar and
             the caption text all render correctly on real silicon.
-      - [ ] Touch navigation itself, by a human. Software can drive input
+      - [!] Touch navigation itself, by a human. Software can drive input
             events synthetically but that would test the dispatcher, not the
             XPT2046 and the finger pressing it - the actual point of this
             line. 0 navigation transitions were observed in the runs above,
             which is the expected and correct result of nobody having
-            touched the panel, not a failure. Same category as M0's open
-            "visual confirmation ... by a human" item.
+            touched the panel, not a failure. NEEDS A USER DECISION in the
+            same sense as **HARDWARE GATE M5** below: not a code fix, a
+            physical-presence gap this agent cannot close by itself -
+            unlike M0's "visual confirmation ... by a human" item (closed
+            2026-08-22 via `scripts/board_photo.py`, an external
+            photograph this agent could take and inspect itself), an
+            actual fingertip on the glass is not something a photograph or
+            any other remote tooling can substitute for. Left open for the
+            user to either run the touch walkthrough by hand and report
+            back, or accept the ghost-touch soak and the tree wiring above
+            as sufficient evidence on their own.
 
 ## M4 — Storage  `[x]`
 
@@ -1561,6 +1570,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M3's touch-navigation bullet marked `[!]`. The previous
+  full-file grep for the M0 task (same day, entry below) only matched
+  `[ ]` at column 0, so it missed this one - it is indented two levels,
+  nested under **HARDWARE GATE M3**. A wider grep (`\[ \]` with any
+  indent) found it and confirmed it is now the *only* remaining `[ ]`
+  in the whole file. Its own text already says "by a human": unlike
+  M0's visual-confirmation item, which a photograph could genuinely
+  close, an actual fingertip on the XPT2046 glass has no remote
+  substitute, so this is a real, not-fixable-by-this-agent gap in the
+  same sense as **HARDWARE GATE M5** - marked `[!]` to match, not left
+  ambiguously `[ ]`. No firmware, HAL, or app code changed; no hardware
+  touched. With this marked, the roadmap has zero `[ ]` bullets left
+  anywhere - every remaining open item is either M1's already-deferred
+  DMA2D decision or one of the M3/M5/M6 physical hardware gates.
 
 - 2026-08-22 — M0's last open bullet, "visual confirmation of the test
   pattern by a human", marked `[x]`. A full-file grep (not a
