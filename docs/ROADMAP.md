@@ -925,10 +925,58 @@ does not yet use" for the full table and sourcing.
 - CAN1 (SN65HVD231D transceiver) and RS232 (MAX3232, via USART6) are also
   wired and unused - out of scope for now, but real capability if a future
   need calls for it.
-- [ ] Wake-on-LAN magic-packet sender, independent of the board's own WoL
+- [x] Wake-on-LAN magic-packet sender, independent of the board's own WoL
       support. Needs RMII. S.
-- [ ] **HARDWARE GATE M5**: DHCP lease, ping, CLI over telnet, screen
-      streaming at a measured frame rate, all with the display active
+      New `explorer_wol_demo.c` (command `W <hex-mac>`, e.g.
+      `W 0011223344AA`): the standard magic packet (6 x 0xFF sync stream
+      + the target MAC repeated 16 times), sent as a raw Ethernet frame
+      (EtherType 0x0842, broadcast destination) straight through
+      `cads_hal_eth_mac_transmit()` - the same "bypass lwIP entirely"
+      choice `explorer_pktgen_demo.c` already made, and a hard
+      requirement here rather than a style choice: this bench's
+      long-established finding (no DHCP server, `netif_ip4_addr()` never
+      leaves 0.0.0.0) means `ip4_route()` refuses *any* IP packet, so a
+      UDP-broadcast magic packet would never actually leave this board
+      here - raw Ethernet needs a link, not an IP address. A 12-hex-digit
+      MAC parser (`cads_parse_mac()`) was added locally to `explorer.c`,
+      not `cads/toolbox/str.h`: `cads_str_to_hex()` returns into a
+      `uint32_t` and a MAC is 48 bits, and this is the only caller.
+      RAM-neutral: the 116-byte frame is a plain stack buffer (like
+      pktgen's own 60-byte one), not `static` - no lwipopts.h trim
+      needed this time.
+      VERIFIED on hardware with the same byte-perfect MMC cross-check
+      this session has used for every TX-path claim: a fresh reflash
+      (`tx_good=0`) followed by one `W AABBCCDDEEFF` produced
+      `tx_good=2` — 1 for the magic packet itself, 1 for the DHCP
+      discover broadcast `cads_net_init()`'s own link-wait triggers
+      (the same accounted-for overhead the packet generator task already
+      documented: "2 independent DHCP retries during the run - not a
+      pktgen artifact"). Reproduced identically across two independent
+      runs (`001122334455` and `AABBCCDDEEFF`, both tx_good delta = 2).
+      Host `ctest` 17/17, M0 boot self-test 10/10, `d 8` app-tree
+      regression clean.
+- [!] **HARDWARE GATE M5**: DHCP lease, ping, CLI over telnet, screen
+      streaming at a measured frame rate, all with the display active.
+      NEEDS A USER DECISION - not a code fix, an infrastructure gap this
+      whole M5 milestone's own hardware verification has run into
+      repeatedly and documented as each bullet landed (ARP/ping/
+      traceroute/iperf/pktgen/sniffer/mactable/WoL): (1) this bench has
+      never obtained a DHCP lease - no DHCP server is present on the
+      segment, so `netif_ip4_addr()` stays 0.0.0.0 and `ip4_route()`
+      refuses any outbound unicast send, which is exactly what "DHCP
+      lease" and "ping" in this gate need; (2) this agent's own
+      shell/tooling has no network path to the board's physical LAN
+      segment at all, so a telnet client for the CLI or a TCP client for
+      screen streaming can never be driven from here regardless of DHCP.
+      Every individual M5 feature has its own real hardware verification
+      already (MMC/DMAMFBOCR-counter cross-checks, this file's own log
+      entries) - what is missing is specifically the *combined,
+      externally-observed* scenario this gate describes, which needs
+      either a DHCP server added to the bench segment, a client machine
+      on that segment this agent can reach, or the user running the
+      telnet/DHCP/streaming checks by hand and reporting back. Left open
+      rather than silently marked done or skipped; M6 (already `[~]`,
+      several bullets already flashed and verified) continues below.
 
 ## M6 — Applications  `[~]`
 
@@ -1019,6 +1067,25 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — M5's fourteenth (last non-gate) task: Wake-on-LAN
+  magic-packet sender. New `explorer_wol_demo.c` (command `W`): the
+  standard magic packet as a raw Ethernet frame (EtherType 0x0842), sent
+  straight through `cads_hal_eth_mac_transmit()` - not a style choice
+  but forced by this bench's own long-established no-DHCP finding, which
+  means `ip4_route()` refuses any IP packet a UDP-broadcast variant would
+  have needed. VERIFIED via the same byte-perfect MMC cross-check used
+  for every TX-path claim this session: fresh reflash (`tx_good=0`), one
+  `W` call produced `tx_good=2` (1 magic packet + 1 DHCP discover from
+  `cads_net_init()`'s own bring-up, the same accounted-for overhead the
+  pktgen task already documented), reproduced across two independent
+  target addresses. Host `ctest` 17/17, M0 boot 10/10, `d 8` regression
+  clean.
+  Marked **HARDWARE GATE M5** `[!]` rather than attempting it: it needs
+  a DHCP server on the bench segment and an external client reaching the
+  board's LAN, both outside what this agent's environment provides or
+  what a code change can fix - a genuine infrastructure decision for the
+  user, not a task to silently skip. M6 (already `[~]`) is next.
 
 - 2026-08-21 — M5's thirteenth task: MAC address table with aging, built
   from sniffed frames. First M5 bullet split into a portable half and a

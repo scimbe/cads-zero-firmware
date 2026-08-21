@@ -104,6 +104,7 @@ if(CADS_TARGET STREQUAL "itsboard")
     set(CADS_EXPLORER_PKTGEN_SOURCE apps/bringup/explorer_pktgen_demo.c)
     set(CADS_EXPLORER_SNIFF_SOURCE apps/bringup/explorer_sniff_demo.c)
     set(CADS_EXPLORER_MACTABLE_SOURCE apps/bringup/explorer_mactable_demo.c)
+    set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo.c)
 else()
     set(CADS_TASKS_SOURCE apps/bringup/tasks_sim.c)
     set(CADS_EXPLORER_ETH_SOURCE apps/bringup/explorer_eth_sim.c)
@@ -113,6 +114,7 @@ else()
     set(CADS_EXPLORER_PKTGEN_SOURCE apps/bringup/explorer_pktgen_demo_sim.c)
     set(CADS_EXPLORER_SNIFF_SOURCE apps/bringup/explorer_sniff_demo_sim.c)
     set(CADS_EXPLORER_MACTABLE_SOURCE apps/bringup/explorer_mactable_demo_sim.c)
+    set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo_sim.c)
 endif()
 
 # GUI stack: view/dispatcher/compositor, widgets, and the full M6 app tree -
@@ -150,6 +152,7 @@ add_library(cads_apps STATIC
     ${CADS_EXPLORER_PKTGEN_SOURCE}
     ${CADS_EXPLORER_SNIFF_SOURCE}
     ${CADS_EXPLORER_MACTABLE_SOURCE}
+    ${CADS_EXPLORER_WOL_SOURCE}
 )
 if(CADS_TARGET STREQUAL "itsboard")
     target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test.c)

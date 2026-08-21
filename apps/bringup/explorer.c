@@ -26,6 +26,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "cads_hal.h"
 #include "canvas.h"
@@ -53,6 +54,7 @@
 #include "explorer_sniff_demo.h"
 #include "explorer_storage_test.h"
 #include "explorer_traceroute_demo.h"
+#include "explorer_wol_demo.h"
 
 
 
@@ -151,6 +153,37 @@ static uint32_t cads_parse_uint(const char* text) {
         value = value * 10u + (uint32_t)(*text++ - '0');
     }
     return value;
+}
+
+/**
+ * Parse exactly 12 hex digits (no colons, no "0x" - the same bare-hex
+ * convention `A`/`P`/`T` already use for IP targets) into a 6-byte MAC
+ * address for the `W` command. cads_str_to_hex() can't do this itself -
+ * a MAC is 48 bits and that parses into a single uint32_t - so this is
+ * local to explorer.c the same way cads_parse_uint() above is, rather
+ * than promoted to cads/toolbox/str.h for a single caller. Leaves `mac`
+ * as all zero (explorer_wol_demo.c's own "no target" signal) on any
+ * parse failure, matching how a bad hex target already falls through to
+ * 0 for `A`/`P`/`T` rather than being rejected outright.
+ */
+static void cads_parse_mac(const char* text, uint8_t mac[6]) {
+    memset(mac, 0, 6u);
+    for(int i = 0; i < 6; i++) {
+        uint32_t byte = 0u;
+        for(int n = 0; n < 2; n++) {
+            char c = *text++;
+            uint32_t nibble;
+            if(c >= '0' && c <= '9') nibble = (uint32_t)(c - '0');
+            else if(c >= 'a' && c <= 'f') nibble = (uint32_t)(c - 'a' + 10);
+            else if(c >= 'A' && c <= 'F') nibble = (uint32_t)(c - 'A' + 10);
+            else {
+                memset(mac, 0, 6u);
+                return;
+            }
+            byte = (byte << 4) | nibble;
+        }
+        mac[i] = (uint8_t)byte;
+    }
 }
 
 /*
@@ -351,6 +384,7 @@ static void cads_help(void) {
         "#   G <pps> [sec]  packet generator, TIM6-paced, e.g. G 1000 5, default 100pps/5s\r\n"
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
+        "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -438,6 +472,12 @@ void cads_explorer_run(void) {
             }
             case 'C': cads_explorer_sniff_demo(cads_parse_uint(argument) ?: 10u); break;
             case 'M': cads_explorer_mactable_demo(cads_parse_uint(argument) ?: 15u); break;
+            case 'W': {
+                uint8_t target_mac[6];
+                cads_parse_mac(argument, target_mac);
+                cads_explorer_wol_demo(target_mac);
+                break;
+            }
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;
