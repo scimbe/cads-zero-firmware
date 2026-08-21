@@ -51,6 +51,7 @@
 #include "explorer_mactable_demo.h"
 #include "explorer_ping_demo.h"
 #include "explorer_pktgen_demo.h"
+#include "explorer_pwm_demo.h"
 #include "explorer_screencast_demo.h"
 #include "explorer_sniff_demo.h"
 #include "explorer_storage_test.h"
@@ -387,6 +388,7 @@ static void cads_help(void) {
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
         "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
         "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
+        "#   D <hz> <duty%> [sec]  PWM generator on OUT13 (PE5, TIM9_CH1), e.g. D 1000 50, default 1000Hz/50%/5s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -481,6 +483,17 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'F': cads_explorer_freq_demo(cads_parse_uint(argument) ?: 5u); break;
+            case 'D': {
+                uint32_t freq_hz = 0u, duty_percent = 0u, secs = 0u;
+                const char* end = argument;
+                cads_str_to_uint(end, &freq_hz, &end);
+                end = cads_str_skip_spaces(end);
+                cads_str_to_uint(end, &duty_percent, &end);
+                end = cads_str_skip_spaces(end);
+                cads_str_to_uint(end, &secs, &end);
+                cads_explorer_pwm_demo(freq_hz, duty_percent, secs);
+                break;
+            }
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;

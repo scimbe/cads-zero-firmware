@@ -180,6 +180,46 @@
 #define CADS_PIN_FREQCOUNTER_PIN  10u
 #define CADS_PIN_FREQCOUNTER_AF   1u
 
+/* --- PWM generator on an adapter OUT pin ------------------------------------
+ *
+ * docs/ROADMAP.md's own bullet: "any adapter output pin on a timer
+ * channel can be reconfigured AF instead of GPIO push-pull... PD/PE
+ * pins have mixed timer support, some OUT pins may be GPIO-only" -
+ * checked all sixteen (PD0..7/PE0..7) against the sibling datasheet's
+ * alternate function table rather than guessing which ones qualify.
+ * Fourteen of them carry no timer AF at all (FSMC/USART/CAN only, this
+ * board's OUT pins sit on the same silicon pins ST wired for its FSMC
+ * parallel memory bus on other boards). Two more - PD2 (TIM3_ETR) and
+ * PE0/PE7 (TIM4_ETR/TIM1_ETR) - carry a timer function that is an
+ * External Trigger *input*, not a PWM-capable output channel, so they
+ * do not count either. Only PE5 and PE6 (OUT13, OUT14) have a genuine
+ * output-compare channel: TIM9_CH1 and TIM9_CH2 respectively, both AF3
+ * (RM0090's own CCxS/OCxM text, not just the datasheet table position,
+ * confirms PWM mode 1 = OC1M 110 works on a plain output-compare
+ * channel like these). Using PE5/TIM9_CH1 - the roadmap bullet asks for
+ * one PWM generator, not both channels.
+ *
+ * TIM9 is a general-purpose timer, not TIM1/TIM2/TIM3/TIM8 from the
+ * CN8 breakout table - it needs its own clock check: TIM9/10/11 are on
+ * APB2 (hal_clock.c: PPRE2 = DIV2, so APB2 = 90 MHz), and RM0090's same
+ * doubling rule already applied to TIM2/TIM6 this milestone (APB
+ * prescaler != 1 => TIMxCLK = 2 x APBx) makes TIM9CLK = 180 MHz - twice
+ * TIM2's 90 MHz, verified by the same rule, not re-read from the PDF a
+ * third time.
+ *
+ * PE5 is confirmed on this board's own schematic (net "OUT13"). Using
+ * it for PWM claims it away from apps/gpio's plain OUT13 LED for as
+ * long as the PWM generator command runs, the same "one pin, two jobs,
+ * never at once" pattern hal_spi.c's PA7 claim/release already
+ * established for a much higher-stakes case - the PWM driver's own
+ * stop() returns the pin to plain GPIO output, matching what
+ * cads_hal_freqcounter_stop()'s fix already established as this
+ * project's contract for a driver that borrows a pin temporarily.
+ */
+#define CADS_PIN_PWM_PORT GPIOE
+#define CADS_PIN_PWM_PIN  5u
+#define CADS_PIN_PWM_AF   3u
+
 /* --- Nucleo-144 on-board indicators --------------------------------------- */
 #define CADS_PIN_LED_GREEN_PORT GPIOB
 #define CADS_PIN_LED_GREEN      0u

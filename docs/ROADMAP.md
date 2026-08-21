@@ -1197,10 +1197,48 @@ needs new hardware.
       samples (nothing drives CN8 pin 5 here, same as the frequency
       counter task). Host `ctest` 19/19 (same 19 test binaries as
       before - `test_freqcounter` itself grew from 7 to 14 cases).
-- [ ] PWM generator on an OUT line (any adapter output pin on a timer channel
+- [x] PWM generator on an OUT line (any adapter output pin on a timer channel
       can be reconfigured AF instead of GPIO push-pull — verify against the
       pin table which OUT pins have timer AFs; PD/PE pins have mixed timer
       support, some OUT pins may be GPIO-only). S/M, pin-mapping dependent.
+      Checked all sixteen OUT pins (PD0..7, PE0..7) against the sibling
+      datasheet's alternate function table, per this bullet's own
+      warning that some are GPIO-only - most are (FSMC/USART/CAN only,
+      these are the same silicon pins ST wired for its parallel memory
+      bus on other boards), and two more (PD2/TIM3_ETR, PE0+PE7/
+      TIM4_ETR+TIM1_ETR) carry only a timer External Trigger *input*,
+      not a PWM-capable output channel. Only PE5 and PE6 (OUT13, OUT14)
+      have a real output-compare channel: TIM9_CH1/CH2, both AF3. Used
+      PE5/TIM9_CH1 - one channel, as the bullet asks for one generator.
+      TIM9 needed its own clock check (it is on APB2, not APB1 like
+      every timer this milestone used before it): hal_clock.c's PPRE2 =
+      DIV2 (APB2 = 90 MHz), the same doubling rule already applied to
+      TIM2/TIM6 gives TIM9CLK = 180 MHz. PSC is computed per call rather
+      than fixed, unlike every earlier timer driver this session - a
+      16-bit timer serving a wide, user-chosen frequency range (1 Hz..
+      100 kHz) needs it to maximise ARR's own duty-cycle resolution for
+      whatever frequency was actually requested. PWM mode 1 (OC1M=110)
+      confirmed against RM0090's own text, not just the CMSIS bit name:
+      "channel 1 is active as long as TIMx_CNT<TIMx_CCR1", so CCR1 is
+      already the duty threshold with no translation needed and the 0%/
+      100% edge cases fall out of that inequality for free.
+      New explorer command `D <hz> <duty%> [sec]`. OUT13 already has a
+      job (apps/gpio's own LED) - `cads_hal_pwm_start()`/`_stop()` claim
+      and release it exactly like hal_spi.c's PA7 claim/release, just at
+      far lower stakes; `_stop()` returns the pin to plain GPIO output,
+      matching the contract `cads_hal_freqcounter_stop()`'s own bug fix
+      established two tasks ago.
+      VERIFIED on hardware - genuinely, not just "ran without fault"
+      this time: OUT13's own LED is physically visible, unlike CN8 pin 5
+      (frequency/duty-cycle tasks) or PB10 before it, so this is the
+      first M6 GPIO Swiss-army-knife bullet with real photographic
+      proof rather than an honest zero. `D 1 50 20` (1 Hz, easily
+      photographable) run with six webcam captures spread across the
+      20s window: the LED alternates green (on) / white (off) across
+      the sequence (frames 1, 6 = on; frames 2, 4 = off) - a real
+      1 Hz blink, not a stuck level. itsboard links clean (RAM
+      unchanged - this driver has no static state at all), M0 boot
+      10/10, `d 8` app-tree regression clean.
 - [ ] Simple logic analyzer: sample IN0..7/INT0..5 at a timer-triggered rate
       into a ring buffer in SRAM, render as a waveform on the canvas. Sample
       rate bounded by how fast the canvas can be redrawn (dirty-rectangle
@@ -1242,6 +1280,29 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's PWM generator. Checked all
+  sixteen OUT pins against the sibling datasheet's AF table (this
+  bullet's own warning that some are GPIO-only, made concrete): only
+  PE5/PE6 (OUT13/14, TIM9_CH1/CH2, both AF3) carry a real PWM-capable
+  output channel - everything else is FSMC/USART/CAN-only, or (PD2,
+  PE0, PE7) only has a timer External Trigger *input*, not an output.
+  Used PE5. TIM9 is on APB2, not APB1 like every timer this milestone
+  used before it - hal_clock.c's PPRE2=DIV2 plus the same doubling rule
+  already applied to TIM2/TIM6 gives TIM9CLK=180 MHz. PSC is computed
+  per call, not fixed, since a 16-bit timer serving a wide user-chosen
+  frequency range needs it to keep ARR's duty resolution meaningful.
+  PWM mode 1 confirmed against RM0090's own text ("channel 1 is active
+  as long as CNT<CCR1"), not just the CMSIS bit name. New command `D`;
+  claims/releases OUT13's own LED exactly like PA7's own claim/release,
+  far lower stakes.
+  VERIFIED on hardware with real photographic proof for the first time
+  this milestone (CN8 pin 5's tasks before this one only ever had an
+  honest zero to report, nothing to look at): OUT13's LED is physically
+  visible, and six webcam captures across a `D 1 50 20` run show it
+  alternating green/white in the expected pattern - an actual blink,
+  not a stuck level. itsboard links clean (RAM unchanged, no static
+  state), M0 boot 10/10, `d 8` regression clean.
 
 - 2026-08-21 — GPIO Swiss-army-knife's duty-cycle measurement, directly
   on top of the frequency counter. TIM2_CH4's CCMR2.CC4S=10 maps IC4
