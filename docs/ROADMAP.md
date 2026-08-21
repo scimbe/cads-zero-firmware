@@ -1239,10 +1239,64 @@ needs new hardware.
       1 Hz blink, not a stuck level. itsboard links clean (RAM
       unchanged - this driver has no static state at all), M0 boot
       10/10, `d 8` app-tree regression clean.
-- [ ] Simple logic analyzer: sample IN0..7/INT0..5 at a timer-triggered rate
+- [x] Simple logic analyzer: sample IN0..7/INT0..5 at a timer-triggered rate
       into a ring buffer in SRAM, render as a waveform on the canvas. Sample
       rate bounded by how fast the canvas can be redrawn (dirty-rectangle
       rule applies) rather than by the GPIO read itself. M.
+      Capture-then-render, not live-scrolling: `apps/bringup/tasks.c`'s
+      own rule is that the display has exactly one flusher (the ui
+      task; `cads_tasks_redraw_sync()` is how anything else waits for
+      it), so a continuously-updating waveform would mean this
+      command's sampling loop yielding to that wait after every redraw
+      and losing whatever sample interval elapsed while blocked there.
+      Sampling for a fixed window first, then rendering the whole
+      result once, sidesteps that tension entirely for a fraction of
+      the risk a bigger, interrupt-driven redesign would have carried -
+      appropriate for this bullet's own "M" sizing. This is still the
+      literal reading of "sample rate bounded by how fast the canvas
+      can be redrawn": it now bounds how densely a capture's worth of
+      samples can usefully be drawn across the panel's width, not a
+      per-sample redraw rate.
+      New TIM7-paced `hal_sample_timer.c` (a basic timer, no GPIO pin,
+      nothing docs/SAFETY.md restricts - the same reasoning
+      `hal_pktgen_timer.c`'s TIM6 already established), kept separate
+      from that driver rather than reused: the two are paced by
+      genuinely different things that could plausibly run at once one
+      day. New explorer command `L <hz> [sec]`, default 25 Hz/5s,
+      capturing into a `cads_ring_t` (`cads/toolbox/ring.h`, already
+      built and tested this project, not a new ring implementation) and
+      rendering all fourteen channels (IN0..7, INT0..5) as labelled
+      horizontal-line rows once capture ends.
+      RAM: the ring's own storage started at 256 B (128 samples) after
+      an intermediate 512 B (256-sample) cut left
+      `targets/itsboard/linker/cads_itsboard.ld`'s
+      `ASSERT(__cads_heap_size >= 48K, ...)` guard at *exactly* 48K -
+      zero bytes of margin, this session's own repeated lesson that a
+      razor's edge should never be accepted when the choice consuming
+      it is a single feature's own, not a shared resource. Halved to
+      128 samples (and the default rate to 25 Hz so a plain `L` still
+      captures cleanly rather than routinely reporting drops) - 128
+      samples across the ~438 px the waveform area actually has is
+      still ~3 px/column, a clearer trace than 256 near-1px columns
+      would have been, not just a smaller one. Final margin: 256 B.
+      VERIFIED on hardware with real photographic proof of the full
+      pipeline, not an honest zero (this bench's IN0..7/INT0..5 have no
+      external test signal, the same limitation the frequency/duty-cycle
+      tasks had, but here the render pipeline itself - timer-paced
+      sampling, ring buffer, 14-row canvas draw, ui-task flush - is what
+      needed proving, and a photograph of a correctly-labelled,
+      correctly-drawn "everything reads idle-low" trace is exactly that
+      proof): `L` (default args) captured 124/125 samples, 0 dropped,
+      rendered without a redraw-sync timeout, and the panel photo shows
+      all fourteen rows correctly labelled and flat at the low position -
+      cross-checked against `i`'s own raw IDR dump (`F=FCFF`, `G=F7BF`)
+      showing IN0-7 and INT0-5 both genuinely 0x00 right now, so the
+      flat trace is accurate, not a rendering bug. itsboard links clean
+      (256 B margin), M0 boot 10/10, `d 8` app-tree regression clean.
+      Host `ctest` 19/19 (no new toolbox module this task - the ring
+      buffer and rendering geometry are both already-tested/
+      straightforward enough not to need one, unlike the mactable/
+      freqcounter tasks' genuinely subtle wraparound logic).
 - [ ] Simple continuity/cable tester using two adapter pins: drive one OUT
       pin, read it back on an IN pin through an external jumper/cable under
       test — same operator-in-the-loop pattern the manufacturer's own
@@ -1280,6 +1334,36 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-21 — GPIO Swiss-army-knife's simple logic analyzer, the
+  largest of this section's bullets. Chose capture-then-render over
+  live-scrolling: apps/bringup/tasks.c's own rule ("the display has
+  exactly one flusher", the ui task) means a continuously-updating
+  waveform would lose samples every time the sampling loop yielded to
+  wait for a redraw - sampling a fixed window first, then rendering it
+  once, avoids that entirely for far less risk than teaching this
+  driver to sample from an interrupt would have been, and still matches
+  the bullet's own "sample rate bounded by redraw speed" wording (now
+  about density across the panel's width, not a per-sample rate). New
+  TIM7-paced hal_sample_timer.c - a new file rather than reusing
+  hal_pktgen_timer.c's TIM6, since the two are paced by genuinely
+  different things. New command L, capturing into the already-built
+  cads_ring_t and rendering all 14 channels (IN0-7, INT0-5) as labelled
+  rows.
+  Hit this session's razor's-edge RAM lesson again, this time entirely
+  from this feature's own buffer: an initial 256-sample (512 B) ring
+  left the 48K linker guard at exactly zero margin. Halved to 128
+  samples (and the default rate to match) rather than reaching for a
+  shared lwipopts.h trim - this RAM cost was this feature's own to own,
+  and 128 samples across the ~438 px waveform area is a clearer trace
+  than 256 near-1px columns would have been anyway.
+  VERIFIED on hardware with real photographic proof of the full render
+  pipeline (not just an honest zero like the frequency/duty-cycle
+  tasks): L captured 124/125 samples cleanly, and the panel photo shows
+  all 14 rows correctly labelled and flat-low, cross-checked against
+  i's own raw IDR dump confirming that's genuinely the current hardware
+  state, not a rendering bug. itsboard links clean (256 B margin), M0
+  boot 10/10, d 8 regression clean, host ctest 19/19.
 
 - 2026-08-21 — GPIO Swiss-army-knife's PWM generator. Checked all
   sixteen OUT pins against the sibling datasheet's AF table (this

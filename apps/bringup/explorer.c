@@ -48,6 +48,7 @@
 #include "explorer_http_demo.h"
 #include "explorer_iperf_demo.h"
 #include "explorer_kernel_test.h"
+#include "explorer_logic_demo.h"
 #include "explorer_mactable_demo.h"
 #include "explorer_ping_demo.h"
 #include "explorer_pktgen_demo.h"
@@ -389,6 +390,7 @@ static void cads_help(void) {
         "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
         "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
         "#   D <hz> <duty%> [sec]  PWM generator on OUT13 (PE5, TIM9_CH1), e.g. D 1000 50, default 1000Hz/50%/5s\r\n"
+        "#   L <hz> [sec]  logic analyzer, IN0..7/INT0..5 -> waveform on panel, default 25Hz/5s\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
         "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
@@ -492,6 +494,15 @@ void cads_explorer_run(void) {
                 end = cads_str_skip_spaces(end);
                 cads_str_to_uint(end, &secs, &end);
                 cads_explorer_pwm_demo(freq_hz, duty_percent, secs);
+                break;
+            }
+            case 'L': {
+                uint32_t rate_hz = 0u, secs = 0u;
+                const char* end = argument;
+                cads_str_to_uint(end, &rate_hz, &end);
+                end = cads_str_skip_spaces(end);
+                cads_str_to_uint(end, &secs, &end);
+                cads_explorer_logic_demo(rate_hz, secs);
                 break;
             }
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
