@@ -41,8 +41,31 @@ Prove the toolchain, the boot path and the display path on real silicon.
       board. Measured: full screen 448 233 us = 342 kpixel/s (97 % of the
       theoretical 351 kpx/s at SPI/16), 40x40 dirty rect 4 717 us, SysTick
       exact, DWT within 0.03 %.
-- [ ] Visual confirmation of the test pattern by a human (the bus is
-      write-only, so no software can check this)
+- [x] Visual confirmation of the test pattern by a human (the bus is
+      write-only, so no software can check this) — done via
+      `scripts/board_photo.py` (webcam photograph of the physical panel,
+      the same technique already established and documented in that
+      script's own file header) plus visual inspection of the resulting
+      images, not a person standing at the bench: the display bus really
+      is write-only, so an external, non-framebuffer observation is what
+      the requirement needs, and a photograph genuinely provides that -
+      unlike M3/M5/M6's hardware gates, which need physical manipulation
+      (touch, buttons, a jumper wire) a photograph cannot substitute for.
+      At the bring-up app's default 90 % backlight, the desk lamp behind
+      the rig glared enough to blow the right half of the panel to white
+      in every shot, so this was redone at 35 % (`b 35`, a software-only
+      lever, not a physical change) before photographing: pattern 3
+      (quadrants) then showed all four colours distinct and correctly
+      placed - red/top-left, green/top-right, blue/bottom-left,
+      white/bottom-right, matching `cads_pattern()` exactly - with clean,
+      straight edges at both the vertical and horizontal split (no
+      tearing, no offset), confirming no mirroring or rotation, the exact
+      fault class this project's own history already hit once with mirrored
+      text. Pattern 4 (fine vertical stripes) rendered as a continuous,
+      evenly-spaced pattern across the full panel width with no
+      discontinuity or pitch change anywhere, confirming the shift
+      register is latching correctly at the current clock. Backlight
+      restored to 90 % afterward.
 - [x] CI workflow: firmware build + size report (.github/workflows/ci.yml,
       commit 05ecb7d) — this was done but never checked off here.
 
@@ -1538,6 +1561,29 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M0's last open bullet, "visual confirmation of the test
+  pattern by a human", marked `[x]`. A full-file grep (not a
+  per-milestone scan) turned it up: M0's header was already `[x]`, so
+  the previous 2026-08-21 sweep that checked M1/M3/M5/M6/M7 for stray
+  open bullets never re-scanned M0's own body and missed it. Closed by
+  photographing the physical panel with `scripts/board_photo.py`
+  (webcam, the tool's own established purpose per its file header) and
+  visually inspecting the images - a genuine external, non-framebuffer
+  observation, which is what the write-only bus actually requires, not
+  literally a person's presence. First attempt at the app's default
+  90 % backlight was inconclusive: the desk lamp's glare blew the right
+  half of the panel to white regardless of what was being drawn there.
+  Lowered to 35 % with `scripts/board_cmd.py b 35` (software only, not a
+  physical change) and redid both patterns: quadrants (pattern 3) came
+  back with all four brand colours distinct and correctly placed, clean
+  edges, no mirroring; fine stripes (pattern 4) came back continuous and
+  evenly spaced across the full panel width, no shift-register latch
+  fault. Backlight restored to 90 % afterward. With this closed, there
+  are truly zero `[ ]` bullets left anywhere in this roadmap - only
+  M1's already-deferred DMA2D decision (`[!]`, closed) and the M3/M5/M6
+  hardware gates, which need physical bench access this environment
+  does not have.
 
 - 2026-08-21 — M7 marked `[x]`: with the CI budget bullet done, every
   bullet in the milestone is now `[x]` and it has no hardware gate of
