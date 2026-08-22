@@ -154,6 +154,7 @@ if(CADS_TARGET STREQUAL "itsboard")
     set(CADS_EXPLORER_L2DISCOVER_SOURCE apps/bringup/explorer_l2discover_demo.c)
     set(CADS_EXPLORER_DHCPWATCH_SOURCE apps/bringup/explorer_dhcpwatch_demo.c)
     set(CADS_EXPLORER_ARPWATCH_SOURCE apps/bringup/explorer_arpwatch_demo.c)
+    set(CADS_EXPLORER_SSDPWATCH_SOURCE apps/bringup/explorer_ssdpwatch_demo.c)
     set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo.c)
     set(CADS_EXPLORER_FREQ_SOURCE apps/bringup/explorer_freq_demo.c)
     set(CADS_EXPLORER_PWM_SOURCE apps/bringup/explorer_pwm_demo.c)
@@ -170,6 +171,7 @@ else()
     set(CADS_EXPLORER_L2DISCOVER_SOURCE apps/bringup/explorer_l2discover_demo_sim.c)
     set(CADS_EXPLORER_DHCPWATCH_SOURCE apps/bringup/explorer_dhcpwatch_demo_sim.c)
     set(CADS_EXPLORER_ARPWATCH_SOURCE apps/bringup/explorer_arpwatch_demo_sim.c)
+    set(CADS_EXPLORER_SSDPWATCH_SOURCE apps/bringup/explorer_ssdpwatch_demo_sim.c)
     set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo_sim.c)
     set(CADS_EXPLORER_FREQ_SOURCE apps/bringup/explorer_freq_demo_sim.c)
     set(CADS_EXPLORER_PWM_SOURCE apps/bringup/explorer_pwm_demo_sim.c)
@@ -235,6 +237,7 @@ add_library(cads_apps STATIC
     ${CADS_EXPLORER_L2DISCOVER_SOURCE}
     ${CADS_EXPLORER_DHCPWATCH_SOURCE}
     ${CADS_EXPLORER_ARPWATCH_SOURCE}
+    ${CADS_EXPLORER_SSDPWATCH_SOURCE}
     ${CADS_EXPLORER_WOL_SOURCE}
     ${CADS_EXPLORER_FREQ_SOURCE}
     ${CADS_EXPLORER_PWM_SOURCE}

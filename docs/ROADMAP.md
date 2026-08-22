@@ -1101,6 +1101,57 @@ driver above.
       CI matrix confirmed green live on the push (run 32598552244):
       both `Firmware (STM32F429)` and `Firmware (STM32F429, minimal
       apps)`.
+- [x] Passive SSDP/UPnP device discovery listener, new explorer command
+      `U <sec>`. Fourth user-requested "practical apps for network
+      pentesting" addition, same direction as `N`/`R`/`B` above. SSDP
+      (UDP port 1900) is how UPnP devices - smart TVs, printers, media
+      servers, a growing pile of consumer IoT - announce themselves:
+      NOTIFY with NTS: ssdp:alive on join, ssdp:byebye on leaving, and
+      an HTTP/1.1 200 OK in reply to anyone's M-SEARCH, each carrying a
+      USN and a LOCATION URL pointing at the device's own UPnP
+      description XML. Recon that needs zero active probing.
+      New `modules/toolbox/ssdpwatch.h/.c` - shaped differently from
+      `l2discover.c`'s TLV walker or `dhcpwatch.c`'s fixed-field walker
+      on purpose: SSDP is HTTP-style plaintext, not a binary protocol,
+      so this is a header-line scanner (`cads_ssdpwatch_find_header()`,
+      exposed and unit-tested in its own right, not just used
+      internally) - the honest shape for the protocol, not code reused
+      because it already existed. Same bounds-checked-every-offset
+      discipline as the other three watchers. Dedup table keys on
+      (src_mac, USN) together, not MAC alone - one device legitimately
+      exposes more than one UPnP service, each with its own USN.
+      Unit-tested on the host (`tests/unit/test_ssdpwatch.c`, 18 cases)
+      covering all three message kinds, a case-insensitive header match,
+      a "does not match mid-line" case (`MY-USN:` must not match a
+      `USN:` lookup), and - honestly scoped, not assumed correct - an
+      explicit truncation test: a real USN/LOCATION can run well past
+      what the record keeps (`CADS_SSDPWATCH_USN_MAX`/`_LOCATION_MAX`
+      are 24/28 B, RAM being the scarce resource here), and the test
+      confirms truncation is sanitised and graceful, not refused or
+      overflowing.
+      A first version of the test file's own frame-building helper
+      overflowed its 200-byte stack buffer (a real SSDP NOTIFY payload
+      is comfortably over 150 B once several headers are present) -
+      caught immediately by a SIGTRAP/stack-protector abort on the very
+      first host test run, not by inspection; fixed by sizing the test
+      buffers to the message, not a guess.
+      RAM: uses the shared `explorer_capture_buffer.h`, same lever as
+      `R`/`B` - total added RAM is +256 B (a 4-entry table, the largest
+      per-entry record of the four watchers so far since USN+LOCATION
+      strings dominate). `check_ram_budget.py` reports margin 928 B
+      over the 48K floor (was 1184 B before this task) - still
+      comfortably inside the 256 B CI budget, but the margin is now
+      trending down each watcher added; the next one may need smaller
+      buffers or a table-capacity cut rather than continuing to spend
+      at this rate.
+      VERIFIED on hardware: `U 8` ran clean (`0 frame(s) seen, 0 SSDP
+      message(s), 0 distinct device/service(s), 0 dropped`) - the same
+      quiet-bench result every other M5 capture tool this session has
+      established. Re-ran `B 5` (arpwatch) and `R 5` (dhcpwatch)
+      immediately after to confirm sharing the capture buffer with a
+      fifth command caused no regression to either - both completed
+      clean. `d 8` app-tree regression and the M0 boot self-test (10/10)
+      both still clean.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -1786,6 +1837,24 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-23 — M5: new `U <sec>` passive SSDP/UPnP device discovery
+  listener, fourth in the user-requested series (`N`/`R`/`B`/`U`). New
+  `modules/toolbox/ssdpwatch.h/.c` (18 host unit tests) - a header-line
+  scanner, not a TLV walker, since SSDP is HTTP-style plaintext, not a
+  binary protocol like the other three watchers' - with dedup keyed on
+  (src_mac, USN) since one device exposes more than one UPnP service.
+  A first version of the test file's own frame builder overflowed its
+  stack buffer (a real SSDP payload runs well over 150 B) - caught by
+  a SIGTRAP on the very first host test run, fixed by sizing to the
+  message. Uses the shared `explorer_capture_buffer.h` - total added
+  RAM +256 B, margin 928 B (was 1184 B) - still comfortably over the
+  256 B CI floor, but trending down each watcher; flagged to the user
+  that the next one may need to spend less. VERIFIED on hardware: `U 8`
+  clean (quiet-bench result), `B 5`/`R 5` re-verified with no
+  regression from a fifth command sharing the capture buffer, `d 8`
+  and the M0 boot self-test both clean, host `ctest` 23/23. Full detail
+  in M5's own bullet.
 
 - 2026-08-22 — M5: new `B <sec>` passive ARP spoofing/cache-poisoning
   detector, third in the user-requested "practical apps for network

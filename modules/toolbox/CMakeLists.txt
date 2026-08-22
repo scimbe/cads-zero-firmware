@@ -15,6 +15,7 @@ add_library(cads_toolbox STATIC
     src/l2discover.c
     src/dhcpwatch.c
     src/arpwatch.c
+    src/ssdpwatch.c
 )
 
 target_include_directories(cads_toolbox
