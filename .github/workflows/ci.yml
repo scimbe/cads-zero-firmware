@@ -14,8 +14,28 @@ concurrency:
 
 jobs:
   firmware:
-    name: Firmware (STM32F429)
+    name: Firmware (STM32F429${{ matrix.name == 'minimal' && ', minimal apps' || '' }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            cmake_extra_args: ""
+          # A second configuration, every optional app (docs/ROADMAP.md M6's
+          # own "build-time optional apps" bullet) turned OFF. Exists because
+          # that task's own first version silently left two link lines
+          # unconditional - masked by CMake's own lazy handling of an
+          # unmatched library name, which let an unrelated compile failure
+          # surface before the real bug ever did - and the only thing that
+          # caught it was actually building this exact configuration, not
+          # reading the CMake. A CI job that only ever builds the default
+          # (everything ON) config would happily go green again the next
+          # time someone adds a new optional-app reach without gating it.
+          - name: minimal
+            cmake_extra_args: >-
+              -DCADS_APP_SETTINGS=OFF -DCADS_APP_ABOUT=OFF -DCADS_APP_GPIO=OFF
+              -DCADS_APP_NETINFO=OFF -DCADS_APP_FILEBROWSER=OFF -DCADS_APP_GAME=OFF
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +53,8 @@ jobs:
           cmake -S . -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCADS_ARM_TOOLCHAIN_BIN=$(dirname $(which arm-none-eabi-gcc))
+            -DCADS_ARM_TOOLCHAIN_BIN=$(dirname $(which arm-none-eabi-gcc)) \
+            ${{ matrix.cmake_extra_args }}
 
       - name: Build
         run: cmake --build build
@@ -69,7 +90,10 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware
+          # Matrix-unique name: actions/upload-artifact@v4 refuses two
+          # uploads of the same name within one workflow run, and the
+          # matrix above now runs this job twice.
+          name: firmware-${{ matrix.name }}
           path: |
             build/cads-zero.elf
             build/cads-zero.bin

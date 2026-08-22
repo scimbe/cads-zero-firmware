@@ -1214,6 +1214,14 @@ does not yet use" for the full table and sourcing.
       bound handling a count of zero rather than on anything new this
       task added). Board reflashed back to the default full-app image
       afterward and re-verified clean before moving on.
+      `.github/workflows/ci.yml`'s firmware job is now a 2-entry matrix,
+      default config and every `CADS_APP_*` `OFF`, precisely because the
+      bug this task itself found (two link lines left unconditional)
+      would sail through a CI that only ever built the default config.
+      YAML validated locally (`yaml.safe_load`, matrix entries checked
+      individually) before push; the actual run is confirmed further
+      down in this same log entry's own dated follow-up once it has
+      run, not asserted here ahead of seeing it.
 - [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
       five apps below the menu build, flash, and run without fault; a human
       walkthrough of each one by touch and by button is the same open item
