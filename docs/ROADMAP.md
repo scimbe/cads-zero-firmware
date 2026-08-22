@@ -1838,6 +1838,27 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-23 — CI: fixed a real false positive in the "filesystem
+  region is untouched" check, caught live on the `U` (ssdpwatch) push -
+  the "minimal apps" matrix leg failed even though no section anywhere
+  near the littlefs window existed. Root cause: the check was
+  `grep -qE '0810[2-9a-f]|081[1-9a-f]'` against `objdump -h`'s raw
+  text, never anchored to the address column - a substring search
+  across a whole section line (which also has SIZE, file offset,
+  alignment). The minimal-apps build's different RAM footprint shifted
+  `.dmaram`'s VMA to `20008144`, and "0814" - a substring of that
+  SRAM address, nothing to do with flash - matched `081[1-9a-f]`.
+  Replaced with `scripts/check_fs_window.py`: parses `objdump -h` by
+  column position (not substring search), skips ALLOC-only sections
+  (`.bss`/`.dmaram`/`.heap` routinely carry a leftover LMA that means
+  nothing about real flash occupancy), and does a real numeric
+  interval-overlap check against the littlefs window for sections that
+  actually have the LOAD flag. Verified both directions before
+  deploying: a synthetic section with an LMA genuinely inside the
+  window is caught (checked outside any build, not assumed), and both
+  the default and minimal-apps ELFs built locally now report PASS
+  where the old check falsely failed.
+
 - 2026-08-23 — M5: new `U <sec>` passive SSDP/UPnP device discovery
   listener, fourth in the user-requested series (`N`/`R`/`B`/`U`). New
   `modules/toolbox/ssdpwatch.h/.c` (18 host unit tests) - a header-line

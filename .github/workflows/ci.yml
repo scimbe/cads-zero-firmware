@@ -81,12 +81,12 @@ jobs:
           set -o pipefail
           python3 scripts/check_ram_budget.py build/cads-zero.elf | tee -a $GITHUB_STEP_SUMMARY
 
+      # See scripts/check_fs_window.py's own file header: this used to be a
+      # grep against objdump's raw text, unanchored to the address column,
+      # which produced a real false positive once a build's memory layout
+      # shifted a coincidental hex substring into view.
       - name: Check the filesystem region is untouched
-        run: |
-          if arm-none-eabi-objdump -h build/cads-zero.elf | grep -qE '0810[2-9a-f]|081[1-9a-f]'; then
-            echo "error: a section landed in the littlefs window at 0x08120000" >&2
-            exit 1
-          fi
+        run: python3 scripts/check_fs_window.py build/cads-zero.elf
 
       - uses: actions/upload-artifact@v4
         with:
