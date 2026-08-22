@@ -54,6 +54,7 @@
 #include "cads/net/net.h"
 #include "cads/storage/storage.h"
 #include "cads_hal.h"
+#include "explorer_capture_buffer.h"
 #include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "hal_eth_mac.h"
 #include "input_probe.h"
@@ -148,13 +149,15 @@ void cads_explorer_sniff_demo(uint32_t seconds) {
 
     cads_hal_eth_mac_set_promiscuous(true);
 
-    static uint8_t frame[1536]; /* full receive size - see this file's own header on why */
+    /* full receive size - see this file's own header on why; shared, not this
+     * command's own buffer - see explorer_capture_buffer.h on why. */
+    uint8_t* frame = cads_explorer_capture_buffer();
     uint32_t captured = 0u;
     uint32_t write_errors = 0u;
     uint32_t start = cads_hal_ticks_ms();
 
     while(cads_hal_ticks_ms() - start < seconds * 1000u) {
-        uint16_t length = cads_hal_eth_mac_receive(frame, sizeof(frame));
+        uint16_t length = cads_hal_eth_mac_receive(frame, CADS_EXPLORER_CAPTURE_BUFFER_SIZE);
         if(length == 0u) continue;
 
         uint32_t now = cads_hal_ticks_ms();

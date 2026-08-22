@@ -942,6 +942,75 @@ driver above.
       traffic-independent proof instead: host `ctest` 17/17 (16 prior +
       the new `test_mactable`, 10/10 cases). M0 boot self-test still
       10/10, `d 8` app-tree regression clean.
+- [x] Passive L2 neighbor discovery (CDP/LLDP/STP + 802.1Q VLAN IDs), new
+      explorer command `N <sec>`. User-requested addition, not from an
+      issue: "practical apps... helpful for penetration tests in the
+      network, hard with a regular computer" - a laptop can decode these
+      with tcpdump easily enough, but nobody leaves one plugged into a
+      wall jack collecting recon passively and continuously; a small,
+      inconspicuous, always-on board is a genuinely different tool for
+      the same job, not a slower version of the laptop one. All three
+      protocols (Cisco's CDP, IEEE 802.1AB LLDP, IEEE 802.1D/w STP
+      Configuration/RST BPDUs) are switches/routers/APs announcing
+      themselves unprompted - no IP, no DHCP lease, no connection needed,
+      just promiscuous mode, which `explorer_sniff_demo.c`/
+      `explorer_mactable_demo.c`'s capture loop already set up.
+      New `modules/toolbox/l2discover.h/.c`: three independent frame
+      recognisers (CDP/LLDP/STP - a shared "walk TLVs" helper was
+      considered and rejected, each protocol's TLV header is a different
+      width/layout, so a generic walker would have needed a callback and
+      a union just to paper over three-line differences) plus a small
+      dedup table, portable, no HAL, every offset bounds-checked against
+      the frame's own `length` before it is read - these bytes come off
+      the wire, from whatever sent them, not from this firmware, and this
+      is explicitly a security-adjacent parser of untrusted input.
+      Unit-tested on the host (`tests/unit/test_l2discover.c`, 19 cases)
+      with hand-built, spec-accurate frames per protocol, including a
+      malformed-TLV-length case (must stop the walk without reading past
+      the frame, not crash or hang) and an LLDP chassis-ID-with-raw-MAC
+      case (must sanitise non-printable bytes to '.' before they ever
+      reach a serial terminal). `apps/bringup/explorer_l2discover_demo.c`
+      is only the board-specific capture loop and printout, same split as
+      `mactable`'s own.
+      RAM: this command's own first build failed the link
+      ("Less than 48K of heap left") - not a surprise this session hasn't
+      seen before (the mactable task above hit the identical wall), but
+      the fix this time was structural rather than another lwipopts.h
+      trim: `explorer_sniff_demo.c`, `explorer_mactable_demo.c` and this
+      new command each declared their own private `static uint8_t
+      frame[1536]` capture buffer, even though the explorer REPL only
+      ever runs one command at a time (the same "one owner" discipline
+      `explorer_gui_demo.c`/`explorer_app_demo.c` already established for
+      the display) - three buffers costing 3x the RAM of the one that is
+      ever actually live. New `apps/bringup/explorer_capture_buffer.c`
+      is that one shared buffer; all three commands now call
+      `cads_explorer_capture_buffer()` instead of declaring their own.
+      Net effect measured, not assumed: RAM used dropped from 149088 B
+      (this command's own buffer added, nothing shared yet) to 146016 B
+      (after sharing) - `scripts/check_ram_budget.py` reports
+      __cads_heap_size = 50592 B, margin 1440 B over the 48K floor, a
+      *larger* margin than main had before this task started (spot-
+      checked: reverting just this command's own files, keeping the
+      shared-buffer refactor, would still leave main with roughly 1160 B
+      more margin than it has today - removing real, accumulated waste,
+      not a one-off trim that the next feature will just re-spend).
+      VERIFIED on hardware: `N 10` ran clean (`0 frame(s) seen, 0
+      neighbor(s), 0 dropped, 0 distinct VLAN ID(s)`) - the same quiet-
+      bench finding every other M5 capture tool this session has already
+      established (`cads_explorer_eth_mmc()`'s rx counters agree: nothing
+      arrives on this segment unprompted). Re-ran `M 8` (mactable) and
+      `C 5` (sniffer) immediately after to confirm the shared-buffer
+      refactor caused no regression to either - both completed clean,
+      zero faults. `d 8` app-tree regression and the M0 boot self-test
+      (10/10) both still clean. Host `ctest` 20/20 (19 prior + the new
+      `test_l2discover`, 19/19 cases).
+      Honestly scoped, not chased: LLDP's other two rarer multicast
+      addresses and STP's TCN/MSTP frame shapes are deliberately not
+      decoded (see `l2discover.h`'s own header on why) - recognising
+      fewer frame shapes correctly beats guessing at more of them. Real-
+      traffic parsing correctness rests on the host unit tests' hand-
+      built frames, the same evidentiary standard this bench's own
+      quietness has forced on every other M5 recon tool.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -1570,6 +1639,25 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M5: new `N <sec>` passive L2 neighbor discovery command
+  (CDP/LLDP/STP + VLAN IDs), user-requested ("practical apps... hard
+  with a regular computer" for network pentesting) rather than pulled
+  from an open roadmap/issue item - this session's roadmap had reached
+  zero `[ ]` bullets, so this is genuinely new scope, added under M5's
+  existing Swiss-army-knife section since that is exactly what it is.
+  New `modules/toolbox/l2discover.h/.c` (19 host unit tests, hand-built
+  frames) + `apps/bringup/explorer_l2discover_demo.c`. Its own first
+  build failed the 48K RAM floor - fixed structurally, not with another
+  lwipopts.h trim: extracted `apps/bringup/explorer_capture_buffer.c`,
+  one shared 1536 B capture buffer for `C`/`M`/`N` instead of one each
+  (they can never run concurrently - the explorer REPL dispatches one
+  command at a time). Net RAM margin after this task is 1440 B, *larger*
+  than main had before it started. VERIFIED on hardware: `N 10` clean
+  (quiet-bench result, consistent with every other M5 recon tool this
+  session), `M 8`/`C 5` re-verified with no regression from the shared-
+  buffer refactor, `d 8` and the M0 boot self-test both clean, host
+  `ctest` 20/20. Full detail in M5's own bullet.
 
 - 2026-08-22 — M3's touch-navigation bullet marked `[!]`. The previous
   full-file grep for the M0 task (same day, entry below) only matched

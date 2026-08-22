@@ -38,6 +38,9 @@ target_link_libraries(test_mactable PRIVATE cads_toolbox)
 cads_add_unit_test(test_freqcounter test_freqcounter.c)
 target_link_libraries(test_freqcounter PRIVATE cads_toolbox)
 
+cads_add_unit_test(test_l2discover test_l2discover.c)
+target_link_libraries(test_l2discover PRIVATE cads_toolbox)
+
 # --- storage --------------------------------------------------------------
 #
 # Sources live in modules/storage/tests/, not here - modules/storage's own

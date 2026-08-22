@@ -49,6 +49,7 @@
 #include "explorer_http_demo.h"
 #include "explorer_iperf_demo.h"
 #include "explorer_kernel_test.h"
+#include "explorer_l2discover_demo.h"
 #include "explorer_logic_demo.h"
 #include "explorer_mactable_demo.h"
 #include "explorer_ping_demo.h"
@@ -388,6 +389,7 @@ static void cads_help(void) {
         "#   G <pps> [sec]  packet generator, TIM6-paced, e.g. G 1000 5, default 100pps/5s\r\n"
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
+        "#   N <sec>    L2 recon: passive CDP/LLDP/STP neighbor discovery + VLAN IDs seen, default 20s\r\n"
         "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
         "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
         "#   D <hz> <duty%> [sec]  PWM generator on OUT13 (PE5, TIM9_CH1), e.g. D 1000 50, default 1000Hz/50%/5s\r\n"
@@ -480,6 +482,7 @@ void cads_explorer_run(void) {
             }
             case 'C': cads_explorer_sniff_demo(cads_parse_uint(argument) ?: 10u); break;
             case 'M': cads_explorer_mactable_demo(cads_parse_uint(argument) ?: 15u); break;
+            case 'N': cads_explorer_l2discover_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'W': {
                 uint8_t target_mac[6];
                 cads_parse_mac(argument, target_mac);

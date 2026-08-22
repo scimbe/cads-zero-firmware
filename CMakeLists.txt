@@ -104,6 +104,7 @@ if(CADS_TARGET STREQUAL "itsboard")
     set(CADS_EXPLORER_PKTGEN_SOURCE apps/bringup/explorer_pktgen_demo.c)
     set(CADS_EXPLORER_SNIFF_SOURCE apps/bringup/explorer_sniff_demo.c)
     set(CADS_EXPLORER_MACTABLE_SOURCE apps/bringup/explorer_mactable_demo.c)
+    set(CADS_EXPLORER_L2DISCOVER_SOURCE apps/bringup/explorer_l2discover_demo.c)
     set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo.c)
     set(CADS_EXPLORER_FREQ_SOURCE apps/bringup/explorer_freq_demo.c)
     set(CADS_EXPLORER_PWM_SOURCE apps/bringup/explorer_pwm_demo.c)
@@ -117,6 +118,7 @@ else()
     set(CADS_EXPLORER_PKTGEN_SOURCE apps/bringup/explorer_pktgen_demo_sim.c)
     set(CADS_EXPLORER_SNIFF_SOURCE apps/bringup/explorer_sniff_demo_sim.c)
     set(CADS_EXPLORER_MACTABLE_SOURCE apps/bringup/explorer_mactable_demo_sim.c)
+    set(CADS_EXPLORER_L2DISCOVER_SOURCE apps/bringup/explorer_l2discover_demo_sim.c)
     set(CADS_EXPLORER_WOL_SOURCE apps/bringup/explorer_wol_demo_sim.c)
     set(CADS_EXPLORER_FREQ_SOURCE apps/bringup/explorer_freq_demo_sim.c)
     set(CADS_EXPLORER_PWM_SOURCE apps/bringup/explorer_pwm_demo_sim.c)
@@ -144,6 +146,7 @@ add_library(cads_apps STATIC
     apps/bringup/bringup.c
     apps/bringup/input_probe.c
     apps/bringup/explorer.c
+    apps/bringup/explorer_capture_buffer.c
     apps/bringup/explorer_gui_demo.c
     apps/bringup/explorer_app_demo.c
     apps/bringup/explorer_storage_test.c
@@ -161,6 +164,7 @@ add_library(cads_apps STATIC
     ${CADS_EXPLORER_PKTGEN_SOURCE}
     ${CADS_EXPLORER_SNIFF_SOURCE}
     ${CADS_EXPLORER_MACTABLE_SOURCE}
+    ${CADS_EXPLORER_L2DISCOVER_SOURCE}
     ${CADS_EXPLORER_WOL_SOURCE}
     ${CADS_EXPLORER_FREQ_SOURCE}
     ${CADS_EXPLORER_PWM_SOURCE}
