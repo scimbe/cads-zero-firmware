@@ -1166,6 +1166,54 @@ does not yet use" for the full table and sourcing.
       prior + the new `test_app_tree`, 4/4 cases, including the "would
       have caught the old bug" one); M0 boot self-test 10/10; `d 8`
       app-tree regression clean (photographed live on the panel).
+- [x] Build-time optional apps: which of settings/about/gpio/netinfo/
+      filebrowser/game land in the firmware is now a CMake choice
+      (`CADS_APP_SETTINGS`/`CADS_APP_ABOUT`/`CADS_APP_GPIO`/
+      `CADS_APP_NETINFO`/`CADS_APP_FILEBROWSER`/`CADS_APP_GAME`, each
+      `ON` by default so an unconfigured build is unchanged), not from an
+      open roadmap/issue item - user-requested directly, in response to
+      the l2discover task above hitting the 48K RAM floor: "if we have
+      trouble with memory, we should deploy a plugin-like mechanism
+      where we can configure at build time which apps go into the
+      firmware." Desktop and the menu itself are not options - they are
+      the shell, not an app.
+      Every option becomes a `CADS_APP_*_ENABLED` compile definition on
+      `cads_flags` (top-level `CMakeLists.txt`), which essentially every
+      target in this project already links, rather than wiring each
+      option through every target that might care one at a time. Three
+      of `apps/bringup`'s own explorer commands reach directly into a
+      specific app for their own single-app demo (`g` -> apps/gpio,
+      `v` -> apps/filebrowser, and `d`'s app-tree loop calls both
+      `cads_gpio_tick()` and `cads_game_tick()` directly) - each now
+      guards that reach with the matching `#ifdef`, printing "disabled
+      at build time" instead of failing to compile, the same answer
+      `explorer_mactable_demo_sim.c` already gives for a different
+      reason (not available in this configuration).
+      A first version left two link lines unconditional -
+      `target_link_libraries(cads_apps ... cads_app_gpio
+      cads_app_filebrowser cads_app_game)` in the top-level
+      `CMakeLists.txt` - caught by actually testing a reduced
+      configuration, not by inspection: CMake's own lazy treatment of a
+      library name with no matching target (passed straight to the
+      linker rather than erroring at configure time) let this get all
+      the way to a *compile* failure (missing headers) in unrelated
+      files before the real problem - a link line that would eventually
+      fail too - was even reached.
+      VERIFIED on hardware, both ends of the range: the default
+      (everything `ON`) config re-verified unchanged - RAM 146016 B,
+      margin 1440 B, `N`/`M`/`C`/`d 8`/M0 boot self-test all clean, host
+      `ctest` 20/20. A from-scratch build with all six apps `OFF` links
+      clean too: flash 211632 B (was 258472 B, -46840 B) RAM 140128 B
+      (was 146016 B, -5888 B), `check_ram_budget.py` reports margin
+      7328 B (was 1440 B) - flashed and VERIFIED on hardware: M0 boot
+      self-test 10/10, `d 8` ran fault-free with an empty menu (0
+      navigation transitions - the same "nobody touched it" result
+      every other `d 8` run this session has had, not evidence either
+      way for the empty-list case specifically, which rests on the
+      pre-existing, already-verified `cads_menu_t` widget's own loop
+      bound handling a count of zero rather than on anything new this
+      task added). Board reflashed back to the default full-app image
+      afterward and re-verified clean before moving on.
 - [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
       five apps below the menu build, flash, and run without fault; a human
       walkthrough of each one by touch and by button is the same open item
@@ -1639,6 +1687,27 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M6: build-time optional apps (`CADS_APP_SETTINGS`/
+  `CADS_APP_ABOUT`/`CADS_APP_GPIO`/`CADS_APP_NETINFO`/
+  `CADS_APP_FILEBROWSER`/`CADS_APP_GAME`, each `ON` by default). User-
+  requested directly in response to the L2-discovery task below hitting
+  the 48K RAM floor: a "plugin-like" build-time choice of which apps
+  land in the firmware. One `CADS_APP_*_ENABLED` compile definition per
+  option, added to `cads_flags` so every target already linking it (the
+  common case in this project) sees it without per-target wiring; three
+  explorer bring-up commands that reach directly into one specific app
+  guard that reach the same way. Caught one real bug testing a reduced
+  configuration rather than trusting the CMake by inspection: two link
+  lines stayed unconditional in the top-level `CMakeLists.txt`, masked
+  by CMake's own lazy handling of an unmatched library name (passed to
+  the linker rather than erroring at configure time), which let an
+  unrelated *compile* failure surface first. VERIFIED on hardware at
+  both ends: default config unchanged (RAM margin 1440 B, `N`/`M`/`C`/
+  `d 8`/boot self-test/host `ctest` 20/20 all clean); all six apps `OFF`
+  also links and boots clean (flash -46840 B, RAM -5888 B, margin
+  7328 B, `d 8` fault-free with an empty menu). Board reflashed back to
+  the default image afterward. Full detail in M6's own bullet.
 
 - 2026-08-22 — M5: new `N <sec>` passive L2 neighbor discovery command
   (CDP/LLDP/STP + VLAN IDs), user-requested ("practical apps... hard

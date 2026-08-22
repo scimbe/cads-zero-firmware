@@ -27,6 +27,24 @@ else()
 endif()
 message(STATUS "CaDS Zero target: ${CADS_TARGET}")
 
+# --- optional apps -------------------------------------------------------
+# Which GUI apps end up in apps/menu - and therefore in the firmware at
+# all - is a build-time choice, not baked in. A shipped image built for
+# one purpose does not need every diagnostic/demo app this project has
+# accumulated, and RAM/flash margin is tight enough (docs/ROADMAP.md's
+# own repeated notes on the linker's 48K SRAM floor, most recently hit
+# by a single new explorer command) that "just build everything" is not
+# free. Desktop and the menu itself are not options here - they are the
+# shell every other app is reached through, not an app in their own
+# right. Every option defaults ON, so an unconfigured build stays
+# exactly what it always was.
+option(CADS_APP_SETTINGS "Include the Settings app" ON)
+option(CADS_APP_ABOUT "Include the About app" ON)
+option(CADS_APP_GPIO "Include the GPIO app" ON)
+option(CADS_APP_NETINFO "Include the Network Info app" ON)
+option(CADS_APP_FILEBROWSER "Include the file browser app" ON)
+option(CADS_APP_GAME "Include the Reflex Test game" ON)
+
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
 # field, so conversions are errors here rather than noise.
@@ -46,6 +64,35 @@ target_compile_options(cads_flags INTERFACE
     -ffunction-sections
     -fdata-sections
 )
+
+# Every CADS_APP_* option above becomes a CADS_APP_*_ENABLED compile
+# definition on cads_flags - which essentially every target in this
+# project already links (cads_apps, cads_app_menu, and each per-app
+# library alike) - rather than wiring it per target. A file that reaches
+# into a specific optional app (apps/menu/cads_menu_app.c, and a few of
+# apps/bringup's own single-app demo commands: explorer_gui_demo.c for
+# gpio, explorer_filebrowser_demo.c for filebrowser, explorer_app_demo.c
+# for gpio+game) guards that reach with #ifdef on the matching macro; a
+# file that does not reach for an optional app needs no guard and sees
+# no difference from before this section existed.
+if(CADS_APP_SETTINGS)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_SETTINGS_ENABLED)
+endif()
+if(CADS_APP_ABOUT)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_ABOUT_ENABLED)
+endif()
+if(CADS_APP_GPIO)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_GPIO_ENABLED)
+endif()
+if(CADS_APP_NETINFO)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_NETINFO_ENABLED)
+endif()
+if(CADS_APP_FILEBROWSER)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_FILEBROWSER_ENABLED)
+endif()
+if(CADS_APP_GAME)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_GAME_ENABLED)
+endif()
 
 # --- modules -----------------------------------------------------------------
 # The toolbox is target neutral: the same sources link into the firmware and
@@ -131,15 +178,32 @@ endif()
 # hardware smoke test, no Ethernet dependency, directly hardware-observable);
 # the rest followed once that stack was proven on real silicon. See
 # docs/ROADMAP.md M3/M6.
+#
+# Every app past desktop is gated by its own CADS_APP_* option (see this
+# file's own "optional apps" section above) - a library that is never
+# add_subdirectory()'d here never gets built at all, not just excluded
+# from the final link.
 add_subdirectory(gui/view)
 add_subdirectory(gui/widgets)
 add_subdirectory(apps/desktop)
-add_subdirectory(apps/settings)
-add_subdirectory(apps/about)
-add_subdirectory(apps/netinfo)
-add_subdirectory(apps/gpio)
-add_subdirectory(apps/filebrowser)
-add_subdirectory(apps/game)
+if(CADS_APP_SETTINGS)
+    add_subdirectory(apps/settings)
+endif()
+if(CADS_APP_ABOUT)
+    add_subdirectory(apps/about)
+endif()
+if(CADS_APP_NETINFO)
+    add_subdirectory(apps/netinfo)
+endif()
+if(CADS_APP_GPIO)
+    add_subdirectory(apps/gpio)
+endif()
+if(CADS_APP_FILEBROWSER)
+    add_subdirectory(apps/filebrowser)
+endif()
+if(CADS_APP_GAME)
+    add_subdirectory(apps/game)
+endif()
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -177,7 +241,22 @@ else()
     target_sources(cads_apps PRIVATE apps/bringup/explorer_kernel_test_sim.c)
     target_sources(cads_apps PRIVATE apps/bringup/explorer_fault_test_sim.c)
 endif()
-target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu cads_app_gpio cads_app_filebrowser cads_app_game)
+target_link_libraries(cads_apps PUBLIC cads_app_desktop cads_app_menu)
+# cads_apps needs its own direct link against these three specifically (not
+# just transitively through cads_app_menu, which links them PRIVATE and so
+# does not re-export them) because explorer_gui_demo.c/
+# explorer_filebrowser_demo.c/explorer_app_demo.c call straight into
+# apps/gpio, apps/filebrowser and apps/game themselves - see those files'
+# own CADS_APP_*_ENABLED guards for why each is conditional here too.
+if(CADS_APP_GPIO)
+    target_link_libraries(cads_apps PUBLIC cads_app_gpio)
+endif()
+if(CADS_APP_FILEBROWSER)
+    target_link_libraries(cads_apps PUBLIC cads_app_filebrowser)
+endif()
+if(CADS_APP_GAME)
+    target_link_libraries(cads_apps PUBLIC cads_app_game)
+endif()
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli)
 if(CADS_TARGET STREQUAL "itsboard")

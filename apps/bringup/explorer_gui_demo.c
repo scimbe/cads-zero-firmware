@@ -14,13 +14,22 @@
 
 #include "explorer_gui_demo.h"
 
+#include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
+
+/* This command is entirely about apps/gpio - CADS_APP_GPIO_ENABLED comes
+ * from apps/menu/CMakeLists.txt, defined only when the top-level
+ * CADS_APP_GPIO option is ON (see that file's own "optional apps"
+ * section). With it OFF there is nothing this command can demo, the
+ * same "not available in this configuration" answer
+ * explorer_mactable_demo_sim.c already gives for a different reason. */
+#ifdef CADS_APP_GPIO_ENABLED
+
 #include "cads_gpio.h"
 #include "cads_gui.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
-#include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
 
 #define CADS_DEMO_VIEW_CAPACITY 4u
 #define CADS_DEMO_STACK_DEPTH 4u
@@ -75,3 +84,12 @@ void cads_explorer_gui_demo(uint32_t seconds) {
     cads_probe_put_uint(total_pixels);
     cads_probe_puts(" pixels total\r\n");
 }
+
+#else /* !CADS_APP_GPIO_ENABLED */
+
+void cads_explorer_gui_demo(uint32_t seconds) {
+    (void)seconds;
+    cads_probe_puts("# gui demo: apps/gpio was disabled at build time (CADS_APP_GPIO=OFF)\r\n");
+}
+
+#endif

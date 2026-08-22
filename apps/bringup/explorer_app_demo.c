@@ -13,8 +13,12 @@
 
 #include "cads/net/net.h"
 #include "cads_desktop.h"
+#ifdef CADS_APP_GAME_ENABLED
 #include "cads_game.h"
+#endif
+#ifdef CADS_APP_GPIO_ENABLED
 #include "cads_gpio.h"
+#endif
 #include "cads_gui.h"
 #include "cads_hal.h"
 #include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo, filebrowser, game */
@@ -121,8 +125,12 @@ void cads_explorer_app_demo(uint32_t seconds) {
         cads_net_poll();
         cads_statusbar_set_indicator(&s_statusbar, CADS_NET_STATUSBAR_SLOT, cads_net_indicator_text());
         cads_desktop_tick(now);
+#ifdef CADS_APP_GPIO_ENABLED
         cads_gpio_tick(now);
+#endif
+#ifdef CADS_APP_GAME_ENABLED
         cads_game_tick(now);
+#endif
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {
             total_pixels += pixels;

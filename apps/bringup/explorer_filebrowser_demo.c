@@ -7,13 +7,19 @@
 
 #include "explorer_filebrowser_demo.h"
 
+#include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
+
+/* This command is entirely about apps/filebrowser - see
+ * explorer_gui_demo.c's own header for why CADS_APP_FILEBROWSER_ENABLED
+ * is the right guard here (same reasoning, same source). */
+#ifdef CADS_APP_FILEBROWSER_ENABLED
+
 #include "cads_filebrowser.h"
 #include "cads_gui.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
-#include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
 
 #define CADS_FILEBROWSER_DEMO_VIEW_CAPACITY 2u
 #define CADS_FILEBROWSER_DEMO_STACK_DEPTH   4u
@@ -71,3 +77,13 @@ void cads_explorer_filebrowser_demo(uint32_t seconds) {
     cads_probe_put_uint(total_pixels);
     cads_probe_puts(" pixels total\r\n");
 }
+
+#else /* !CADS_APP_FILEBROWSER_ENABLED */
+
+void cads_explorer_filebrowser_demo(uint32_t seconds) {
+    (void)seconds;
+    cads_probe_puts(
+        "# filebrowser demo: apps/filebrowser was disabled at build time (CADS_APP_FILEBROWSER=OFF)\r\n");
+}
+
+#endif

@@ -5,13 +5,30 @@
 #include "cads_menu.h"
 #include "cads_view.h"
 
-#include "../about/cads_about.h"
 #include "../desktop/cads_desktop.h"
-#include "../filebrowser/cads_filebrowser.h"
-#include "../game/cads_game.h"
-#include "../gpio/cads_gpio.h"
-#include "../netinfo/cads_netinfo.h"
+
+/* Each include is only reachable at all when its own CADS_APP_*_ENABLED
+ * compile definition is set - apps/menu/CMakeLists.txt only defines it
+ * (and only links the app's own library) when the matching CADS_APP_*
+ * CMake option (top-level CMakeLists.txt) is ON. */
+#ifdef CADS_APP_SETTINGS_ENABLED
 #include "../settings/cads_settings.h"
+#endif
+#ifdef CADS_APP_ABOUT_ENABLED
+#include "../about/cads_about.h"
+#endif
+#ifdef CADS_APP_GPIO_ENABLED
+#include "../gpio/cads_gpio.h"
+#endif
+#ifdef CADS_APP_NETINFO_ENABLED
+#include "../netinfo/cads_netinfo.h"
+#endif
+#ifdef CADS_APP_FILEBROWSER_ENABLED
+#include "../filebrowser/cads_filebrowser.h"
+#endif
+#ifdef CADS_APP_GAME_ENABLED
+#include "../game/cads_game.h"
+#endif
 
 typedef struct {
     cads_view_t view;
@@ -24,12 +41,24 @@ static cads_menu_app_t s_menu_app;
 /* ids double as the row's own view id, so activating a row is exactly
  * "push what it names" - the menu never has to translate one into the other. */
 static const cads_menu_item_t cads_menu_app_items[] = {
+#ifdef CADS_APP_SETTINGS_ENABLED
     {"Settings", NULL, CADS_VIEW_ID_SETTINGS},
+#endif
+#ifdef CADS_APP_ABOUT_ENABLED
     {"About", NULL, CADS_VIEW_ID_ABOUT},
+#endif
+#ifdef CADS_APP_GPIO_ENABLED
     {"GPIO", "16/8", CADS_VIEW_ID_GPIO},
+#endif
+#ifdef CADS_APP_NETINFO_ENABLED
     {"Network Info", "Ethernet", CADS_VIEW_ID_NETINFO},
+#endif
+#ifdef CADS_APP_FILEBROWSER_ENABLED
     {"Files", NULL, CADS_VIEW_ID_FILEBROWSER},
+#endif
+#ifdef CADS_APP_GAME_ENABLED
     {"Reflex Test", NULL, CADS_VIEW_ID_GAME},
+#endif
 };
 
 static const cads_softkey_t cads_menu_app_keys[] = {
@@ -70,12 +99,24 @@ static void cads_menu_app_enter(void* context) {
 void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
     if(dispatcher == NULL) return;
 
+#ifdef CADS_APP_SETTINGS_ENABLED
     cads_settings_init(dispatcher);
+#endif
+#ifdef CADS_APP_ABOUT_ENABLED
     cads_about_init(dispatcher);
+#endif
+#ifdef CADS_APP_GPIO_ENABLED
     cads_gpio_init(dispatcher);
+#endif
+#ifdef CADS_APP_NETINFO_ENABLED
     cads_netinfo_init(dispatcher);
+#endif
+#ifdef CADS_APP_FILEBROWSER_ENABLED
     cads_filebrowser_init(dispatcher);
+#endif
+#ifdef CADS_APP_GAME_ENABLED
     cads_game_init(dispatcher);
+#endif
 
     s_menu_app.dispatcher = dispatcher;
     cads_menu_init(
