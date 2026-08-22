@@ -13,6 +13,7 @@ add_library(cads_toolbox STATIC
     src/mactable.c
     src/freqcounter.c
     src/l2discover.c
+    src/dhcpwatch.c
 )
 
 target_include_directories(cads_toolbox

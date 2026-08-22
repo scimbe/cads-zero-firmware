@@ -1011,6 +1011,52 @@ driver above.
       traffic parsing correctness rests on the host unit tests' hand-
       built frames, the same evidentiary standard this bench's own
       quietness has forced on every other M5 recon tool.
+- [x] Passive rogue-DHCP-server detector, new explorer command
+      `R <sec>`. User-requested continuation of the same "practical apps
+      for network pentesting, hard with a regular computer" direction as
+      the L2 discovery bullet above - watching continuously and
+      unattended for a second DHCP server answering on the segment
+      (accidental second router, or a deliberate DHCP-starvation/MITM
+      setup) is exactly the kind of always-on monitoring nobody actually
+      does with a laptop.
+      New `modules/toolbox/dhcpwatch.h/.c`: walks Ethernet -> IPv4
+      (IHL read, not assumed to be the common 20 B) -> UDP -> BOOTP/DHCP,
+      every offset bounds-checked against the frame's own length before
+      it is read - the same discipline `l2discover.c` established, for
+      the same reason (untrusted wire bytes). Recognises only
+      server->client traffic (UDP src port 67, dst port 68) whose DHCP
+      message type (option 53) is OFFER/ACK/NAK - a client never sends
+      from port 67, so this alone already can't confuse a DHCPDISCOVER
+      for a server reply, and checking the message type option on top of
+      that is pure defence in depth. The magic cookie (RFC 1497,
+      `63 82 53 63` right after the 236-byte BOOTP fixed section) is
+      checked too, rejecting non-DHCP UDP 67/68 traffic outright rather
+      than mis-parsing it. Dedup table keys on source MAC only - a
+      genuine second server has its own MAC, which is the actual signal
+      worth keying on - with a `cads_dhcpwatch_table_multiple_servers()`
+      bool as the one result this whole file exists to raise. Unit-tested on the host
+      (`tests/unit/test_dhcpwatch.c`, 15 cases, frames built by a small
+      byte-placing helper rather than hand-counted literal arrays - the
+      236-byte BOOTP section alone is too easy to miscount by hand and
+      have the mistake go unnoticed) covering OFFER/ACK/NAK recognition,
+      the server-identifier-option-present vs fallback-to-IP-header-
+      source cases, and five separate "not recognised" cases (client
+      ports, wrong magic cookie, non-UDP, truncated frame, client
+      message type).
+      RAM: uses the shared `explorer_capture_buffer.h` (established one
+      task ago, for exactly this reason) instead of its own 1536 B
+      buffer - total added RAM is +96 B (a 4-entry, ~24 B/entry dedup
+      table). `check_ram_budget.py` reports margin 1344 B over the 48K
+      floor (was 1440 B before this task), comfortably inside the 256 B
+      CI budget.
+      VERIFIED on hardware: `R 8` ran clean (`0 frame(s) seen, 0 DHCP
+      server repl(y/ies), 0 distinct server(s)`) - the same quiet-bench
+      result every other M5 capture tool this session has already
+      established. Re-ran `N 5` (l2discover) and `M 5` (mactable)
+      immediately after to confirm sharing the capture buffer with a
+      third command caused no regression to either - both completed
+      clean. `d 8` app-tree regression and the M0 boot self-test (10/10)
+      both still clean.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -1696,6 +1742,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M5: new `R <sec>` passive rogue-DHCP-server detector,
+  continuing the same user-requested "practical apps for network
+  pentesting" direction as the `N` l2discover command. New
+  `modules/toolbox/dhcpwatch.h/.c` (15 host unit tests) walks Ethernet/
+  IPv4/UDP/BOOTP with the same bounds-checked-every-offset discipline
+  `l2discover.c` established, recognising only DHCPOFFER/ACK/NAK
+  (server->client, port 67->68) and flagging when more than one
+  distinct source answers. Uses the shared `explorer_capture_buffer.h`
+  (from the previous task, for exactly this reason) rather than its own
+  buffer - total added RAM is +96 B, margin 1344 B (was 1440 B).
+  VERIFIED on hardware: `R 8` clean (quiet-bench result, consistent with
+  every other M5 recon tool), `N 5`/`M 5` re-verified with no
+  regression from a third command sharing the capture buffer, `d 8` and
+  the M0 boot self-test both clean. Full detail in M5's own bullet.
 
 - 2026-08-22 — M6: build-time optional apps (`CADS_APP_SETTINGS`/
   `CADS_APP_ABOUT`/`CADS_APP_GPIO`/`CADS_APP_NETINFO`/
