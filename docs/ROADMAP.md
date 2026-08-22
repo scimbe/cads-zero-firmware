@@ -1857,7 +1857,8 @@ _None outstanding._
   deploying: a synthetic section with an LMA genuinely inside the
   window is caught (checked outside any build, not assumed), and both
   the default and minimal-apps ELFs built locally now report PASS
-  where the old check falsely failed.
+  where the old check falsely failed. Confirmed green live on the push
+  (run 32606301939): both matrix legs pass with the new check.
 
 - 2026-08-23 — M5: new `U <sec>` passive SSDP/UPnP device discovery
   listener, fourth in the user-requested series (`N`/`R`/`B`/`U`). New
