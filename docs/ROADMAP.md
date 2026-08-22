@@ -1757,6 +1757,8 @@ _None outstanding._
   every other M5 recon tool), `N 5`/`M 5` re-verified with no
   regression from a third command sharing the capture buffer, `d 8` and
   the M0 boot self-test both clean. Full detail in M5's own bullet.
+  CI matrix confirmed green live on the push (run 32593596451): both
+  `Firmware (STM32F429)` and `Firmware (STM32F429, minimal apps)`.
 
 - 2026-08-22 — M6: build-time optional apps (`CADS_APP_SETTINGS`/
   `CADS_APP_ABOUT`/`CADS_APP_GPIO`/`CADS_APP_NETINFO`/
