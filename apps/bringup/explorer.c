@@ -39,6 +39,7 @@
 #include "cads/toolbox/str.h"
 #include "explorer_app_demo.h"
 #include "explorer_arp_demo.h"
+#include "explorer_arpwatch_demo.h"
 #include "explorer_cli_demo.h"
 #include "explorer_continuity_demo.h"
 #include "explorer_dhcpwatch_demo.h"
@@ -392,6 +393,7 @@ static void cads_help(void) {
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
         "#   N <sec>    L2 recon: passive CDP/LLDP/STP neighbor discovery + VLAN IDs seen, default 20s\r\n"
         "#   R <sec>    rogue-DHCP watch: flag >1 distinct DHCPOFFER/ACK/NAK source, default 20s\r\n"
+        "#   B <sec>    ARP watch: track IP->MAC bindings, flag any MAC change (spoofing tell), default 20s\r\n"
         "#   W <hex-mac>  Wake-on-LAN magic packet, e.g. W 0011223344AA\r\n"
         "#   F <sec>    frequency/period/duty-cycle counter on CN8 pin 5 (PB10, TIM2_CH3/CH4), default 5s\r\n"
         "#   D <hz> <duty%> [sec]  PWM generator on OUT13 (PE5, TIM9_CH1), e.g. D 1000 50, default 1000Hz/50%/5s\r\n"
@@ -486,6 +488,7 @@ void cads_explorer_run(void) {
             case 'M': cads_explorer_mactable_demo(cads_parse_uint(argument) ?: 15u); break;
             case 'N': cads_explorer_l2discover_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'R': cads_explorer_dhcpwatch_demo(cads_parse_uint(argument) ?: 20u); break;
+            case 'B': cads_explorer_arpwatch_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'W': {
                 uint8_t target_mac[6];
                 cads_parse_mac(argument, target_mac);

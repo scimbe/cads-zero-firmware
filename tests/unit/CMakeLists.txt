@@ -44,6 +44,9 @@ target_link_libraries(test_l2discover PRIVATE cads_toolbox)
 cads_add_unit_test(test_dhcpwatch test_dhcpwatch.c)
 target_link_libraries(test_dhcpwatch PRIVATE cads_toolbox)
 
+cads_add_unit_test(test_arpwatch test_arpwatch.c)
+target_link_libraries(test_arpwatch PRIVATE cads_toolbox)
+
 # --- storage --------------------------------------------------------------
 #
 # Sources live in modules/storage/tests/, not here - modules/storage's own

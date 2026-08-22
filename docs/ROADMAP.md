@@ -1057,6 +1057,47 @@ driver above.
       third command caused no regression to either - both completed
       clean. `d 8` app-tree regression and the M0 boot self-test (10/10)
       both still clean.
+- [x] Passive ARP spoofing / cache-poisoning detector, new explorer
+      command `B <sec>`. Third user-requested "practical apps for
+      network pentesting" addition, same direction as `N`/`R` above. ARP has no authentication: any host can claim
+      any IP just by sending a request or reply naming itself as the
+      sender, which is exactly how arpspoof/ettercap-style MITM setups
+      work - re-claim the gateway's IP with the attacker's own MAC,
+      repeatedly. The tell is structural: an IP that was already bound
+      to one MAC suddenly answering from a different one. As with `N`/
+      `R`, the actual point is leaving something watching continuously
+      and unattended, not that a laptop running `arpwatch(8)` couldn't
+      do the same thing for the five minutes someone remembers to run it.
+      New `modules/toolbox/arpwatch.h/.c` - the simplest of the three
+      protocols parsed this session (fixed 28-byte ARP header, no TLVs,
+      no variable-length options), same bounds-checked-every-offset
+      discipline as `l2discover.c`/`dhcpwatch.c`. Watches both REQUEST
+      and REPLY opcodes, not just REPLY - a gratuitous ARP announcement
+      (RFC 5227) is normally sent as a REQUEST, and real ARP caches
+      learn from both, so watching only replies would miss exactly the
+      announcement style some spoofing tools use. Honestly scoped in the
+      header itself: a changed binding is a strong indicator, not proof
+      - DHCP churn or a legitimate NIC/failover swap can trigger the
+      same signal, the same honest framing real `arpwatch(8)`
+      deployments already use.
+      Unit-tested on the host (`tests/unit/test_arpwatch.c`, 15 cases)
+      covering request/reply recognition, four separate "not
+      recognised" cases (wrong EtherType, wrong hardware type, wrong
+      address lengths, unknown opcode e.g. RARP), and the binding
+      table's actual point: first sighting is not a change, a repeated
+      same-MAC sighting is not a change, a different MAC on an
+      already-known IP *is* a change and rebinds the entry.
+      RAM: uses the shared `explorer_capture_buffer.h` instead of its
+      own buffer, same lever as `R` - total added RAM is +160 B (an
+      8-entry binding table). `check_ram_budget.py` reports margin
+      1184 B over the 48K floor (was 1344 B before this task).
+      VERIFIED on hardware: `B 8` ran clean (`0 frame(s) seen, 0 ARP
+      claim(s), 0 IP(s) tracked, 0 MAC change(s)`) - the same quiet-bench
+      result every other M5 capture tool this session has established.
+      Re-ran `R 5` (dhcpwatch) and `N 5` (l2discover) immediately after
+      to confirm sharing the capture buffer with a fourth command caused
+      no regression to either - both completed clean. `d 8` app-tree
+      regression and the M0 boot self-test (10/10) both still clean.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -1742,6 +1783,22 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-22 — M5: new `B <sec>` passive ARP spoofing/cache-poisoning
+  detector, third in the user-requested "practical apps for network
+  pentesting" series (`N` l2discover, `R` dhcpwatch, now `B` arpwatch).
+  New `modules/toolbox/arpwatch.h/.c` (15 host unit tests) - the
+  simplest of the three protocols parsed this session, fixed 28-byte
+  ARP header, same bounds-checked-every-offset discipline. Tracks
+  IP->MAC bindings from both ARP REQUEST and REPLY (a gratuitous
+  announcement is normally a REQUEST), flags any binding that changes
+  MAC mid-run - honestly framed as a strong indicator, not proof, same
+  as real arpwatch(8). Uses the shared `explorer_capture_buffer.h` -
+  total added RAM +160 B, margin 1184 B (was 1344 B). VERIFIED on
+  hardware: `B 8` clean (quiet-bench result), `R 5`/`N 5` re-verified
+  with no regression from a fourth command sharing the capture buffer,
+  `d 8` and the M0 boot self-test both clean, host `ctest` 22/22. Full
+  detail in M5's own bullet.
 
 - 2026-08-22 — M5: new `R <sec>` passive rogue-DHCP-server detector,
   continuing the same user-requested "practical apps for network

@@ -14,6 +14,7 @@ add_library(cads_toolbox STATIC
     src/freqcounter.c
     src/l2discover.c
     src/dhcpwatch.c
+    src/arpwatch.c
 )
 
 target_include_directories(cads_toolbox
