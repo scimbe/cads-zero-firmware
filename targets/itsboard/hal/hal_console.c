@@ -86,6 +86,16 @@ void USART3_IRQHandler(void) {
 }
 
 void cads_hal_console_write(const void* data, size_t length) {
+    /* If USART3's clock is not enabled yet, every SR read returns 0, so the
+     * TXE/TC busy-waits below would spin forever. The clock is only turned on
+     * in cads_hal_console_init(); a fault that happens earlier (during
+     * cads_hal_early_init/time_init/io_init) routes through the fault handler,
+     * which calls this to dump registers. Without this guard that dump - meant
+     * to preserve the fault frame at a breakpoint - would instead hang the CPU
+     * here. Drop the write and return so the caller (e.g. the fault handler's
+     * bkpt) can proceed. */
+    if((RCC->APB1ENR & RCC_APB1ENR_USART3EN) == 0u) return;
+
     const uint8_t* bytes = (const uint8_t*)data;
     for(size_t i = 0; i < length; i++) {
         while(!(CADS_CONSOLE_UART->SR & USART_SR_TXE)) {

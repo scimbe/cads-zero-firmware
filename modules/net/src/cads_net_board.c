@@ -52,6 +52,12 @@ static uint32_t cads_net_rx_dropped = 0u;
 #define CADS_NET_TX_STAGING_SIZE 1536u
 static uint8_t cads_net_tx_staging[CADS_NET_TX_STAGING_SIZE];
 
+/* Most frames this bench ever sees per poll is a small handful; 16 (4x the RX
+ * ring depth) clears any realistic burst in one pass while capping the worst
+ * case, so a sustained line-rate flood cannot keep cads_net_receive_pump()
+ * refilling forever and starve the single bare-metal loop. See its own note. */
+#define CADS_NET_RX_BUDGET_PER_POLL 16u
+
 static err_t cads_netif_linkoutput(struct netif* netif, struct pbuf* p) {
     (void)netif;
     if(p->tot_len > CADS_NET_TX_STAGING_SIZE) return ERR_BUF;
@@ -146,7 +152,15 @@ static void cads_net_link_check(void) {
 static void cads_net_receive_pump(void) {
     static uint8_t rx_buf[CADS_NET_TX_STAGING_SIZE];
 
-    for(;;) {
+    /* Bounded, not for(;;): each receive() hands its descriptor straight back
+     * to the RxDMA, so under a sustained line-rate flood the 4-deep ring
+     * refills as fast as this drains and an unbounded loop would never return
+     * - stalling display and input in this single bare-metal loop for as long
+     * as the flood lasts. Draining at most CADS_NET_RX_BUDGET_PER_POLL per call
+     * and letting the rest wait for the next poll (every main-loop iteration)
+     * keeps the loop responsive; frames beyond the ring's depth are dropped at
+     * the MAC, the correct backpressure. */
+    for(uint32_t drained = 0u; drained < CADS_NET_RX_BUDGET_PER_POLL; drained++) {
         uint16_t length = cads_hal_eth_mac_receive(rx_buf, sizeof(rx_buf));
         if(length == 0u) break;
 

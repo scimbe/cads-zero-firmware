@@ -539,9 +539,16 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'l': {
+                /* argument is a NUL-terminated token inside the fixed line[]
+                 * buffer; stop at the terminator rather than indexing fixed
+                 * offsets [1]/[2], which for a short or empty argument (e.g.
+                 * "l" alone) would read past the NUL and, in the worst case,
+                 * past the end of line[] itself. */
+                bool have1 = argument[0] != '\0';
+                bool have2 = have1 && argument[1] != '\0';
                 cads_hal_led_set(CadsLedRed, argument[0] == '1');
-                cads_hal_led_set(CadsLedGreen, argument[1] == '1');
-                cads_hal_led_set(CadsLedBlue, argument[2] == '1');
+                cads_hal_led_set(CadsLedGreen, have1 && argument[1] == '1');
+                cads_hal_led_set(CadsLedBlue, have2 && argument[2] == '1');
                 cads_probe_puts("# leds set\r\n");
                 break;
             }
