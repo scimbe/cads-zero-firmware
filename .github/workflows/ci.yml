@@ -81,6 +81,14 @@ jobs:
           set -o pipefail
           python3 scripts/check_ram_budget.py build/cads-zero.elf | tee -a $GITHUB_STEP_SUMMARY
 
+      # The size report above is printed, not gated - nothing failed a build
+      # for using more of FLASH_APP than intended before this. See
+      # scripts/check_flash_budget.py's own file header for why 512 K.
+      - name: Flash regression budget
+        run: |
+          set -o pipefail
+          python3 scripts/check_flash_budget.py build/cads-zero.elf | tee -a $GITHUB_STEP_SUMMARY
+
       # See scripts/check_fs_window.py's own file header: this used to be a
       # grep against objdump's raw text, unanchored to the address column,
       # which produced a real false positive once a build's memory layout
