@@ -1,229 +1,271 @@
 /*
- * CaDS Zero - Leo's Reflex Test.
+ * CaDS Zero - Leo's Arcade: a select screen over four cartridges.
  *
- * docs/ROADMAP.md's own wording for this bullet: "a game, to exercise the
- * input and timing paths end to end". A reaction-time test is a literal
- * reading of that rather than a loose one - the whole point of the game
- * IS measuring the time between a stimulus and an input event, using the
- * same cads_hal_ticks_ms() this session's own hardware verification has
- * relied on throughout (the MMC-counter cross-checks, the pktgen pacing,
- * the sniffer's capture window).
+ * WHY FOUR REAL VIEWS, NOT ONE VIEW WITH AN INTERNAL "MODE"
+ * -------------------------------------------------------------------
+ * apps/settings/README.md already documents the constraint this design
+ * works around: "the soft-key strip only gets re-applied by the
+ * compositor when the current view changes... a view has no supported
+ * way to update its own key labels while it stays current." Snake wants
+ * Up/Down/Left/Right, Breakout wants Left/Right, Dodger wants Up/Down,
+ * and the select screen wants Up/Down/Play - four different strips, so
+ * this is four real views, each cads_view_dispatcher_push()ed from the
+ * select screen and each carrying its own softkeys, the same fix
+ * apps/settings already used for its confirm dialog. It also means Back
+ * needs no special handling anywhere in this file: a cartridge that does
+ * not consume it falls through to the dispatcher's own default pop,
+ * landing back on the select screen exactly the way any other pushed
+ * view returns to whatever pushed it.
  *
- * WHY A TICK, NOT JUST AN INPUT HANDLER
- * -----------------------------------------
- * cads_view_t (cads_view.h) is draw/input/enter/exit and nothing else - a
- * view never wakes up on its own. That is fine for every other app in
- * this tree (a menu row only changes because a key moved it), but this
- * game's "wait for it..." phase has to end on ITS OWN, with no key
- * pressed at all - that is the entire test. cads_desktop.c already hit
- * this exact problem for Leo's blink and solved it the same way:
- * cads_game_tick(), called once per main loop iteration alongside
- * cads_desktop_tick()/cads_gpio_tick(), the same pattern, not a new one.
- *
- * A LOCAL PRNG, NOT A NEW TOOLBOX MODULE
- * -------------------------------------------
- * Nothing else in this codebase has needed randomness yet, so there is no
- * cads/toolbox/rng.h to reach for. A 32-bit xorshift, seeded once from
- * cads_hal_ticks_us() (which is running free-of-any-input the instant
- * cads_game_init() is called, so its low bits are as good a seed as this
- * firmware has), is the standard minimal choice and lives here rather
- * than in the toolbox - promote it if a second caller ever needs one.
+ * WHY cads_game_tick() CHECKS THE CURRENT VIEW ID FIRST
+ * -------------------------------------------------------------------
+ * The original single-game version of this file ticked unconditionally,
+ * which was harmless with only one game to tick. With four, ticking all
+ * of them regardless of which is on screen would let Snake starve while
+ * the player is looking at Breakout - a real gameplay bug, not just
+ * wasted cycles - so this checks cads_view_dispatcher_current_id() and
+ * only advances the one actually showing.
  */
 
 #include "cads_game.h"
 
-#include <stdbool.h>
-#include <stdint.h>
+#include <stddef.h>
 
-#include "cads/toolbox/fmt.h"
-#include "cads/toolbox/str.h"
+#include "cads_game_internal.h"
 #include "cads_hal.h"
 #include "cads_softkeys.h"
 #include "cads_view.h"
-#include "canvas.h"
-#include "input/cads_input.h"
 
-typedef enum {
-    CADS_GAME_STATE_IDLE = 0, /**< "press OK to start"                       */
-    CADS_GAME_STATE_ARMED,    /**< waiting out the random delay              */
-    CADS_GAME_STATE_GO,       /**< signal is up, waiting for the OK press    */
-    CADS_GAME_STATE_TOO_SOON, /**< OK arrived during ARMED - a false start   */
-    CADS_GAME_STATE_RESULT,   /**< showing this round's and the best time    */
-} cads_game_state_t;
+#define CADS_GAME_CARTRIDGE_COUNT 4u
+#define CADS_GAME_SELECT_ROW_HEIGHT 32
 
-/* A real reflex test varies the wait so the player cannot anticipate it
- * by counting; 800..2800 ms is long enough that a false start is a real
- * mistake, short enough that a round does not feel like a delay. */
-#define CADS_GAME_ARMED_MIN_MS 800u
-#define CADS_GAME_ARMED_SPAN_MS 2000u
+typedef struct {
+    const char* name;
+    uint32_t view_id;
+} cads_game_cartridge_t;
+
+static const cads_game_cartridge_t cads_game_cartridges[CADS_GAME_CARTRIDGE_COUNT] = {
+    {"Reflex Test", CADS_VIEW_ID_GAME_REFLEX},
+    {"Snake", CADS_VIEW_ID_GAME_SNAKE},
+    {"Breakout", CADS_VIEW_ID_GAME_BREAKOUT},
+    {"Dodger", CADS_VIEW_ID_GAME_DODGER},
+};
 
 typedef struct {
     cads_view_t view;
-    cads_game_state_t state;
-    uint32_t state_entered_ms;
-    uint32_t armed_delay_ms;
-    uint32_t reaction_ms;
-    uint32_t best_ms; /**< 0 means "no round finished cleanly yet" */
-    uint32_t rounds_played;
-    uint32_t rng_state;
-} cads_game_t;
+    cads_view_dispatcher_t* dispatcher;
+    uint32_t selected;
+} cads_game_select_t;
 
-static cads_game_t s_game;
+static cads_game_select_t s_select;
 static bool s_game_ready;
 
-static uint32_t cads_game_rand(cads_game_t* app) {
-    /* xorshift32 - Marsaglia's constants; passes far more scrutiny than
-     * this one-in-2000-ms decision actually needs. */
-    uint32_t x = app->rng_state;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    app->rng_state = x;
-    return x;
-}
+static cads_view_t s_reflex_view;
+static cads_game_reflex_t s_reflex;
 
-static void cads_game_enter_state(cads_game_t* app, cads_game_state_t state, uint32_t now_ms) {
-    app->state = state;
-    app->state_entered_ms = now_ms;
-    cads_view_dirty(&app->view);
-}
+static cads_view_t s_snake_view;
+static cads_game_snake_t s_snake;
 
-static void cads_game_start_round(cads_game_t* app, uint32_t now_ms) {
-    app->armed_delay_ms = CADS_GAME_ARMED_MIN_MS + (cads_game_rand(app) % CADS_GAME_ARMED_SPAN_MS);
-    cads_game_enter_state(app, CADS_GAME_STATE_ARMED, now_ms);
-}
+static cads_view_t s_breakout_view;
+static cads_game_breakout_t s_breakout;
 
-void cads_game_tick(uint32_t now_ms) {
-    if(!s_game_ready) return;
-    cads_game_t* app = &s_game;
+static cads_view_t s_dodger_view;
+static cads_game_dodger_t s_dodger;
 
-    if(app->state == CADS_GAME_STATE_ARMED &&
-       now_ms - app->state_entered_ms >= app->armed_delay_ms) {
-        cads_game_enter_state(app, CADS_GAME_STATE_GO, now_ms);
-    }
-}
+/* --- select screen ---------------------------------------------------- */
 
-static void cads_game_draw(cads_rect_t area, void* context) {
-    cads_game_t* app = (cads_game_t*)context;
-
+static void cads_game_select_draw(cads_rect_t area, void* context) {
+    (void)context;
     cads_canvas_fill_rect(area.x, area.y, area.width, area.height, CadsColorWhite);
 
-    const char* line1 = "";
-    const char* line2 = "";
-    cads_color_t color1 = CadsColorBrand;
-    char reaction_text[48];
-
-    switch(app->state) {
-        case CADS_GAME_STATE_IDLE:
-            line1 = "Leo's Reflex Test";
-            line2 = "Press OK to start";
-            break;
-        case CADS_GAME_STATE_ARMED:
-            color1 = CadsColorGrayDark;
-            line1 = "Wait for it...";
-            break;
-        case CADS_GAME_STATE_GO:
-            color1 = CadsColorAccent;
-            line1 = "GO!";
-            line2 = "Press OK now";
-            break;
-        case CADS_GAME_STATE_TOO_SOON:
-            color1 = CadsColorRed;
-            line1 = "Too soon!";
-            line2 = "Press OK to try again";
-            break;
-        case CADS_GAME_STATE_RESULT: {
-            color1 = CadsColorBrand;
-            size_t pos = cads_str_append(reaction_text, sizeof(reaction_text), "Reaction: ");
-            pos += cads_fmt_uint(reaction_text + pos, sizeof(reaction_text) - pos, app->reaction_ms);
-            cads_str_append(reaction_text + pos, sizeof(reaction_text) - pos, " ms");
-            line1 = reaction_text;
-            line2 = "Press OK to try again";
-            break;
-        }
-    }
-
-    cads_rect_t upper = {area.x, area.y, area.width, area.height / 2};
-    cads_rect_t lower = {area.x, area.y + area.height / 2, area.width, area.height / 2};
-    cads_canvas_draw_text_aligned(upper, CadsAlignCenter, &cads_font24, line1, color1);
-    if(line2[0] != '\0') {
-        cads_canvas_draw_text_aligned(lower, CadsAlignCenter, &cads_font16, line2, CadsColorGrayDark);
-    }
-
-    if(app->best_ms != 0u && app->state != CADS_GAME_STATE_ARMED &&
-       app->state != CADS_GAME_STATE_GO) {
-        char best_text[32];
-        size_t pos = cads_str_append(best_text, sizeof(best_text), "Best: ");
-        pos += cads_fmt_uint(best_text + pos, sizeof(best_text) - pos, app->best_ms);
-        cads_str_append(best_text + pos, sizeof(best_text) - pos, " ms");
-        cads_rect_t footer = {
-            area.x, area.y + area.height - 24, area.width, 24};
-        cads_canvas_draw_text_aligned(footer, CadsAlignCenter, &cads_font12, best_text, CadsColorGray);
+    for(uint32_t i = 0u; i < CADS_GAME_CARTRIDGE_COUNT; i++) {
+        cads_rect_t row = {
+            area.x, (int16_t)(area.y + (int16_t)i * CADS_GAME_SELECT_ROW_HEIGHT), area.width,
+            CADS_GAME_SELECT_ROW_HEIGHT};
+        bool selected = (i == s_select.selected);
+        if(selected) cads_canvas_fill_rect(row.x, row.y, row.width, row.height, CadsColorBrandLight);
+        cads_canvas_draw_text_aligned(
+            row, CadsAlignCenter, &cads_font16, cads_game_cartridges[i].name,
+            selected ? CadsColorBrand : CadsColorGrayDark);
     }
 }
 
-static bool cads_game_input(const cads_input_event_t* event, void* context) {
-    cads_game_t* app = (cads_game_t*)context;
+static bool cads_game_select_input(const cads_input_event_t* event, void* context) {
+    (void)context;
 
-    if(event->type != CadsInputRelease || event->key != CadsKeyOk) return false;
-
-    switch(app->state) {
-        case CADS_GAME_STATE_IDLE:
-        case CADS_GAME_STATE_TOO_SOON:
-        case CADS_GAME_STATE_RESULT:
-            cads_game_start_round(app, event->timestamp);
-            return true;
-        case CADS_GAME_STATE_ARMED:
-            /* The reaction test's own failure mode: pressed before the
-             * signal, not after it. */
-            cads_game_enter_state(app, CADS_GAME_STATE_TOO_SOON, event->timestamp);
-            return true;
-        case CADS_GAME_STATE_GO:
-            app->reaction_ms = event->timestamp - app->state_entered_ms;
-            if(app->best_ms == 0u || app->reaction_ms < app->best_ms) {
-                app->best_ms = app->reaction_ms;
-            }
-            app->rounds_played++;
-            cads_game_enter_state(app, CADS_GAME_STATE_RESULT, event->timestamp);
-            return true;
+    if(event->type == CadsInputPress && event->key == CadsKeyUp) {
+        s_select.selected =
+            (s_select.selected == 0u) ? CADS_GAME_CARTRIDGE_COUNT - 1u : s_select.selected - 1u;
+        cads_view_dirty(&s_select.view);
+        return true;
     }
-    return false;
+    if(event->type == CadsInputPress && event->key == CadsKeyDown) {
+        s_select.selected = (s_select.selected + 1u) % CADS_GAME_CARTRIDGE_COUNT;
+        cads_view_dirty(&s_select.view);
+        return true;
+    }
+    if(event->type == CadsInputRelease && event->key == CadsKeyOk) {
+        cads_view_dispatcher_push(s_select.dispatcher, cads_game_cartridges[s_select.selected].view_id);
+        return true;
+    }
+    return false; /* Back: unconsumed on purpose, pops to whatever opened the arcade */
 }
 
-static void cads_game_enter(void* context) {
-    cads_game_t* app = (cads_game_t*)context;
-    app->state = CADS_GAME_STATE_IDLE;
-    app->state_entered_ms = cads_hal_ticks_ms();
-    cads_view_dirty(&app->view);
+static const cads_softkey_t cads_game_select_keys[] = {
+    {CadsKeyUp, "Up"},
+    {CadsKeyDown, "Down"},
+    {CadsKeyOk, "Play"},
+    {CadsKeyBack, "Back"},
+};
+
+/* --- reflex cartridge --------------------------------------------------- */
+
+static void cads_game_reflex_view_draw(cads_rect_t area, void* context) {
+    cads_game_reflex_draw(area, (const cads_game_reflex_t*)context);
+}
+static bool cads_game_reflex_view_input(const cads_input_event_t* event, void* context) {
+    return cads_game_reflex_input(event, (cads_game_reflex_t*)context);
+}
+static void cads_game_reflex_view_enter(void* context) {
+    cads_game_reflex_reset((cads_game_reflex_t*)context, cads_hal_ticks_ms());
 }
 
-static const cads_softkey_t cads_game_keys[] = {
+static const cads_softkey_t cads_game_reflex_keys[] = {
     {CadsKeyOk, "Go"},
     {CadsKeyBack, "Back"},
 };
 
+/* --- snake cartridge ----------------------------------------------------- */
+
+static void cads_game_snake_view_draw(cads_rect_t area, void* context) {
+    cads_game_snake_draw(area, (const cads_game_snake_t*)context);
+}
+static bool cads_game_snake_view_input(const cads_input_event_t* event, void* context) {
+    return cads_game_snake_input(event, (cads_game_snake_t*)context, cads_hal_ticks_ms());
+}
+static void cads_game_snake_view_enter(void* context) {
+    cads_game_snake_reset((cads_game_snake_t*)context, cads_view_area(&s_snake_view), cads_hal_ticks_ms());
+}
+
+static const cads_softkey_t cads_game_snake_keys[] = {
+    {CadsKeyUp, "Up"},
+    {CadsKeyDown, "Down"},
+    {CadsKeyLeft, "Left"},
+    {CadsKeyRight, "Right"},
+    {CadsKeyBack, "Back"},
+};
+
+/* --- breakout cartridge --------------------------------------------------- */
+
+static void cads_game_breakout_view_draw(cads_rect_t area, void* context) {
+    cads_game_breakout_draw(area, (const cads_game_breakout_t*)context);
+}
+static bool cads_game_breakout_view_input(const cads_input_event_t* event, void* context) {
+    return cads_game_breakout_input(event, (cads_game_breakout_t*)context, cads_hal_ticks_ms());
+}
+static void cads_game_breakout_view_enter(void* context) {
+    cads_game_breakout_reset(
+        (cads_game_breakout_t*)context, cads_view_area(&s_breakout_view), cads_hal_ticks_ms());
+}
+
+static const cads_softkey_t cads_game_breakout_keys[] = {
+    {CadsKeyLeft, "Left"},
+    {CadsKeyRight, "Right"},
+    {CadsKeyBack, "Back"},
+};
+
+/* --- dodger cartridge ------------------------------------------------------ */
+
+static void cads_game_dodger_view_draw(cads_rect_t area, void* context) {
+    cads_game_dodger_draw(area, (const cads_game_dodger_t*)context);
+}
+static bool cads_game_dodger_view_input(const cads_input_event_t* event, void* context) {
+    return cads_game_dodger_input(event, (cads_game_dodger_t*)context, cads_hal_ticks_ms());
+}
+static void cads_game_dodger_view_enter(void* context) {
+    cads_game_dodger_reset((cads_game_dodger_t*)context, cads_view_area(&s_dodger_view), cads_hal_ticks_ms());
+}
+
+static const cads_softkey_t cads_game_dodger_keys[] = {
+    {CadsKeyUp, "Up"},
+    {CadsKeyDown, "Down"},
+    {CadsKeyBack, "Back"},
+};
+
+/* --- lifecycle ------------------------------------------------------------- */
+
 void cads_game_init(cads_view_dispatcher_t* dispatcher) {
     if(dispatcher == NULL) return;
 
-    s_game.state = CADS_GAME_STATE_IDLE;
-    s_game.state_entered_ms = cads_hal_ticks_ms();
-    s_game.armed_delay_ms = 0u;
-    s_game.reaction_ms = 0u;
-    s_game.best_ms = 0u;
-    s_game.rounds_played = 0u;
-    /* xorshift32 never recovers from a zero state - the low bits of the
-     * free-running microsecond clock are effectively never exactly zero
-     * at boot, but this guards the theoretical case rather than trusting
-     * it. */
-    s_game.rng_state = (uint32_t)cads_hal_ticks_us();
-    if(s_game.rng_state == 0u) s_game.rng_state = 0x9E3779B9u;
-
-    cads_view_init(&s_game.view, cads_game_draw, cads_game_input, &s_game);
-    cads_view_set_lifecycle(&s_game.view, cads_game_enter, NULL);
-    cads_view_set_title(&s_game.view, "Reflex Test");
+    s_select.dispatcher = dispatcher;
+    s_select.selected = 0u;
+    cads_view_init(&s_select.view, cads_game_select_draw, cads_game_select_input, NULL);
+    cads_view_set_title(&s_select.view, "Leo's Arcade");
     cads_view_set_softkeys(
-        &s_game.view, cads_game_keys, sizeof(cads_game_keys) / sizeof(cads_game_keys[0]));
+        &s_select.view, cads_game_select_keys,
+        sizeof(cads_game_select_keys) / sizeof(cads_game_select_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME, &s_select.view);
 
-    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME, &s_game.view);
+    cads_view_init(&s_reflex_view, cads_game_reflex_view_draw, cads_game_reflex_view_input, &s_reflex);
+    cads_view_set_lifecycle(&s_reflex_view, cads_game_reflex_view_enter, NULL);
+    cads_view_set_title(&s_reflex_view, "Reflex Test");
+    cads_view_set_softkeys(
+        &s_reflex_view, cads_game_reflex_keys, sizeof(cads_game_reflex_keys) / sizeof(cads_game_reflex_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME_REFLEX, &s_reflex_view);
+
+    cads_view_init(&s_snake_view, cads_game_snake_view_draw, cads_game_snake_view_input, &s_snake);
+    cads_view_set_lifecycle(&s_snake_view, cads_game_snake_view_enter, NULL);
+    cads_view_set_title(&s_snake_view, "Snake");
+    cads_view_set_softkeys(
+        &s_snake_view, cads_game_snake_keys, sizeof(cads_game_snake_keys) / sizeof(cads_game_snake_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME_SNAKE, &s_snake_view);
+
+    cads_view_init(
+        &s_breakout_view, cads_game_breakout_view_draw, cads_game_breakout_view_input, &s_breakout);
+    cads_view_set_lifecycle(&s_breakout_view, cads_game_breakout_view_enter, NULL);
+    cads_view_set_title(&s_breakout_view, "Breakout");
+    cads_view_set_softkeys(
+        &s_breakout_view, cads_game_breakout_keys,
+        sizeof(cads_game_breakout_keys) / sizeof(cads_game_breakout_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME_BREAKOUT, &s_breakout_view);
+
+    cads_view_init(&s_dodger_view, cads_game_dodger_view_draw, cads_game_dodger_view_input, &s_dodger);
+    cads_view_set_lifecycle(&s_dodger_view, cads_game_dodger_view_enter, NULL);
+    cads_view_set_title(&s_dodger_view, "Dodger");
+    cads_view_set_softkeys(
+        &s_dodger_view, cads_game_dodger_keys, sizeof(cads_game_dodger_keys) / sizeof(cads_game_dodger_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_GAME_DODGER, &s_dodger_view);
+
     s_game_ready = true;
+}
+
+void cads_game_tick(uint32_t now_ms) {
+    if(!s_game_ready) return;
+
+    uint32_t current = cads_view_dispatcher_current_id(s_select.dispatcher);
+    bool changed = false;
+    cads_view_t* view = NULL;
+
+    switch(current) {
+        case CADS_VIEW_ID_GAME_REFLEX:
+            changed = cads_game_reflex_tick(&s_reflex, now_ms);
+            view = &s_reflex_view;
+            break;
+        case CADS_VIEW_ID_GAME_SNAKE:
+            changed = cads_game_snake_tick(&s_snake, cads_view_area(&s_snake_view), now_ms);
+            view = &s_snake_view;
+            break;
+        case CADS_VIEW_ID_GAME_BREAKOUT:
+            changed = cads_game_breakout_tick(&s_breakout, cads_view_area(&s_breakout_view), now_ms);
+            view = &s_breakout_view;
+            break;
+        case CADS_VIEW_ID_GAME_DODGER:
+            changed = cads_game_dodger_tick(&s_dodger, cads_view_area(&s_dodger_view), now_ms);
+            view = &s_dodger_view;
+            break;
+        default:
+            return; /* select screen, or the arcade is not on screen at all */
+    }
+
+    if(changed) cads_view_dirty(view);
 }

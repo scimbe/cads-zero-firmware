@@ -35,11 +35,11 @@
 #include "input/cads_input.h"
 
 /* Mirrors apps/bringup/explorer_app_demo.c's own CADS_APP_DEMO_VIEW_CAPACITY
- * (10) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
+ * (14) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
  * than a shared header because the two are otherwise unrelated translation
  * units and a shared constant would be the only reason to couple them; see
- * that file's own comment for exactly what the 10 counts. */
-#define VIEW_CAPACITY 10u
+ * that file's own comment for exactly what the 14 counts. */
+#define VIEW_CAPACITY 14u
 #define STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[VIEW_CAPACITY];
@@ -85,6 +85,10 @@ static void test_every_app_tree_view_registers(void) {
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_FILEBROWSER));
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_FILEBROWSER_INFO));
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_REFLEX));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_SNAKE));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_BREAKOUT));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_DODGER));
 }
 
 static void test_menu_is_reachable_from_desktop(void) {
@@ -129,11 +133,35 @@ static void test_game_is_reachable_from_the_menu(void) {
     TEST_ASSERT_EQUAL_UINT32(CADS_VIEW_ID_GAME, cads_view_dispatcher_current_id(&s_dispatcher));
 }
 
+/* The exact scenario a too-small capacity would silently break one level
+ * deeper than test_capacity_too_small_silently_drops_the_menu_view checks:
+ * pressing OK on the arcade's own select screen (default selection, the
+ * Reflex Test cartridge) must actually push CADS_VIEW_ID_GAME_REFLEX, and
+ * Back from there must return to the select screen rather than popping
+ * past it - the real navigation this file's own header explains was
+ * chosen specifically so each cartridge gets its own soft-key strip. */
+static void test_a_cartridge_is_reachable_from_the_arcade_select_screen(void) {
+    press_ok();                                        /* desktop -> menu */
+    TEST_ASSERT_TRUE(cads_view_dispatcher_push(&s_dispatcher, CADS_VIEW_ID_GAME));
+
+    press_ok(); /* select screen's default selection -> its cartridge */
+
+    TEST_ASSERT_EQUAL_UINT32(CADS_VIEW_ID_GAME_REFLEX, cads_view_dispatcher_current_id(&s_dispatcher));
+    TEST_ASSERT_EQUAL_size_t(4u, cads_view_dispatcher_depth(&s_dispatcher));
+
+    cads_input_event_t back = {
+        .type = CadsInputRelease, .key = CadsKeyBack, .x = 0, .y = 0, .timestamp = 2000u, .hold_ms = 0u};
+    cads_view_dispatcher_input(&s_dispatcher, &back);
+
+    TEST_ASSERT_EQUAL_UINT32(CADS_VIEW_ID_GAME, cads_view_dispatcher_current_id(&s_dispatcher));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_every_app_tree_view_registers);
     RUN_TEST(test_menu_is_reachable_from_desktop);
     RUN_TEST(test_capacity_too_small_silently_drops_the_menu_view);
     RUN_TEST(test_game_is_reachable_from_the_menu);
+    RUN_TEST(test_a_cartridge_is_reachable_from_the_arcade_select_screen);
     return UNITY_END();
 }

@@ -30,7 +30,9 @@
 
 /*
  * desktop, menu, settings, settings-confirm, about, gpio, netinfo,
- * filebrowser, filebrowser-info, game - 10 registrations total.
+ * filebrowser, filebrowser-info, game (the arcade's own select screen),
+ * game-reflex, game-snake, game-breakout, game-dodger - 14 registrations
+ * total.
  *
  * This constant was 7 (only accounting for desktop through netinfo) from
  * when this file was first wired to the full app tree, and was never
@@ -51,8 +53,16 @@
  * same dispatcher/menu code and asserts the menu view actually becomes
  * current, so this class of bug fails a build next time rather than
  * requiring a human at the panel to notice a dead OK button).
+ *
+ * Bumped from 10 to 14 when Leo's Arcade grew from one game view to a
+ * select screen plus four pushed cartridges (see apps/game/cads_game.c's
+ * own file header for why each cartridge needs a real view rather than
+ * one view with an internal mode) - the exact same failure mode this
+ * comment already describes once, caught this time by updating both this
+ * constant and tests/unit/test_app_tree.c's mirrored one together rather
+ * than by a human noticing a dead cartridge on the panel.
  */
-#define CADS_APP_DEMO_VIEW_CAPACITY 10u
+#define CADS_APP_DEMO_VIEW_CAPACITY 14u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
