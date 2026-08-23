@@ -74,10 +74,17 @@ Stated so nobody mistakes silence for a result:
 - Touch latency and repeat accuracy over a long session.
 - Flash write endurance and littlefs behaviour across power cuts.
 - Power draw.
-- **Display throughput has not been re-measured since M0/M1** (2026-08-17/18,
-  before the FreeRTOS scheduler in M2 or the eleven apps and network watchers
-  added in M5/M6). The 342/669 kpixel/s numbers above may no longer reflect
-  actual bus contention with the scheduler and Ethernet ISR both live.
+- ~~Display throughput has not been re-measured since M0/M1~~ — re-measured
+  2026-08-23 under real scheduler + live-netif contention (explorer command
+  `V`, `apps/bringup/explorer_throughput_demo.c`): **342/342/342 kpixel/s
+  (min/avg/max, 18 flushes over 8s)**, identical to the pre-scheduler M0/M1
+  number. Expected in hindsight - `cads_canvas_flush()` is one blocking SPI
+  transfer per call, so nothing scheduled between calls can show up inside
+  it - but this was an assumption until it was actually measured. Ambient
+  traffic on this bench is still near-zero, so this exercises real
+  scheduler preemption and a live, link-up, polled netif, not an RX ISR
+  firing mid-flush specifically; see `docs/ROADMAP.md`'s M1 log entry for
+  the full result.
 
 `scripts/board_soak.py` runs the board for hours and watches stack high-water
 marks, task count and responsiveness, which covers the failure modes a one-shot

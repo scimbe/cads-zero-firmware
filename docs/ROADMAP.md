@@ -91,6 +91,24 @@ Prove the toolchain, the boot path and the display path on real silicon.
       a 16-bit SPI frame both only save CPU cycles, which buys nothing
       measurable today. Revisit when the scheduler lands and those cycles are
       contended.
+      **Revisited 2026-08-23** (new explorer command `V`,
+      `apps/bringup/explorer_throughput_demo.c`): re-measured full-screen
+      flush throughput live on real hardware with the scheduler running and a
+      live, link-up netif polled on the same task - the two contention
+      sources this bullet named as the reason to wait. Result:
+      **342/342/342 kpixel/s (min/avg/max over 18 flushes)**, byte-for-byte
+      identical to the pre-scheduler M0/M1 number. The deferral holds, now on
+      measured evidence rather than an assumption: the flush is a single
+      blocking SPI transfer per call, not something the scheduler can
+      interleave work into mid-transfer, so scheduler/network contention
+      between flushes has no way to show up in this number. Ambient traffic
+      on this bench is still near-zero (established finding, unchanged) -
+      the netif was link-up and polled for real, but this does not exercise
+      the worst case of an RX ISR firing mid-flush. Still `[!]`: this is a
+      confirmed-not-blocking status, not a decision to actually build
+      DMA2D - that would still need the maintainer's sign-off given the
+      2026-08-18 16-bit-frame attempt already failed once (wrong colours in
+      both palette orderings).
 
 ## M2 — Kernel  `[x]`
 

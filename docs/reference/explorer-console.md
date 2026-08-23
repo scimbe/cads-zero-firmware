@@ -44,6 +44,7 @@ pass/fail check. See [Run the hardware gate](../how-to/board-test.md).
 | `l` | `<rgb>` | On-board LEDs, e.g. `l 100` |
 | `g` | `<sec>` (20) | GUI smoke test: `apps/gpio` live on the panel |
 | `d` | `<sec>` (30) | App tree live: desktop → menu → app, exercising the real GUI/view-dispatcher stack rather than a standalone demo |
+| `V` | `<sec>` (10) | Re-measure full-screen flush throughput under real scheduler + live-netif contention, min/avg/max kpixel/s — see [Measurements](measurements.md) for the result this produced |
 
 ## Storage
 
