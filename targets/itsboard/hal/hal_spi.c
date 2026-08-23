@@ -108,6 +108,14 @@ void cads_hal_spi_restore_display_speed(void) {
 static uint32_t cads_eth_saved_maccr = 0u;
 static uint32_t cads_eth_claim_depth = 0u;
 
+/* Hard ceiling on the "let an in-flight frame drain" wait below. A maximum
+ * 1522-byte frame at 100 Mbit is ~123 us on the wire; 200 us covers it with
+ * margin. This exists because DMASR.TS/RS are latched status bits nothing in
+ * this driver ever clears once set (see the claim-bus comment) - without a
+ * bound the wait is not a drain, it is a permanent hang after the first
+ * received frame. */
+#define CADS_ETH_DRAIN_TIMEOUT_US 200u
+
 /*
  * Whether the RMII DATA path owns PA7.
  *
@@ -146,9 +154,24 @@ void cads_hal_spi_claim_bus(void) {
         if(cads_eth_saved_maccr) {
             ETH->MACCR &= ~(ETH_MACCR_TE | ETH_MACCR_RE);
             /* Let any frame already in the pipe drain rather than truncating
-             * it on the wire. */
-            while(ETH->DMASR & (ETH_DMASR_TS | ETH_DMASR_RS)) {
+             * it on the wire - but NEVER spin unbounded here. DMASR.TS (bit 0)
+             * and RS (bit 6) are latched, write-1-to-clear completion-status
+             * bits, not live "DMA busy" indicators. This driver runs the DMA
+             * with no ETH interrupt handler and the TX descriptor's IC bit
+             * clear (hal_eth_mac.c), and nothing ever writes DMASR back except
+             * the one-shot clear in cads_hal_eth_mac_init(). So once a frame is
+             * *received*, RS latches to 1 and stays 1 forever, and an unbounded
+             * `while(DMASR & (TS|RS))` would hang this single-threaded loop on
+             * the very next display redraw (verified: TX alone does not trip it
+             * because IC is clear, but any RX does). Bound the wait, then clear
+             * the latch so the next claim starts clean. The receive path works
+             * off the descriptor OWN bits, not DMASR, so clearing the status
+             * here loses no received frame. */
+            uint64_t drain_deadline = cads_hal_ticks_us() + CADS_ETH_DRAIN_TIMEOUT_US;
+            while((ETH->DMASR & (ETH_DMASR_TS | ETH_DMASR_RS)) &&
+                  cads_hal_ticks_us() < drain_deadline) {
             }
+            ETH->DMASR = ETH_DMASR_TS | ETH_DMASR_RS; /* w1c: clear the latch */
         }
     }
     cads_gpio_set_alternate(CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, CADS_PIN_SPI_MOSI_AF);
