@@ -98,6 +98,7 @@ nav:
       - Datasheets and schematics: reference/datasheets/README.md
       - Canvas API: reference/canvas.md
       - HAL interface: reference/hal.md
+      - Bring-up explorer console: reference/explorer-console.md
       - Measurements: reference/measurements.md
   - Explanation:
       - explanation/index.md
