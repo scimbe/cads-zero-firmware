@@ -1367,6 +1367,58 @@ does not yet use" for the full table and sourcing.
       prior + the new `test_app_tree`, 4/4 cases, including the "would
       have caught the old bug" one); M0 boot self-test 10/10; `d 8`
       app-tree regression clean (photographed live on the panel).
+
+      **Expanded 2026-08-23 to Leo's Arcade, not from an open roadmap/
+      issue item - user asked directly for 3 more small arcade games
+      playable with the board's own buttons.** Reflex Test kept, three
+      new cartridges added: Snake (grid movement, wall/self collision,
+      growth), Breakout (paddle/ball/brick physics, lives, win-by-
+      clearing), Dodger (auto-scrolling gap obstacles, a new genre from
+      the other two). Rules split into `modules/toolbox/{snake,breakout,
+      dodger}.h` - pure, caller-owned-state, no HAL - the same split
+      every M5 watcher already established, with 31 new host unit tests
+      (hand-built board/ball/obstacle states, since nothing can feed a
+      scripted button sequence into a physically running game). The app
+      itself became a select screen pushing one real view per cartridge
+      rather than one view with an internal mode, because
+      `apps/settings/README.md` already documents that a view cannot
+      relabel its own soft-key strip while it stays current - Snake
+      needs Up/Down/Left/Right, Breakout needs Left/Right, Dodger needs
+      Up/Down, and only separate pushed views (Back's default pop
+      already returns to the select screen for free) get each its own
+      correct strip.
+
+      Ran straight into the *exact* failure mode this bullet's own
+      capacity-bug story already describes, this time caught before any
+      hardware check rather than found by one afterward: five views
+      instead of one (the select screen plus four cartridges) pushed
+      the real registration count to 14 - desktop, menu, settings,
+      settings-confirm, about, gpio, netinfo, filebrowser,
+      filebrowser-info, game-select, game-reflex, game-snake,
+      game-breakout, game-dodger. `CADS_APP_DEMO_VIEW_CAPACITY` bumped
+      from 10 to 14 in `explorer_app_demo.c` and its mirror in
+      `tests/unit/test_app_tree.c` together, plus a new host test that
+      presses OK on the select screen and checks the resulting view id
+      and stack depth, not just that every id is *registered* - the gap
+      the original bug lived in.
+
+      RAM: 928 B -> 416 B margin over the 48K floor (four new views'
+      state - two small toolbox structs plus four `cads_view_t`
+      instances - still comfortably over `check_ram_budget.py`'s 256 B
+      floor). Flash (CI `default` leg, Release): 227 460 B -> 232 284 B.
+      VERIFIED on hardware: reflashed, boot self-test 10/10; M6 suite
+      4/4 (one run showed a suite-harness timing flake on the unrelated
+      F/D checks, gone on immediate re-run and on standalone
+      `board_cmd.py` calls to each - not a regression from this change).
+      Host `ctest` 27/27, including the two new app-tree navigation
+      tests. CI confirmed green live on the push (run 32646459994, all
+      four jobs including the new flash-budget gate).
+      Cannot be exercised end to end from this shell: Snake/Breakout/
+      Dodger read the real physical buttons through the normal input
+      service, and `board_cmd.py` only talks to the separate bring-up
+      explorer console - there is no remote way to inject a synthetic
+      button press into the running app tree. A human at the bench
+      pressing buttons is the remaining step for full confirmation.
 - [x] Build-time optional apps: which of settings/about/gpio/netinfo/
       filebrowser/game land in the firmware is now a CMake choice
       (`CADS_APP_SETTINGS`/`CADS_APP_ABOUT`/`CADS_APP_GPIO`/

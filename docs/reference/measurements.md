@@ -41,20 +41,21 @@ an interrupt-driven counter quietly stops.
 
 ## Memory
 
-CI's `default` matrix leg (all optional apps on), 2026-08-23, cross-checked
-three ways — the live CI log, `nm`/`objdump` on the checked-in
-`build/itsboard/cads-zero.elf`, and `docs/ROADMAP.md`'s own running Log —
-and consistent across all three:
+CI's `default` matrix leg (all optional apps on), 2026-08-23 (after Leo's
+Arcade grew from one game view to a select screen plus three new
+cartridges — Snake, Breakout, Dodger), read live from that push's own CI
+log (run 32646459994):
 
 | | Used | Available | |
 |---|---|---|---|
-| Flash bank 1 | 222.1 KB (227 460 B) | 1 MB | 21.7 % |
-| SRAM | 143.1 KB (146 528 B) | 192 KB | 74.5 % |
+| Flash bank 1 | 226.8 KB (232 284 B) | 1 MB | 22.2 % |
+| SRAM | 143.6 KB (147 040 B) | 192 KB | 74.8 % |
 | CCM | 5 KB | 64 KB | 7.8 % |
 
-`__cads_heap_size` margin over the linker's `ASSERT(>= 48K)` floor: 928 B —
-the number `scripts/check_ram_budget.py` gates CI on (minimum 256 B). The
-`minimal` matrix leg (every optional app off) reports 6 816 B of margin over
+`__cads_heap_size` margin over the linker's `ASSERT(>= 48K)` floor: 416 B,
+down from 928 B before the three new games — the number
+`scripts/check_ram_budget.py` gates CI on (minimum 256 B). The
+`minimal` matrix leg (every optional app off) reports 6 784 B of margin over
 the same floor. SRAM is 75 KB framebuffer + 30 KB staging + statics + lwIP's
 pool; CCM is three task stacks; there is no kernel heap at all.
 
