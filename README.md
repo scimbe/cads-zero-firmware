@@ -34,7 +34,19 @@ measured numbers.
 
 ## Status
 
-Milestone 0 is complete and **verified on real hardware**:
+M0 (bring-up), M2 (kernel), M4 (storage) and M7 (tests/CI) are complete. M3
+(input/GUI) and M6 (GPIO/timing apps) are functionally done, each with one
+`[!]` item needing a human's hands at the bench (touch navigation, a
+walkthrough with a jumper wire). M5 (network) is the largest milestone by far
+— DHCP, screen streaming, an HTTP status page, and a passive recon suite
+(ARP/L2/DHCP/SSDP watchers, traffic stats, a MAC table, ping/traceroute/iperf,
+Wake-on-LAN) — all built and unit-tested; its own hardware gate needs a DHCP
+server this bench doesn't have. M1's DMA2D path is deliberately deferred (the
+software path already runs the SPI bus at 97% of theoretical). Every one of
+these is tracked, with the reasoning behind each `[!]`, in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+The on-target self test, **verified on real hardware**, still passes in full:
 
 ```
 ok 1 - SysTick advances at 1 kHz
@@ -44,22 +56,25 @@ ok 4 - canvas fill_rect handles unaligned edges
 ok 5 - canvas clipping confines drawing
 ok 6 - full screen flush transfers every pixel
 ok 7 - dirty rectangle limits the transfer
-ok 8 - adapter output banks driven without fault
-ok 9 - reached the end of the self test
+ok 8 - faster SPI divider roughly doubles throughput
+ok 9 - adapter output banks driven without fault
+ok 10 - reached the end of the self test
+# 10/10 passed
 # RESULT: PASS
 ```
 
 | Resource | Used | Available |
 |---|---|---|
-| Flash (bank 1) | 13.4 KB | 1 MB |
-| SRAM | 107.7 KB | 192 KB |
-| Heap | — | 86.8 KB |
-| CCM | 0 | 64 KB |
+| Flash (bank 1) | 222.1 KB | 1 MB |
+| SRAM | 143.1 KB | 192 KB |
+| CCM | 5 KB | 64 KB |
 
-Measured display throughput: **342 kpixel/s**, i.e. 448 ms for a full screen.
-That number is why the canvas tracks dirty rectangles.
-
-Progress lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Measured display throughput: **342 kpixel/s** at the safe `/16` SPI divider,
+i.e. 448 ms for a full screen — see
+[`docs/reference/measurements.md`](docs/reference/measurements.md) for the
+full set of measured numbers, and
+[`docs/reference/explorer-console.md`](docs/reference/explorer-console.md)
+for what every bring-up console command does.
 
 ## Build
 
