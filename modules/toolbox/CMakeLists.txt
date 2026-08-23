@@ -17,6 +17,9 @@ add_library(cads_toolbox STATIC
     src/arpwatch.c
     src/ssdpwatch.c
     src/trafficstats.c
+    src/snake.c
+    src/breakout.c
+    src/dodger.c
 )
 
 target_include_directories(cads_toolbox

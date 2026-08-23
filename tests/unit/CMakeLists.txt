@@ -53,6 +53,15 @@ target_link_libraries(test_ssdpwatch PRIVATE cads_toolbox)
 cads_add_unit_test(test_trafficstats test_trafficstats.c)
 target_link_libraries(test_trafficstats PRIVATE cads_toolbox)
 
+cads_add_unit_test(test_snake test_snake.c)
+target_link_libraries(test_snake PRIVATE cads_toolbox)
+
+cads_add_unit_test(test_breakout test_breakout.c)
+target_link_libraries(test_breakout PRIVATE cads_toolbox)
+
+cads_add_unit_test(test_dodger test_dodger.c)
+target_link_libraries(test_dodger PRIVATE cads_toolbox)
+
 # --- storage --------------------------------------------------------------
 #
 # Sources live in modules/storage/tests/, not here - modules/storage's own
