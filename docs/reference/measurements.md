@@ -41,25 +41,43 @@ an interrupt-driven counter quietly stops.
 
 ## Memory
 
-After the kernel landed:
+CI's `default` matrix leg (all optional apps on), 2026-08-23, cross-checked
+three ways — the live CI log, `nm`/`objdump` on the checked-in
+`build/itsboard/cads-zero.elf`, and `docs/ROADMAP.md`'s own running Log —
+and consistent across all three:
 
 | | Used | Available | |
 |---|---|---|---|
-| Flash bank 1 | 84 KB | 1 MB | 8 % |
-| SRAM | 112 KB | 192 KB | 57 % |
-| CCM | 5 KB | 64 KB | 8 % |
+| Flash bank 1 | 222.1 KB (227 460 B) | 1 MB | 21.7 % |
+| SRAM | 143.1 KB (146 528 B) | 192 KB | 74.5 % |
+| CCM | 5 KB | 64 KB | 7.8 % |
 
-SRAM is 75 KB framebuffer + 30 KB staging + statics. CCM is three task stacks;
-there is no kernel heap at all.
+`__cads_heap_size` margin over the linker's `ASSERT(>= 48K)` floor: 928 B —
+the number `scripts/check_ram_budget.py` gates CI on (minimum 256 B). The
+`minimal` matrix leg (every optional app off) reports 6 816 B of margin over
+the same floor. SRAM is 75 KB framebuffer + 30 KB staging + statics + lwIP's
+pool; CCM is three task stacks; there is no kernel heap at all.
+
+Flash usage is *reported* every CI run (`arm-none-eabi-size` to the job
+summary) but not *gated* — there is no stored baseline or regression
+threshold on it the way there is for the RAM margin above, so unlike SRAM
+this number can only be read, not relied on to fail a build on its own.
 
 ## What is not measured yet
 
 Stated so nobody mistakes silence for a result:
 
-- Ethernet throughput, and how badly the PA7 time-slicing hurts it.
+- Ethernet throughput, and how badly the PA7 time-slicing hurts it. An
+  `iperf`-compatible server exists (explorer console command `I`) but this
+  bench's agent shell has no network path to the board's segment, so the
+  capability has never actually been exercised against a real client.
 - Touch latency and repeat accuracy over a long session.
 - Flash write endurance and littlefs behaviour across power cuts.
 - Power draw.
+- **Display throughput has not been re-measured since M0/M1** (2026-08-17/18,
+  before the FreeRTOS scheduler in M2 or the eleven apps and network watchers
+  added in M5/M6). The 342/669 kpixel/s numbers above may no longer reflect
+  actual bus contention with the scheduler and Ethernet ISR both live.
 
 `scripts/board_soak.py` runs the board for hours and watches stack high-water
 marks, task count and responsiveness, which covers the failure modes a one-shot
