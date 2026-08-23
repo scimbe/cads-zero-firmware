@@ -2,14 +2,34 @@
 
 ## What is it?
 
-Seven small, generic C11 utilities that the rest of CaDS Zero kept
-re-inventing: a lock-free byte ring buffer (`cads_ring`), integer formatting
-into a caller-supplied buffer (`cads_fmt`), a TAP test-result writer
-(`cads_tap`), bounded string helpers with strict parsers (`cads_str`), a
-publish/subscribe list (`cads_pubsub`), a named service registry
-(`cads_record`) and leveled logging (`cads_log`). It is the bottom of the
-dependency graph — it includes nothing from this project, nothing from a
-vendor SDK, and nothing from the C library.
+Fourteen small C11 files with nothing else in this project as a dependency.
+Seven are generic utilities the rest of CaDS Zero kept re-inventing: a
+lock-free byte ring buffer (`cads_ring`), integer formatting into a
+caller-supplied buffer (`cads_fmt`), a TAP test-result writer (`cads_tap`),
+bounded string helpers with strict parsers (`cads_str`), a publish/subscribe
+list (`cads_pubsub`), a named service registry (`cads_record`) and leveled
+logging (`cads_log`). It is the bottom of the dependency graph — it includes
+nothing from this project, nothing from a vendor SDK, and nothing from the C
+library.
+
+The other seven back M5's and M6's bring-up "explorer" console commands with
+the same no-HAL, no-lwIP, host-unit-tested split: six passive network
+protocol parsers plus a caller-owned dedup/binding table each — `cads_l2discover`
+(CDP/LLDP/STP + 802.1Q, command `N`), `cads_dhcpwatch` (rogue-DHCP-server
+detection, command `R`), `cads_arpwatch` (ARP spoofing/cache-poisoning
+detection, command `B`), `cads_ssdpwatch` (SSDP/UPnP discovery, command `U`),
+`cads_mactable` (switch-style MAC learning with aging, command `M`) and
+`cads_trafficstats` (stateless dest-class/EtherType tally, no table at all,
+command `O`) — and one hardware-adjacent but still HAL-free timing utility,
+`cads_freqcounter`, which turns a raw input-capture edge pair into a
+period/frequency/duty-cycle measurement (command `F`) without depending on
+which timer peripheral produced it. Each of the six parsers takes the same
+caller-supplied byte buffer a promiscuous capture loop already fills for
+`explorer_sniff_demo.c`, which is why they share
+[the same capture buffer](../../apps/bringup/explorer_capture_buffer.h) at
+the call site rather than each owning one. See
+[the explorer console reference](../../docs/reference/explorer-console.md)
+for what every command built on these actually does and prints.
 
 ## Why is it shaped this way?
 
