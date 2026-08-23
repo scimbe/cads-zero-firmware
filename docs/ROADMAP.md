@@ -1191,6 +1191,9 @@ driver above.
       confirm sharing the capture buffer with a sixth command caused no
       regression to either - both completed clean. `d 8` app-tree
       regression and the M0 boot self-test (10/10) both still clean.
+      CI matrix confirmed green live on the push (run 32610544407):
+      both `Firmware (STM32F429)` and `Firmware (STM32F429, minimal
+      apps)`.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
