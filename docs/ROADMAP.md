@@ -1152,6 +1152,45 @@ driver above.
       fifth command caused no regression to either - both completed
       clean. `d 8` app-tree regression and the M0 boot self-test (10/10)
       both still clean.
+- [x] Passive traffic-mix overview, new explorer command `O <sec>`.
+      Fifth user-requested addition, but a deliberately different shape
+      from `N`/`R`/`B`/`U` above: the RAM margin was tightening with
+      every table-keeping watcher added (928 B left after `U`, down
+      from 1440 B at the start of this series), so this one answers a
+      question that only ever needed counters - "how much of what kind
+      is on this wire" (broadcast/multicast/unicast split, 802.1Q
+      tagging, ARP/IPv4/IPv6/other EtherType mix) - not "who is out
+      there", and keeps no per-source table at all.
+      New `modules/toolbox/trafficstats.h/.c`: one classifier function,
+      eleven `uint32_t` counters, no TLV walker, no header-line scanner,
+      no dedup table - the simplest of the five M5 watchers this
+      session by a wide margin. Same bounds-checked-every-offset
+      discipline as the other four regardless: a frame shorter than a
+      full 14-byte Ethernet header is counted (`total_frames`,
+      `total_bytes`, `runt_frames`) but never read past its own length.
+      Unit-tested on the host (`tests/unit/test_trafficstats.c`, 11
+      cases) covering every destination class, VLAN-tag stepping
+      (including the edge case of a tag present but too short to hold
+      the inner EtherType - correctly left unclassified rather than
+      guessed at), an unknown EtherType being tallied rather than
+      silently dropped, runt frames (including a genuine 0-length
+      call), and accumulation across repeated observations.
+      RAM: the `cads_trafficstats_t stats` this command uses is a plain
+      stack local, not `static` like every other watcher's table
+      storage - 44 bytes is nowhere near enough to risk this task's own
+      stack (the HTTP status page task's own history, M5's own earlier
+      log entries, is what a real multi-KB local costs), and a
+      `static` here would have spent 44 B of `.bss` for no reason.
+      Measured, not assumed: `check_ram_budget.py` reports margin
+      928 B, byte-for-byte identical to before this task - this command
+      genuinely cost zero additional static RAM.
+      VERIFIED on hardware: `O 8` ran clean (`0 frame(s), 0 byte(s), 0
+      runt(s)`, every counter honestly zero) - the same quiet-bench
+      result every other M5 capture tool this session has established.
+      Re-ran `U 5` (ssdpwatch) and `B 5` (arpwatch) immediately after to
+      confirm sharing the capture buffer with a sixth command caused no
+      regression to either - both completed clean. `d 8` app-tree
+      regression and the M0 boot self-test (10/10) both still clean.
 
 ### Newly discovered capability (from the adapter's own schematic, 2026-08-19)
 
@@ -1837,6 +1876,21 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-23 — M5: new `O <sec>` passive traffic-mix overview, fifth in
+  the watcher series but deliberately the leanest: RAM margin was
+  tightening with each table-keeping watcher (928 B left after `U`),
+  so this one answers "how much of what kind" (dest class + EtherType
+  mix) with eleven `uint32_t` counters and no per-source table at all.
+  New `modules/toolbox/trafficstats.h/.c` (11 host unit tests). Its
+  `cads_trafficstats_t stats` is a plain stack local, not `static` -
+  44 B is nowhere near enough to risk the task's own stack, and
+  `check_ram_budget.py` confirms margin is byte-for-byte unchanged at
+  928 B: this command genuinely cost zero additional static RAM.
+  VERIFIED on hardware: `O 8` clean (every counter honestly zero),
+  `U 5`/`B 5` re-verified with no regression from a sixth command
+  sharing the capture buffer, `d 8` and the M0 boot self-test both
+  clean, host `ctest` 24/24. Full detail in M5's own bullet.
 
 - 2026-08-23 — CI: fixed a real false positive in the "filesystem
   region is untouched" check, caught live on the `U` (ssdpwatch) push -

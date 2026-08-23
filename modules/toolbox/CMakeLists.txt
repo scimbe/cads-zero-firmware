@@ -16,6 +16,7 @@ add_library(cads_toolbox STATIC
     src/dhcpwatch.c
     src/arpwatch.c
     src/ssdpwatch.c
+    src/trafficstats.c
 )
 
 target_include_directories(cads_toolbox
