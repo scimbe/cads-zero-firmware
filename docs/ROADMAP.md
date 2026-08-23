@@ -1880,6 +1880,56 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-23 — Documentation completeness pass, not from an open
+  roadmap/issue item - user asked directly whether the application and
+  technical documentation were complete and whether a performance/size
+  review process actually existed, after the 5-watcher M5 batch and
+  before this. Ran a fresh full board test first (not from cache):
+  `board_test.py --suite m6` on real hardware, boot self-test 10/10,
+  M6 suite 4/4 (continuity correctly reports "no continuity" with no
+  jumper wire attached - a well-formed result, not a failure). Then two
+  independent audits, both grounded in reading the actual files rather
+  than assumed:
+  (1) Docs were sharply bimodal - architecture/technical docs
+  (HARDWARE.md, SAFETY.md, pa7-conflict.md, hal.md, canvas.md,
+  module-layout.md, memory-map.md) were genuinely complete and current;
+  end-user documentation essentially did not exist - zero of the 44
+  bring-up explorer console commands documented anywhere outside the
+  firmware's own `?` help string, 5 of 8 on-device apps
+  (about/gpio/netinfo/filebrowser/game) had no README at all, and 4 of
+  5 feature modules (cli/kernel/net/storage) had no README despite
+  `docs/reference/module-layout.md`'s own "every module carries a
+  README" standard - only `toolbox` had one, and it was itself
+  incomplete (7 of its 14 files, silent about the 6 M5 network-watch
+  parsers and 1 M6 timing utility).
+  (2) A real, CI-enforced RAM-margin and filesystem-window gate exists
+  and was verified live (both matrix legs, both checks, exact numbers
+  matched against `nm`/`objdump` on the checked-in ELF) - but flash/text
+  size was only *printed*, never *gated*, so it could grow indefinitely
+  between commits unnoticed, and `docs/reference/measurements.md` had
+  gone stale (5+ days, ~30 points of RAM% behind reality; display
+  throughput never re-measured since M0/M1, before the scheduler and
+  eleven M5/M6 apps/watchers existed).
+  Closed every concrete gap found: new `docs/reference/explorer-console.md`
+  (all 44 commands, sourced from the fresh live help-text run plus
+  `explorer.c`'s own dispatch table for exact defaults); 9 new
+  README.md files (5 apps, 4 modules) via 9 independent research agents,
+  each grounded in the real headers/source and spot-checked against it
+  afterward (`modules/net`'s and `modules/storage`'s API signatures,
+  `lwipopts.h` constants, and the `.ramfunc` flash bug all verified
+  letter-perfect against the actual files, not taken on trust); fixed
+  `apps/menu/README.md`'s stale four-row claim (actually up to six,
+  build-time optional since M6) and extended `toolbox/README.md` to its
+  full 14 files; refreshed `measurements.md` and the root `README.md`'s
+  status section with current, cross-checked numbers; added
+  `scripts/check_flash_budget.py` (512 KB budget, half of `FLASH_APP`,
+  2x headroom over the current ~222 KB) wired into CI right after the
+  RAM budget step. Confirmed green live on the push (run 32633081348):
+  both matrix legs pass all four gates including the new flash budget
+  (`PASS: 296828 B of headroom under the 524288 B budget` on the
+  default leg), and the mkdocs deploy (run 32633081373) built the new
+  reference page successfully.
+
 - 2026-08-23 — M5: new `O <sec>` passive traffic-mix overview, fifth in
   the watcher series but deliberately the leanest: RAM margin was
   tightening with each table-keeping watcher (928 B left after `U`),
