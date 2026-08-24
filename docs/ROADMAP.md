@@ -1950,6 +1950,24 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-24 — UI redesign phase 2: light content surface for all menu/list
+  screens (main menu, settings, filebrowser, arcade select). Rows move from
+  the dark navy ground + light-blue text to the mockup's CadsColorSurface
+  ground + GrayDark text + GrayLight separators; the selected row keeps
+  phase 1's brand fill + white text + green rail. Kept apps/gpio's dark
+  custom screen unchanged by giving cads_list a per-list `background` field
+  (default dark) that cads_menu overrides to Surface. Prompted by the webcam
+  verification the user asked for: the earlier dark ground turned the glossy
+  panel into a mirror of the lit bench, so nothing was legible/photographable
+  under glare - the light ground fixes that. VERIFIED the change renders on
+  hardware (panel goes from dark mirror to clearly light across reflashed
+  webcam shots; boot 10/10; host ctest 27/27; RAM margin 416 B unchanged; CI
+  green). The fixed bench webcam is too soft to resolve the individual rows/
+  5px rail pixel-sharp - a human glance is the final fine-detail check - but
+  the dark->light change itself is unmistakable in the photos. Commit 221bf7e.
+  Remaining redesign phases: rect-drawn menu icons, app/game-screen polish.
+
+
 - 2026-08-24 — On-device UI redesign, not from an open roadmap/issue item -
   user asked to overhaul all GUI/UX elements to be "richtig performant aber
   auch gut aussehend" using the design tooling. Produced an approved,
