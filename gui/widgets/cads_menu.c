@@ -1,6 +1,14 @@
 #include "cads_menu.h"
 
 #define CADS_MENU_PAD 8
+/* The one focal cue: a solid brand-green rail down the left edge of the
+ * selected row. A flat fill is the cheapest strong-selection mark this
+ * display bus can draw, and moving the selection only repaints two rows
+ * (the one leaving focus and the one entering it) via the list's own
+ * dirty-row tracking - see docs/reference/explorer-console.md's sibling
+ * design notes. The label already starts CADS_MENU_PAD (8px) in, clear of
+ * this 5px rail, so nothing has to shift to make room for it. */
+#define CADS_MENU_RAIL 5
 
 static void cads_menu_draw_row(size_t index, cads_rect_t row, bool selected, void* context) {
     cads_menu_t* menu = (cads_menu_t*)context;
@@ -12,6 +20,16 @@ static void cads_menu_draw_row(size_t index, cads_rect_t row, bool selected, voi
     cads_color_t detail = selected ? CadsColorBrandLight : CadsColorGray;
 
     cads_canvas_fill_rect(row.x, row.y, row.width, row.height, background);
+
+    if(selected) {
+        cads_canvas_fill_rect(row.x, row.y, CADS_MENU_RAIL, row.height, CadsColorAccent);
+    } else {
+        /* A hairline under each unselected row gives the list definition
+         * without a full separator's weight; the selected row's brand fill
+         * covers its own, so it is only drawn when not selected. */
+        cads_canvas_draw_hline(
+            row.x, (int16_t)(row.y + row.height - 1), row.width, CadsColorGrayDark);
+    }
 
     /* The detail is drawn first and the label clipped short of it, so a long
      * label truncates instead of colliding with the value on the right. */
