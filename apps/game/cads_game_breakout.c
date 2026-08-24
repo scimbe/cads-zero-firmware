@@ -70,7 +70,7 @@ void cads_game_breakout_draw(cads_rect_t area, const cads_game_breakout_t* g) {
         CadsColorGrayDark);
 
     char status_text[40];
-    size_t pos = cads_str_append(status_text, sizeof(status_text), "Score: ");
+    size_t pos = cads_str_copy(status_text, sizeof(status_text), "Score: ");
     pos += cads_fmt_uint(status_text + pos, sizeof(status_text) - pos, g->breakout.score);
     pos += cads_str_append(status_text + pos, sizeof(status_text) - pos, "  Lives: ");
     cads_fmt_uint(status_text + pos, sizeof(status_text) - pos, g->breakout.lives);

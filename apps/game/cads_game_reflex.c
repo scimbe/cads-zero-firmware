@@ -95,7 +95,7 @@ void cads_game_reflex_draw(cads_rect_t area, const cads_game_reflex_t* r) {
             break;
         case CADS_GAME_REFLEX_RESULT: {
             color1 = CadsColorBrand;
-            size_t pos = cads_str_append(reaction_text, sizeof(reaction_text), "Reaction: ");
+            size_t pos = cads_str_copy(reaction_text, sizeof(reaction_text), "Reaction: ");
             pos += cads_fmt_uint(reaction_text + pos, sizeof(reaction_text) - pos, r->reaction_ms);
             cads_str_append(reaction_text + pos, sizeof(reaction_text) - pos, " ms");
             line1 = reaction_text;
@@ -113,7 +113,7 @@ void cads_game_reflex_draw(cads_rect_t area, const cads_game_reflex_t* r) {
 
     if(r->best_ms != 0u && r->state != CADS_GAME_REFLEX_ARMED && r->state != CADS_GAME_REFLEX_GO) {
         char best_text[32];
-        size_t pos = cads_str_append(best_text, sizeof(best_text), "Best: ");
+        size_t pos = cads_str_copy(best_text, sizeof(best_text), "Best: ");
         pos += cads_fmt_uint(best_text + pos, sizeof(best_text) - pos, r->best_ms);
         cads_str_append(best_text + pos, sizeof(best_text) - pos, " ms");
         cads_rect_t footer = {area.x, area.y + area.height - 24, area.width, 24};

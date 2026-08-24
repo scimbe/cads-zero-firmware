@@ -64,7 +64,7 @@ void cads_game_snake_draw(cads_rect_t area, const cads_game_snake_t* g) {
     cads_canvas_fill_rect(area.x, area.y, area.width, area.height, CadsColorWhite);
 
     char score_text[24];
-    size_t pos = cads_str_append(score_text, sizeof(score_text), "Score: ");
+    size_t pos = cads_str_copy(score_text, sizeof(score_text), "Score: ");
     cads_fmt_uint(score_text + pos, sizeof(score_text) - pos, g->snake.score);
     cads_rect_t header = {area.x, area.y, area.width, CADS_GAME_SNAKE_HEADER_HEIGHT};
     cads_canvas_draw_text_aligned(header, CadsAlignCenter, &cads_font16, score_text, CadsColorGrayDark);

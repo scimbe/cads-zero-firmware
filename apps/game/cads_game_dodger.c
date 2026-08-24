@@ -64,7 +64,7 @@ void cads_game_dodger_draw(cads_rect_t area, const cads_game_dodger_t* g) {
         CADS_DODGER_PLAYER_SIZE, CadsColorBrand);
 
     char score_text[24];
-    size_t pos = cads_str_append(score_text, sizeof(score_text), "Score: ");
+    size_t pos = cads_str_copy(score_text, sizeof(score_text), "Score: ");
     cads_fmt_uint(score_text + pos, sizeof(score_text) - pos, g->dodger.score);
     cads_rect_t header = {area.x, area.y, area.width, 18};
     cads_canvas_draw_text_aligned(header, CadsAlignCenter, &cads_font12, score_text, CadsColorGrayDark);
