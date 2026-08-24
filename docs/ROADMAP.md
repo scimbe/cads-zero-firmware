@@ -1950,6 +1950,29 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-24 — On-device UI redesign, not from an open roadmap/issue item -
+  user asked to overhaul all GUI/UX elements to be "richtig performant aber
+  auch gut aussehend" using the design tooling. Produced an approved,
+  viewable design-language mockup (faithful 480x320, exact 16-colour
+  palette, JetBrains Mono, the original CaDS logo on the desktop, flat-fill
+  performance model) as the spec, then began the phased C implementation.
+  **Phase 1 (this commit, 372413c):** the design's signature focal cue on
+  every menu/list-based screen - a solid 5px brand-green rail down the left
+  edge of the selected row, plus a GrayDark hairline under each unselected
+  row. Contained to cads_menu_draw_row so it lands uniformly on the main
+  menu, settings, filebrowser and arcade select with no change to the shared
+  cads_list widget and no light/dark inconsistency; both marks are flat
+  fills/a hairline (cheapest on this bus) and selection still repaints only
+  two rows via the list's dirty-row tracking, so it costs nothing in frame
+  budget. Host ctest 27/27, board boot self-test 10/10, app-tree renders
+  fault-free, CI green (run 32690981379). Visual confirmation of the rail
+  needs a physical OK press to open the menu, which cannot be injected from
+  this shell (same limitation as the games) - a human at the bench is the
+  remaining check. Remaining phases: light-surface content conversion
+  (coordinated across cads_list + its consumers), rect-drawn menu icons,
+  app-screen and game-screen polish.
+
+
 - 2026-08-23 — Documentation completeness pass, not from an open
   roadmap/issue item - user asked directly whether the application and
   technical documentation were complete and whether a performance/size
