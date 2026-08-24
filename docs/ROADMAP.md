@@ -1950,6 +1950,48 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-25 — Fixed the real cause of the illegible text the user kept
+  reporting live at the board ("hoch und niedrig gestellte Buchstaben" -
+  letters set high and low mid-word): a genuine bug in
+  `scripts/gen_font.py`'s `bake()`, not a perception or contrast issue.
+  The baked `top` field used `ascent - top` (PIL's own bbox y0, which
+  `font.getbbox()` already returns anchored at the ascender line); that
+  formula only lands every glyph's bottom on a shared baseline if
+  `y1 == 2*y0`, which is not true in general, so ascender letters
+  (b,d,f,h,k,l,t) and x-height letters (a,c,e,m,n,o...) baked to different
+  baselines - `top+height` was 24 for the former, 18 for the latter,
+  against a font16 ascent of 17. Confirmed empirically with a throwaway PIL
+  probe before touching anything: `font.getbbox(ch)[3]` (bottom) is a rock
+  solid 17 for every non-descender glyph and 20 for g/p/y, and only y0
+  varies - proving y0 alone, undoctored, is already "rows from the line top
+  to the bitmap top" exactly as `cads_glyph_t.top` is documented. Fixed by
+  using `top` directly; regenerated gui/fonts/cads_fonts.c from the same
+  JetBrains Mono TTF (`python3 scripts/gen_font.py --out
+  gui/fonts/cads_fonts.c`). Also fixed gui/widgets/cads_softkeys.c, found
+  while comparing the on-device render against the interface-language
+  mockup the user asked to match: a live cell filled CadsColorSurface
+  (near-white) with CadsColorBrandLight (pale blue-grey) label text - low
+  contrast, part of the same "schwer zu lesen" report. Now the whole strip
+  is a uniform CadsColorBrandDark bar (CadsColorBrand when a cell is held)
+  with white/BrandLight text, matching the mockup and giving every screen a
+  legible, high-contrast, positionally-obvious button legend (cell N sits
+  directly under physical button SN by construction - see
+  cads_softkeys.h's own header). VERIFIED: host ctest 29/29 after
+  `update_golden` (only the ZERO wordmark and self-test caption moved, to
+  their corrected baseline - reviewed via diff image before accepting);
+  gallery screenshots reviewed for desktop/menu/netinfo; board boot
+  self-test 10/10; RAM margin 416 B, flash headroom unchanged (font/color
+  table sizes did not grow); app-tree demo confirmed live on hardware
+  afterward. Deferred to a later session: the watchdog/crash-forensics
+  feature the user asked for earlier the same night - core/cads_hal.h
+  already has the reset-cause and
+  watchdog API contract drafted (CCM-resident forensic ring buffer, IWDG
+  fed from the FreeRTOS tick hook, DBGMCU_APB1_FZ_DBG_IWDG_STOP so a
+  debugger session is never raced by a surprise reset) but no .c
+  implementation yet. Also queued, not started: boot-time diagnostic
+  entry points (hold a button at power-on for touch calibration / a help
+  screen) the user asked for as a follow-up.
+
 - 2026-08-24 — Emboldened all rendered text (gui/canvas.c's shared
   `cads_canvas_draw_text`): every lit glyph pixel now also lights the pixel
   one column right, a standard cheap emboldening trick for a fixed 1bpp
