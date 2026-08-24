@@ -104,6 +104,21 @@ target_include_directories(test_canvas PRIVATE
 )
 target_link_libraries(test_canvas PRIVATE cads_fake_hal)
 
+cads_add_unit_test(test_menu
+    test_menu.c
+    canvas_host.c
+    ${CADS_ROOT}/gui/fonts/cads_fonts.c
+    ${CADS_ROOT}/gui/widgets/cads_menu.c
+    ${CADS_ROOT}/gui/widgets/cads_list.c
+)
+target_include_directories(test_menu PRIVATE
+    ${CADS_ROOT}/gui
+    ${CADS_ROOT}/gui/fonts
+    ${CADS_ROOT}/gui/widgets
+    ${CADS_ROOT}/services
+)
+target_link_libraries(test_menu PRIVATE cads_fake_hal)
+
 cads_add_unit_test(test_input
     test_input.c
     ${CADS_ROOT}/services/input/cads_input.c
