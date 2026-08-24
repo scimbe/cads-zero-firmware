@@ -15,8 +15,13 @@ static void cads_menu_draw_row(size_t index, cads_rect_t row, bool selected, voi
     if(menu == NULL || menu->items == NULL) return;
 
     const cads_menu_item_t* item = &menu->items[index];
-    cads_color_t background = selected ? CadsColorBrand : CadsColorBackground;
-    cads_color_t label = selected ? CadsColorWhite : CadsColorBrandLight;
+    /* Light content surface with dark text - the approved redesign. A light
+     * ground is not just the look: on this glossy panel a near-black ground
+     * mirrors the room and washes out under glare, while a light one stays
+     * legible (and, as it turns out, photographable). The selected row keeps
+     * the strong brand fill + white text + green rail from phase 1. */
+    cads_color_t background = selected ? CadsColorBrand : CadsColorSurface;
+    cads_color_t label = selected ? CadsColorWhite : CadsColorGrayDark;
     cads_color_t detail = selected ? CadsColorBrandLight : CadsColorGray;
 
     cads_canvas_fill_rect(row.x, row.y, row.width, row.height, background);
@@ -26,9 +31,10 @@ static void cads_menu_draw_row(size_t index, cads_rect_t row, bool selected, voi
     } else {
         /* A hairline under each unselected row gives the list definition
          * without a full separator's weight; the selected row's brand fill
-         * covers its own, so it is only drawn when not selected. */
+         * covers its own, so it is only drawn when not selected. GrayLight
+         * reads as a subtle divider on the Surface ground. */
         cads_canvas_draw_hline(
-            row.x, (int16_t)(row.y + row.height - 1), row.width, CadsColorGrayDark);
+            row.x, (int16_t)(row.y + row.height - 1), row.width, CadsColorGrayLight);
     }
 
     /* The detail is drawn first and the label clipped short of it, so a long
@@ -65,6 +71,8 @@ void cads_menu_init(
     menu->context = NULL;
     cads_list_init(&menu->list, count, font, cads_menu_draw_row, menu);
     cads_list_set_activate(&menu->list, cads_menu_on_activate);
+    /* Match the tail below the last row to the light rows above it. */
+    cads_list_set_background(&menu->list, CadsColorSurface);
 }
 
 void cads_menu_set_activate(cads_menu_t* menu, cads_menu_activate_t activate, void* context) {

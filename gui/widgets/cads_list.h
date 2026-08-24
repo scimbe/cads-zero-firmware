@@ -59,6 +59,11 @@ typedef struct {
     int16_t row_height;
     size_t visible;
     bool wrap;
+    /* Ground for the strip below the last row - the only pixels the list
+     * paints itself. Defaults to CadsColorBackground so existing dark screens
+     * (apps/gpio) are unchanged; a light menu sets it to CadsColorSurface via
+     * cads_list_set_background() so its tail matches its own light rows. */
+    cads_color_t background;
 
     cads_list_row_draw_t row_draw;
     cads_list_activate_t activate;
@@ -91,6 +96,10 @@ void cads_list_init(
 
 /** Install the activation handler. Optional; without it OK does nothing. */
 void cads_list_set_activate(cads_list_t* list, cads_list_activate_t activate);
+
+/** Ground for the tail strip below the last row. Defaults to
+ *  CadsColorBackground; a light list sets CadsColorSurface to match its rows. */
+void cads_list_set_background(cads_list_t* list, cads_color_t color);
 
 /** Set the rectangle the list occupies. Recomputes how many rows fit. */
 void cads_list_set_area(cads_list_t* list, cads_rect_t area);

@@ -67,6 +67,7 @@ void cads_list_init(
     list->top = 0u;
     list->visible = 0u;
     list->wrap = false;
+    list->background = CadsColorBackground;
     list->row_draw = row_draw;
     list->activate = NULL;
     list->context = context;
@@ -83,6 +84,10 @@ void cads_list_init(
 
 void cads_list_set_activate(cads_list_t* list, cads_list_activate_t activate) {
     if(list != NULL) list->activate = activate;
+}
+
+void cads_list_set_background(cads_list_t* list, cads_color_t color) {
+    if(list != NULL) list->background = color;
 }
 
 void cads_list_set_area(cads_list_t* list, cads_rect_t area) {
@@ -354,7 +359,7 @@ void cads_list_draw(cads_list_t* list) {
         if(used < list->area.height) {
             cads_canvas_fill_rect(
                 list->area.x, (int16_t)(list->area.y + used), cads_list_content_width(list),
-                (int16_t)(list->area.height - used), CadsColorBackground);
+                (int16_t)(list->area.height - used), list->background);
         }
         cads_list_draw_scrollbar(list);
     }
