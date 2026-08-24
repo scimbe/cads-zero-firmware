@@ -245,6 +245,73 @@ bool cads_hal_pin_is_reserved(uint32_t port_index, uint32_t pin);
  */
 __attribute__((noreturn)) void cads_hal_panic(const char* reason);
 
+/* --- watchdog and crash forensics -------------------------------------------
+ *
+ * The independent watchdog (IWDG) exists to turn "the firmware locked up and
+ * an untethered board just sits there with the red LED on" (docs/SAFETY.md's
+ * own documented failure mode for a debugger-less panic) into "the board
+ * recovers on its own, and what caused the lockup is still readable after it
+ * does". Two halves:
+ *
+ *   1. cads_hal_watchdog_init()/feed() - modules/kernel's vApplicationTickHook
+ *      feeds it once per SysTick (1 kHz), NOT from any application task. That
+ *      is a deliberate scope choice, not an oversight: feeding from the tick
+ *      proves the interrupt subsystem is alive and reliably recovers from a
+ *      true lockup (a HardFault recursion loop, interrupts globally
+ *      disabled), with ZERO risk of a spurious reset during any legitimate
+ *      long-running operation (a 448 ms display flush, a multi-minute
+ *      explorer demo) - none of those ever stop the tick from running. It
+ *      does NOT catch a cooperative task spinning forever on something that
+ *      will never happen while interrupts keep flowing; that is a different,
+ *      harder problem this feature does not claim to solve.
+ *
+ *   2. cads_hal_reset_cause() - decodes RCC->CSR (STM32) before anything
+ *      clears it, so a reset that the watchdog itself caused is
+ *      distinguishable from a normal power-on or a debugger-driven reset.
+ *      Latched once per boot: the first call reads and clears the hardware
+ *      flags, every later call in the same boot returns the same cached
+ *      answer.
+ *
+ * modules/diag/include/cads/diag/forensic.h is the portable ring buffer that
+ * actually records what a fault handler or cads_hal_panic() saw; this HAL
+ * layer only supplies the two hardware primitives it and the recovery path
+ * need. See docs/SAFETY.md - neither of these touches a single GPIO pin, so
+ * none of the binding pin rules apply.
+ */
+
+typedef enum {
+    CadsResetUnknown = 0,   /**< First boot after flashing, or cause unreadable. */
+    CadsResetPowerOn,       /**< POR/BOR: the board was actually powered up. */
+    CadsResetPin,           /**< NRST driven low - the physical reset button/ST-Link. */
+    CadsResetSoftware,      /**< NVIC_SystemReset() / AIRCR.SYSRESETREQ. */
+    CadsResetWatchdogIndependent, /**< IWDG timed out: something stopped feeding it. */
+    CadsResetWatchdogWindow,      /**< WWDG timed out. Not used by this firmware today. */
+    CadsResetLowPower,      /**< Illegal low-power entry, per RM0090. */
+} cads_reset_cause_t;
+
+/**
+ * What caused THIS boot. Safe to call repeatedly and from any context; the
+ * underlying hardware register is read and cleared exactly once regardless
+ * of how many times this is called.
+ */
+cads_reset_cause_t cads_hal_reset_cause(void);
+
+/**
+ * Arms the independent watchdog with the given timeout and freezes it
+ * whenever a debugger halts the core (STM32's DBGMCU_APB1_FZ_DBG_IWDG_STOP),
+ * so attaching ST-Link/GDB to inspect a live panic never races a surprise
+ * reset out from under the session - the documented "halts usefully with a
+ * debugger attached" behaviour in docs/SAFETY.md stays true.
+ *
+ * IWDG cannot be stopped once started (RM0090 20.3.2); this is a one-way
+ * door for the life of the running image. Call once, during startup, before
+ * anything that could plausibly loop forever.
+ */
+void cads_hal_watchdog_init(uint32_t timeout_ms);
+
+/** Kicks the watchdog. See the tick-hook note above for who calls this. */
+void cads_hal_watchdog_feed(void);
+
 #ifdef __cplusplus
 }
 #endif
