@@ -263,18 +263,23 @@ void cads_softkeys_draw(cads_softkeys_t* keys) {
         bool live = cads_softkey_cell_live(keys, cell);
         bool down = (keys->held == cell) && live;
 
-        cads_color_t fill = !live      ? CadsColorBackground :
-                            down       ? CadsColorBrand :
-                                         CadsColorSurface;
+        /* The whole strip reads as one dark instrument bar - "this is the row
+         * of physical buttons, and here is what each one does right now" -
+         * rather than switching an active cell to a light background. A live
+         * cell used to fill CadsColorSurface with CadsColorBrandLight text:
+         * pale blue-grey on near-white, genuinely low contrast, and reported
+         * as such from the physical panel ("aktuelle Farbgebung... schwer zu
+         * lesen"). CadsColorBrandDark everywhere plus white/BrandLight text
+         * matches the approved interface-language mockup's soft-key strip. */
+        cads_color_t fill = down ? CadsColorBrand : CadsColorBrandDark;
         cads_canvas_fill_rect(rect.x, rect.y, rect.width, rect.height, fill);
 
         /* A one pixel gutter on the right of every cell but the last keeps the
          * eight targets visually distinct without a full grid. */
         if(cell != CADS_SOFTKEY_COUNT - 1) {
             cads_canvas_draw_vline(
-                (int16_t)(rect.x + rect.width - 1), rect.y, rect.height, CadsColorBackground);
+                (int16_t)(rect.x + rect.width - 1), rect.y, rect.height, CadsColorBrandDark);
         }
-        cads_canvas_draw_hline(rect.x, rect.y, rect.width, CadsColorGrayDark);
 
         if(live) {
             cads_rect_t text = {
