@@ -90,8 +90,17 @@ def bake(font_path: Path, size: int) -> tuple[list[dict], bytearray, int, int]:
                     row[x >> 3] |= 0x80 >> (x & 7)
             blob += row
 
+        # font.getbbox() is anchored at the ascender line (y=0), so its own
+        # y0 IS already "rows from the line top down to the bitmap top" -
+        # exactly what cads_glyph_t.top documents. `ascent - top` was a stray
+        # inversion: it does not cancel to a shared baseline in general
+        # (bottom = (ascent - y0) + (y1 - y0) = ascent + y1 - 2*y0, which is
+        # only constant across glyphs if y1 == 2*y0), so ascender and
+        # x-height letters landed on different baselines - confirmed
+        # empirically (JetBrains Mono 16px: every non-descender glyph's own
+        # y1 is a constant 17 = ascent; y0 alone is what varies per glyph).
         glyphs.append({"w": width, "h": height, "left": left,
-                       "top": ascent - top, "advance": advance, "offset": offset})
+                       "top": top, "advance": advance, "offset": offset})
 
     return glyphs, blob, line_height, ascent
 
