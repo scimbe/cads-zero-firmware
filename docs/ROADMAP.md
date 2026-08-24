@@ -1950,6 +1950,29 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-24 — Emboldened all rendered text (gui/canvas.c's shared
+  `cads_canvas_draw_text`): every lit glyph pixel now also lights the pixel
+  one column right, a standard cheap emboldening trick for a fixed 1bpp
+  bitmap font with no baked bold weight (gui/fonts/cads_fonts.c is
+  deliberately not antialiased). Prompted by direct user feedback live at
+  the board: "Schrift schlecht zu lesen... muss kräftiger sein, dass man es
+  lesen kann." Scoped correctly per the golden-image diff before accepting
+  it (only glyph-rendered text moved - `ZERO` and the self-test caption on
+  the splash screen; the CaDS wordmark/tagline/lion are bitmap image assets
+  and are untouched). VERIFIED: host ctest 29/29 after `update_golden`;
+  board boot self-test 10/10; RAM margin 416 B unchanged (host-only
+  rendering-loop change, no new storage). Same live session surfaced a
+  second, still-open report from the user: neither touch nor the physical
+  buttons produced any visible reaction in the `d` app-tree demo. Two
+  `s <sec>` live-input diagnostic windows during this session were
+  inconclusive by innocent cause (the user was away from the board both
+  times, confirmed after the fact - not evidence either way), not because
+  the read failed. This is the same open item as the M6 hardware gate's
+  "human walkthrough of each app by touch and by button" line below -
+  still not actually completed - and needs a live diagnostic window with
+  the user physically present and pressing keys to resolve, not more
+  unattended `s` runs.
+
 - 2026-08-24 — UI redesign phase 2: light content surface for all menu/list
   screens (main menu, settings, filebrowser, arcade select). Rows move from
   the dark navy ground + light-blue text to the mockup's CadsColorSurface

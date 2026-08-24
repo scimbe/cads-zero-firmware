@@ -331,8 +331,23 @@ int16_t cads_canvas_draw_text(
                     const uint8_t* line = &font->bitmap[glyph->offset + row * row_bytes];
                     for(uint32_t column = 0; column < glyph->width; column++) {
                         if(line[column >> 3] & (0x80u >> (column & 7u))) {
+                            /* The baked glyphs are 1bpp with no antialiasing
+                             * (gui/fonts/cads_fonts.c's own header explains
+                             * why), which on the physical panel reads as too
+                             * thin to resolve at a glance - confirmed against
+                             * the real hardware, not just a rendering
+                             * preference. Smearing every lit pixel one column
+                             * right is the standard cheap emboldening trick
+                             * for a fixed bitmap font: it thickens vertical
+                             * and diagonal strokes without needing a second
+                             * baked weight, at the cost of the glyph reading
+                             * very slightly wider than its measured advance -
+                             * acceptable on a monospace face with normal
+                             * side bearing. */
                             cads_canvas_set_pixel(
                                 (int16_t)(gx + column), (int16_t)(gy + row), color);
+                            cads_canvas_set_pixel(
+                                (int16_t)(gx + column + 1), (int16_t)(gy + row), color);
                         }
                     }
                 }
