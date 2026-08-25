@@ -231,6 +231,27 @@ void cads_hal_spi_wait(void) {
     }
     while(CADS_LCD_SPI->SR & SPI_SR_BSY) {
     }
+
+    /* The display writes are TX-only (polled cads_hal_spi_transfer() command
+     * bytes, or the DMA paths below) and never read DR back. Every one of
+     * those leaves a byte sitting in DR with RXNE set, and a second one
+     * behind it sets OVR. cads_hal_spi_transfer() assumes RXNE is clear on
+     * entry - it waits for RXNE, not for a specific transfer's RXNE - so
+     * the touch driver's next polled read (command, then two data bytes)
+     * silently desyncs by one transfer: the byte it returns for "high" is
+     * really the stale leftover from here, and "low" is really the true
+     * high byte. That reads as the 12 bit result pinned to 0-15 with the
+     * high byte always exactly 0x00 - confirmed against live captures
+     * tonight - not a wiring or timing fault. cads_hal_spi_wait() already
+     * runs at the one point every caller agrees the bus is quiescent
+     * before doing anything new with it (set_speed, both DMA starts), so
+     * draining here fixes every current and future polled-after-DMA
+     * sequence in one place rather than patching the touch driver alone.
+     * RM0090 28.3.7's documented OVR-clear sequence is read DR then read
+     * SR; a single drain is enough since this SPI has no RX FIFO to drain
+     * (SPIv1: one byte, not a queue). */
+    (void)CADS_LCD_SPI->DR;
+    (void)CADS_LCD_SPI->SR;
 }
 
 /*
