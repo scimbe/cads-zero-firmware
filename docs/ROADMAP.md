@@ -1479,7 +1479,13 @@ does not yet use" for the full table and sourcing.
 - [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
       five apps below the menu build, flash, and run without fault; a human
       walkthrough of each one by touch and by button is the same open item
-      as the M3 gate's touch-navigation line, not a separate one.
+      as the M3 gate's touch-navigation line, not a separate one. UPDATE
+      2026-08-25: the BUTTON half is now done - live on hardware with the
+      user actually pressing, OK/Up/Down/Back all confirmed correct (see
+      that date's Log entry). Still open: TOUCH specifically, blocked on a
+      real, precisely isolated XPT2046 SPI data bug (same Log entry) -
+      not a "someone needs to go press it" gap anymore, a "someone needs a
+      scope or a systematic bring-up session" gap.
 
 ### The GPIO Swiss-army-knife
 
@@ -2007,6 +2013,64 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-25 — Resolved the button/touch input investigation that ran
+  across most of this session, with a real live-hardware protocol this
+  time (previous attempts kept getting confounded by nobody actually
+  being at the board during the test window, or the user pressing the
+  wrong physical button - the silkscreen reads IN7..IN0 left to right,
+  descending, not IN0..IN7 ascending, which had been assumed wrong
+  earlier the same night).
+  BUTTONS: fully verified working, no firmware defect. A raw
+  `s <sec>` (debounced input service, bypasses the GUI/task layer
+  entirely) session with the user actually pressing showed F1 and Back
+  registering correctly. A subsequent live `d` app-tree session
+  confirmed OK opens the menu and Up/Down navigate it correctly
+  (S1->Down, S0->Up - matches `cads_key_names[]` exactly, key index ==
+  button index by design). The whole night's confusion was almost
+  entirely the position mixup above plus the font/softkey-contrast bugs
+  already fixed making success hard to perceive even when it happened,
+  not a functional defect.
+  TOUCH: a real, precisely isolated bug remains, NOT fixed tonight.
+  Added two temporary/permanent-candidate diagnostics to separate the
+  IRQ signal from the coordinate data: `targets/itsboard/hal/
+  hal_touch.c`'s `cads_hal_touch_read_raw_x/y()` +
+  `cads_hal_touch_irq_raw()` (deliberately not added to core/cads_hal.h
+  - board-only, declared extern directly in explorer.c, guarded
+  `#ifdef CADS_TARGET_ITSBOARD` so sim/host need no stub), and explorer
+  command `Q <sec>` that prints raw ADC counts + raw IRQ level every
+  200 ms ignoring `cads_touch_pressed()` entirely. Findings, in order:
+  (1) A first `w <sec>` port-wide watch showed TP_IRQ (PE13) never
+  toggling across 6693 lines of other-pin noise - looked like a dead
+  IRQ line, but the user confirmed afterward they had not actually been
+  touching the panel during that window. (2) A `Q <sec>` session with
+  the user genuinely pressing/dragging showed `irq=1` while pressed and
+  `irq=0` on lift, tracking real contact correctly - the IRQ line and
+  `cads_touch_pressed()` are NOT the bug. (3) The SAME session's raw
+  ADC counts were implausible the whole time - single/low-double digits
+  (e.g. `x=7 y=2`), where a 12-bit conversion should read up to ~4095.
+  Ruled out by static review before stopping for the night: SPI mode
+  (CPOL=0/CPHA=0, fixed for the whole shared bus, `hal_spi.c`'s
+  `cads_spi_configure()`) and frame width (`cads_hal_spi_set_speed
+  (CadsSpiSpeedTouch)` explicitly forces 8-bit, ruling out a stale
+  16-bit-mode leftover from the display driver), chip-select polarity
+  (`cads_touch_cs()`), and the XPT2046 control bytes themselves
+  (`0xD0`/`0x90` = S=1, channel 101/001 = X/Y, 12-bit, differential -
+  the standard, widely-used encoding, not a typo). None of those explain
+  it. Also fixed in passing while reading this code: `cads_hal_touch_
+  read()` left `state->x`/`state->y` uninitialized on its early-return
+  path (not pressed) - real UB, same bug class as the game
+  stack-overflow found earlier this session, though not the actual
+  cause of tonight's symptom since the app only reads x/y when
+  `pressed` is true. Now zeroed unconditionally at the top of the
+  function. NEXT SESSION: needs either a logic analyzer/scope on the
+  touch SPI lines, or systematic empirical trial (conversion-delay
+  length, SER/DFR mode, MODE bit) via the new `Q` command - deliberately
+  not guessed at blindly across more flash-and-test cycles at this hour.
+  VERIFIED: host ctest 29/29; board boot self-test 10/10; both new
+  diagnostics ran live on hardware and produced the data above; RAM
+  margin 416 B unchanged (board-only diagnostic additions, no shared
+  RAM cost).
 
 - 2026-08-25 — Fixed the real cause of the illegible text the user kept
   reporting live at the board ("hoch und niedrig gestellte Buchstaben" -
