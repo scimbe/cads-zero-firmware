@@ -1934,6 +1934,64 @@ needs new hardware.
 
 ---
 
+## M8 — Developer experience and documentation depth  `[ ]`
+
+Queued 2026-08-25 from a burst of user requests during a live hardware
+debugging session (see that day's Log entries for the touch/button
+investigation this was queued alongside). Deliberately NOT started the
+same session they were requested in - each of these needs real design
+attention (cross-platform tooling, a new network protocol client, an
+editor project other people will actually use), not 5 AM hacking under
+a hardware fire. `[swarm-ready]` markers below are a first guess, not
+final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
+
+- [ ] iperf client (the explorer's `I <sec>` command is a server only -
+      `apps/bringup/explorer_iperf_demo.c`/`explorer_iperf_demo_sim.c`;
+      add the client half, same lwiperf-backed pattern, both targets).
+      `[swarm-ready]`
+- [ ] clang-format integration: a committed `.clang-format` matching this
+      codebase's actual existing style (checked against the style already
+      used throughout, not a generic default), plus a CI check that fails
+      on unformatted diffs. `[swarm-ready]`
+- [ ] clang-tidy integration, cross-platform (Windows/Linux/macOS) and
+      wired so findings surface well in an editor's Problems panel, not
+      just a terminal log - almost certainly means a `compile_commands.json`
+      export from the existing CMake build plus a VS Code task/extension
+      that consumes it, verified on more than one OS before calling it done.
+      `[needs-decision]` - which clang-tidy checks to enable is a real
+      design choice (this project's own conventions - e.g. no dynamic
+      allocation, static assertions, section-attribute placement - will
+      false-positive against several stock checks), not something to
+      pick blind.
+- [ ] A complete VS Code project (`.vscode/` recommendations, tasks,
+      launch configs for the existing GDB flow) with genuinely useful
+      extensions for someone learning this specific firmware+board,
+      documented for beginners at the project's own published how-to
+      (`docs/how-to/build.md`, published to
+      https://scimbe.github.io/cads-zero/how-to/build/ via `mkdocs.yml`
+      + `.github/workflows/docs.yml`). Cross-platform is a real
+      requirement here too, not an afterthought - the existing
+      `scripts/*.py` tooling is already dependency-free Python for
+      exactly this reason (see `scripts/cads_serial.py`'s own header),
+      the new pieces should hold to the same bar. `[swarm-ready]`
+- [ ] Decision-rationale documentation: expand `docs/explanation/` and/or
+      `docs/how-to/debug.md` with the "why" behind standing choices that
+      are currently only explained in scattered code comments and this
+      file's own Log - starting with why this specific compiler toolchain
+      (`ARM_BIN` / vcpkg-provided arm-none-eabi-gcc 13.3.1, see
+      `docs/how-to/build.md`) over alternatives, and a real walkthrough of
+      the debugging tools already in daily use this session (`st-util` +
+      GDB, `scripts/board_test.py`, the explorer's own diagnostic command
+      table). `[swarm-ready]`
+- [ ] More board photos in `docs/`, plus a repeatable routine that
+      refreshes them when the UI actually changes - `tests/gallery/
+      gallery.c`'s host-rendered PPMs already exist for exactly this and
+      are the right source (deterministic, no camera/lighting variance,
+      already wired as `gallery_renders` in CI) - converting the existing
+      set into docs-embedded, versioned images and documenting when to
+      regenerate them is the actual remaining work, not new capture
+      tooling. `[swarm-ready]`
+
 ## Open decisions (need the user)
 
 _None outstanding._
