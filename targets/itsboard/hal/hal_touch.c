@@ -21,22 +21,8 @@
 #include "hal_gpio.h"
 #include "hal_spi.h"
 
-/* PD1PD0=00: power-down between conversions, PENIRQ enabled. What
- * cads_touch_pressed() needs to see between reads. */
 #define XPT2046_CMD_X 0xD0u /* differential, 12 bit, X position */
 #define XPT2046_CMD_Y 0x90u /* differential, 12 bit, Y position */
-
-/* PD1PD0=01: reference off between conversions but the ADC itself stays
- * powered rather than cycling down - and per the datasheet, PD0=1 also
- * disables the PENIRQ comparator while it's set. cads_touch_median() uses
- * these for the actual sampling burst, then explicitly re-arms with one
- * PD=00 command afterward - see cads_touch_rearm_penirq(). Second attempt
- * at the "IRQ correct, coordinates garbage" bug after removing the
- * mid-transaction delay alone was not sufficient (see docs/ROADMAP.md's
- * dated Log entry) - masking PENIRQ during the burst removes a second
- * candidate source of conversion noise the delay fix did not touch. */
-#define XPT2046_CMD_X_MASKED 0xD1u
-#define XPT2046_CMD_Y_MASKED 0x91u
 
 #define CADS_TOUCH_SAMPLES 5u
 
@@ -90,27 +76,11 @@ static uint16_t cads_touch_read_axis(uint8_t command) {
     return (uint16_t)(((uint16_t)high << 8 | low) >> 3) & 0x0FFFu;
 }
 
-/*
- * Re-arms PENIRQ after a masked (PD1PD0=01) sampling burst: one dummy
- * PD=00 transaction, result discarded. Mandatory, not optional - leaving
- * PENIRQ masked would silently break cads_touch_pressed() for every
- * caller (production reads, the lift-detection check right after
- * sampling, and the raw diagnostics), which is the one thing already
- * confirmed working twice tonight and the last thing to risk breaking
- * with this change. Which axis's command byte is used here does not
- * matter - the result is thrown away - X is picked only for consistency.
- */
-static void cads_touch_rearm_penirq(void) {
-    (void)cads_touch_read_axis(XPT2046_CMD_X);
-}
-
-static uint16_t cads_touch_median(uint8_t masked_command) {
+static uint16_t cads_touch_median(uint8_t command) {
     uint16_t samples[CADS_TOUCH_SAMPLES];
     for(uint32_t i = 0; i < CADS_TOUCH_SAMPLES; i++) {
-        samples[i] = cads_touch_read_axis(masked_command);
+        samples[i] = cads_touch_read_axis(command);
     }
-    cads_touch_rearm_penirq();
-
     /* Insertion sort: five elements, branch-predictable, no allocation. */
     for(uint32_t i = 1; i < CADS_TOUCH_SAMPLES; i++) {
         uint16_t value = samples[i];
@@ -141,8 +111,8 @@ void cads_hal_touch_read(cads_touch_state_t* state) {
     cads_hal_spi_claim_bus();
     cads_hal_spi_set_speed(CadsSpiSpeedTouch);
 
-    uint16_t raw_x = cads_touch_median(XPT2046_CMD_X_MASKED);
-    uint16_t raw_y = cads_touch_median(XPT2046_CMD_Y_MASKED);
+    uint16_t raw_x = cads_touch_median(XPT2046_CMD_X);
+    uint16_t raw_y = cads_touch_median(XPT2046_CMD_Y);
 
     cads_hal_spi_restore_display_speed();
     cads_hal_spi_release_bus();
@@ -183,7 +153,7 @@ void cads_hal_touch_read(cads_touch_state_t* state) {
 uint16_t cads_hal_touch_read_raw_x(void) {
     cads_hal_spi_claim_bus();
     cads_hal_spi_set_speed(CadsSpiSpeedTouch);
-    uint16_t raw = cads_touch_median(XPT2046_CMD_X_MASKED);
+    uint16_t raw = cads_touch_median(XPT2046_CMD_X);
     cads_hal_spi_restore_display_speed();
     cads_hal_spi_release_bus();
     return raw;
@@ -192,7 +162,7 @@ uint16_t cads_hal_touch_read_raw_x(void) {
 uint16_t cads_hal_touch_read_raw_y(void) {
     cads_hal_spi_claim_bus();
     cads_hal_spi_set_speed(CadsSpiSpeedTouch);
-    uint16_t raw = cads_touch_median(XPT2046_CMD_Y_MASKED);
+    uint16_t raw = cads_touch_median(XPT2046_CMD_Y);
     cads_hal_spi_restore_display_speed();
     cads_hal_spi_release_bus();
     return raw;
