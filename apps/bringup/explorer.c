@@ -66,7 +66,13 @@
 #include "explorer_trafficstats_demo.h"
 #include "explorer_wol_demo.h"
 
-
+#ifdef CADS_TARGET_ITSBOARD
+/* hal_touch.c, diagnostic-only - not part of core/cads_hal.h. See that
+ * file's own comment on why these three exist. */
+uint16_t cads_hal_touch_read_raw_x(void);
+uint16_t cads_hal_touch_read_raw_y(void);
+bool cads_hal_touch_irq_raw(void);
+#endif
 
 static void cads_put_hex16(uint32_t value) {
     static const char digits[] = "0123456789ABCDEF";
@@ -605,6 +611,36 @@ void cads_explorer_run(void) {
                 cads_probe_puts("\r\n");
                 break;
             }
+#ifdef CADS_TARGET_ITSBOARD
+            case 'Q': {
+                /* Diagnostic-only: raw XPT2046 ADC counts, ignoring
+                 * cads_touch_pressed() entirely. See hal_touch.c's own
+                 * comment on cads_hal_touch_read_raw_x/y - added while
+                 * investigating a live report of touch never registering:
+                 * a port-wide watch showed TP_IRQ (PE13) never toggling.
+                 * This answers whether the SPI/ADC link to the controller
+                 * is alive at all, independent of that one pin. */
+                uint32_t seconds = cads_parse_uint(argument);
+                if(!seconds) seconds = 15u;
+                cads_probe_puts("# raw touch ADC (ignores IRQ), press/drag now\r\n");
+                uint32_t start = cads_hal_ticks_ms();
+                while((cads_hal_ticks_ms() - start) < seconds * 1000u) {
+                    uint16_t raw_x = cads_hal_touch_read_raw_x();
+                    uint16_t raw_y = cads_hal_touch_read_raw_y();
+                    bool irq = cads_hal_touch_irq_raw();
+                    cads_probe_puts("RAW x=");
+                    cads_probe_put_uint(raw_x);
+                    cads_probe_puts(" y=");
+                    cads_probe_put_uint(raw_y);
+                    cads_probe_puts(" irq=");
+                    cads_probe_put_uint(irq ? 1u : 0u);
+                    cads_probe_puts("\r\n");
+                    cads_hal_delay_ms(200u);
+                }
+                cads_probe_puts("# raw touch view end\r\n");
+                break;
+            }
+#endif /* CADS_TARGET_ITSBOARD */
             case 'q': cads_touch_soak(cads_parse_uint(argument)); break;
             case 'r': cads_toolbox_selftest(); break;
             case 'u': cads_explorer_storage_test(); break;

@@ -92,6 +92,8 @@ static uint16_t cads_touch_scale(uint16_t raw, uint16_t min, uint16_t max, uint1
 void cads_hal_touch_read(cads_touch_state_t* state) {
     state->pressed = false;
     state->pressure = 0u;
+    state->x = 0u;
+    state->y = 0u;
 
     if(!cads_touch_pressed()) return;
 
@@ -121,6 +123,42 @@ void cads_hal_touch_read(cads_touch_state_t* state) {
                               CADS_DISPLAY_HEIGHT));
     state->pressure = 1u;
     state->pressed = true;
+}
+
+/*
+ * Diagnostic only, not part of the portable cads_hal.h surface: reads the
+ * XPT2046's raw ADC counts unconditionally, ignoring cads_touch_pressed()
+ * entirely. Exists to answer one question during a live investigation -
+ * TP_IRQ (PE13) never toggled in a port-wide watch even while the panel was
+ * actively pressed, so is the SPI link to the controller itself alive at
+ * all, or is the whole chip unresponsive? If this reports plausible,
+ * varying counts while pressed, the SPI/ADC half works and the fault is
+ * narrowed to the IRQ line specifically (wiring or the controller's PENIRQ
+ * output); if it reports the same fixed junk regardless of touch, the
+ * whole link is suspect. Declared extern directly in explorer.c rather than
+ * added to core/cads_hal.h - this is not a capability the simulator or any
+ * other target needs to implement.
+ */
+uint16_t cads_hal_touch_read_raw_x(void) {
+    cads_hal_spi_claim_bus();
+    cads_hal_spi_set_speed(CadsSpiSpeedTouch);
+    uint16_t raw = cads_touch_median(XPT2046_CMD_X);
+    cads_hal_spi_restore_display_speed();
+    cads_hal_spi_release_bus();
+    return raw;
+}
+
+uint16_t cads_hal_touch_read_raw_y(void) {
+    cads_hal_spi_claim_bus();
+    cads_hal_spi_set_speed(CadsSpiSpeedTouch);
+    uint16_t raw = cads_touch_median(XPT2046_CMD_Y);
+    cads_hal_spi_restore_display_speed();
+    cads_hal_spi_release_bus();
+    return raw;
+}
+
+bool cads_hal_touch_irq_raw(void) {
+    return cads_touch_pressed();
 }
 
 void cads_hal_touch_set_calibration(
