@@ -2014,6 +2014,80 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-25 — Watchdog-fed crash forensics: hardware-gated, with one real
+  bug found and fixed along the way and one narrower question still open.
+  A first flashed build of `cads_hal_watchdog_init()` (see this same
+  date's earlier Log entry for the feature itself) built clean and
+  booted clean, but a live `z FAULT` test never auto-recovered - the
+  board just sat hung indefinitely, watchdog included. Root cause,
+  found by comparing against ST's own `HAL_IWDG_Init()`: the enable key
+  (0xCCCC) has to be written FIRST, before the register-access unlock
+  and PR/RLR configure/wait sequence, not last - RM0090 20.3.2 and the
+  HAL both start-then-configure; the original code configured-then-
+  started, which built, looked reasonable, and simply did not work.
+  Also widened the forensic ring's per-slot validity marker from one
+  32-bit magic word to two, after confirming live that this board's
+  CCM - reset dozens of times in one session without a true power
+  cycle - produced an actual coincidental match on the single-word
+  version within the first hour of the feature existing (two phantom
+  records with garbled `reason` strings, since `reason` is a raw flash
+  pointer and old CCM content read through a newer build's `.rodata`
+  layout is exactly the kind of stale-but-plausible-looking garbage a
+  coincidental magic match would produce - not a real-world concern,
+  since normal operation resets far more than it reflashes, but a real
+  gap during a night this heavy on iteration).
+  PROVEN, after the fix: a new board-only `X` explorer command
+  (interrupts off, spin forever, nothing else - deliberately isolated
+  from `z FAULT`'s own bkpt/HardFault-escalation machinery) auto-
+  recovered within the expected window with no debugger attached, and
+  the following boot's `cads_hal_reset_cause()` correctly reported
+  "IWDG watchdog". That is the core safety property this feature exists
+  for, confirmed live.
+  STILL OPEN: `z FAULT` itself (UsageFault -> bkpt -> HardFault
+  escalation, no debugger attached) does not currently auto-recover,
+  even after the ordering fix and even after a full power cycle ruled
+  out a stuck debug-enable latch as the explanation. The `X` path proves
+  the watchdog mechanism is sound in isolation, so this is narrower than
+  it first looked - something specific to the fault-recursion path, not
+  the watchdog itself. Deliberately not chased further live tonight;
+  next session should reason about it fresh rather than continue
+  trial-and-error against real hardware.
+  VERIFIED: host ctest 30/30 throughout. Board: clean boot, `X`-induced
+  hang auto-recovers, reset cause correctly decoded, forensic ring
+  records and displays real crash data across a genuine recovery cycle.
+  RAM margin 416 B unchanged throughout (every byte of the ring and its
+  wider magic lives in CCM, confirmed via the linker's own 48K-floor
+  ASSERT catching a first CMake mistake that put it in RAM instead - see
+  that date's earlier Log entry).
+
+- 2026-08-25 — Touch: one real fix applied and verified insufficient,
+  narrowing the problem rather than closing it. The touch-research
+  background agent's top hypothesis (a 10us delay inside
+  `cads_touch_read_axis()`, between the command byte and the two data
+  bytes, letting the XPT2046's charge-redistribution SAR droop toward
+  zero while power-down-idle) was well-argued and matched the symptom
+  precisely, but removing it did NOT fix the coordinate readings -
+  confirmed live, with the user actually pressing across a clean
+  30-second `Q` window: `irq=1` correctly tracked 41 of 151 samples
+  (press-detection genuinely works, unchanged from before), but the raw
+  ADC counts were still single/low-double digits instead of spanning
+  0-4095. So two things are now more precisely known than at the start
+  of the night: the IRQ/pen-down signal path is entirely sound (proven
+  twice now, independently), and whatever is wrong is specific to the
+  SPI coordinate *data* path and is NOT explained by the mid-transaction
+  delay. The research agent's own fallback (masking PENIRQ during the
+  read via PD1PD0 bits, with a mandatory re-arm before releasing CS) was
+  not attempted - real risk of breaking the now-twice-confirmed-working
+  press detection if the re-arm is not exactly right, not something to
+  try live this late without being able to verify carefully. NEXT
+  SESSION: the research agent's own conclusion stands - this needs a
+  logic analyzer or scope on the SPI lines to see what is actually being
+  clocked, rather than more reasoned-from-the-datasheet guesses. Two
+  firmware attempts (this session's own delay fix, plus whatever
+  produced the original implementation) have both been plausible and
+  both wrong, which is itself evidence this is not a software-logic bug
+  discoverable by reading the code again.
+
 - 2026-08-25 — Resolved the button/touch input investigation that ran
   across most of this session, with a real live-hardware protocol this
   time (previous attempts kept getting confounded by nobody actually
