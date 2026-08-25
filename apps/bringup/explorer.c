@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "cads/diag/forensic.h"
 #include "cads_hal.h"
 #include "canvas.h"
 #include "cads_splash.h"
@@ -82,6 +83,16 @@ static void cads_put_hex16(uint32_t value) {
         value >>= 4;
     }
     cads_hal_console_write(out, 4u);
+}
+
+static void cads_put_hex32(uint32_t value) {
+    static const char digits[] = "0123456789ABCDEF";
+    char out[8];
+    for(int i = 7; i >= 0; i--) {
+        out[i] = digits[value & 0xFu];
+        value >>= 4;
+    }
+    cads_hal_console_write(out, 8u);
 }
 
 static void cads_dump_ports(void) {
@@ -497,6 +508,77 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'C': cads_explorer_sniff_demo(cads_parse_uint(argument) ?: 10u); break;
+            case 'E': {
+                /* Crash forensics: what the watchdog/fault-handler ring
+                 * (modules/diag) recorded, oldest boot's reset cause
+                 * first this line, then every stored crash newest first.
+                 * See core/cads_hal.h and modules/diag/include/cads/diag/
+                 * forensic.h for the full design. */
+#ifdef CADS_TARGET_ITSBOARD
+                static const char* const reset_cause_names[] = {
+                    "unknown", "power-on", "pin/NRST", "software",
+                    "IWDG watchdog", "WWDG watchdog", "low-power",
+                };
+                cads_reset_cause_t cause = cads_hal_reset_cause();
+                cads_probe_puts("# this boot's reset cause: ");
+                cads_probe_puts(reset_cause_names[(uint32_t)cause]);
+                cads_probe_puts("\r\n");
+#else
+                cads_probe_puts("# this boot's reset cause: n/a (sim)\r\n");
+#endif
+                uint32_t count = cads_forensic_count();
+                cads_probe_puts("# forensic ring: ");
+                cads_probe_put_uint(count);
+                cads_probe_puts(" record(s)\r\n");
+                for(uint32_t i = 0; i < count; i++) {
+                    cads_forensic_record_t record;
+                    if(!cads_forensic_get(i, &record)) break;
+                    cads_probe_puts("# [");
+                    cads_probe_put_uint(i);
+                    cads_probe_puts("] seq=");
+                    cads_probe_put_uint(record.sequence);
+                    cads_probe_puts(" t=");
+                    cads_probe_put_uint(record.uptime_ms);
+                    cads_probe_puts("ms reason=");
+                    cads_probe_puts(record.reason ? record.reason : "(none)");
+                    cads_probe_puts("\r\n");
+                    if(record.has_frame) {
+                        cads_probe_puts("#     PC=0x");
+                        cads_put_hex32(record.frame.pc);
+                        cads_probe_puts(" LR=0x");
+                        cads_put_hex32(record.frame.lr);
+                        cads_probe_puts(" xPSR=0x");
+                        cads_put_hex32(record.frame.xpsr);
+                        cads_probe_puts("\r\n#     R0=0x");
+                        cads_put_hex32(record.frame.r0);
+                        cads_probe_puts(" R1=0x");
+                        cads_put_hex32(record.frame.r1);
+                        cads_probe_puts(" R2=0x");
+                        cads_put_hex32(record.frame.r2);
+                        cads_probe_puts(" R3=0x");
+                        cads_put_hex32(record.frame.r3);
+                        cads_probe_puts(" R12=0x");
+                        cads_put_hex32(record.frame.r12);
+                        cads_probe_puts("\r\n");
+                    }
+                    cads_probe_puts("#     CFSR=0x");
+                    cads_put_hex32(record.cfsr);
+                    cads_probe_puts(" HFSR=0x");
+                    cads_put_hex32(record.hfsr);
+                    cads_probe_puts("\r\n");
+                    if(record.mmfar_valid) {
+                        cads_probe_puts("#     MMFAR=0x");
+                        cads_put_hex32(record.mmfar);
+                        cads_probe_puts("\r\n");
+                    }
+                    if(record.bfar_valid) {
+                        cads_probe_puts("#     BFAR=0x");
+                        cads_put_hex32(record.bfar);
+                        cads_probe_puts("\r\n");
+                    }
+                }
+                break;
+            }
             case 'M': cads_explorer_mactable_demo(cads_parse_uint(argument) ?: 15u); break;
             case 'N': cads_explorer_l2discover_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'R': cads_explorer_dhcpwatch_demo(cads_parse_uint(argument) ?: 20u); break;

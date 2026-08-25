@@ -37,6 +37,10 @@ if(NOT TARGET cads_toolbox)
     add_subdirectory(${CADS_ROOT}/modules/toolbox ${CMAKE_CURRENT_BINARY_DIR}/modules/toolbox)
 endif()
 
+if(NOT TARGET cads_diag)
+    add_subdirectory(${CADS_ROOT}/modules/diag ${CMAKE_CURRENT_BINARY_DIR}/modules/diag)
+endif()
+
 # Unity is a submodule, not a package. It is built without cads_flags: its
 # warnings are not ours to fix, and burying our own in them helps nobody.
 if(NOT EXISTS ${CADS_ROOT}/lib/Unity/src/unity.c)

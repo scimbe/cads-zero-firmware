@@ -57,6 +57,7 @@
 #include <stdint.h>
 
 #include "board.h"
+#include "cads/diag/forensic.h"
 #include "cads/toolbox/fmt.h"
 #include "cads_hal.h"
 
@@ -108,11 +109,24 @@ __attribute__((noreturn)) static void cads_fault_dump(const char* name, uint32_t
      * here rather than split, since a reader with the manual open can shift
      * it apart faster than four extra lines would let them. */
     uint32_t cfsr = SCB->CFSR;
+    uint32_t hfsr = SCB->HFSR;
     cads_fault_field("CFSR", cfsr);
-    cads_fault_field("HFSR", SCB->HFSR);
+    cads_fault_field("HFSR", hfsr);
 
-    if(cfsr & SCB_CFSR_MMARVALID_Msk) cads_fault_field("MMFAR", SCB->MMFAR);
-    if(cfsr & SCB_CFSR_BFARVALID_Msk) cads_fault_field("BFAR", SCB->BFAR);
+    bool mmfar_valid = (cfsr & SCB_CFSR_MMARVALID_Msk) != 0u;
+    bool bfar_valid = (cfsr & SCB_CFSR_BFARVALID_Msk) != 0u;
+    if(mmfar_valid) cads_fault_field("MMFAR", SCB->MMFAR);
+    if(bfar_valid) cads_fault_field("BFAR", SCB->BFAR);
+
+    /* Recorded into the persistent ring (modules/diag) before the halt
+     * below, so it is still readable by a debugger at the next reboot even
+     * if nothing is attached right now - see docs/ROADMAP.md's dated Log
+     * entry for the watchdog/forensics feature this is part of. */
+    cads_forensic_frame_t forensic_frame = {
+        .r0 = frame->r0, .r1 = frame->r1, .r2 = frame->r2, .r3 = frame->r3,
+        .r12 = frame->r12, .lr = frame->lr, .pc = frame->pc, .xpsr = frame->xpsr};
+    cads_forensic_record(
+        name, &forensic_frame, cfsr, hfsr, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR);
 
     __asm volatile("bkpt #0" ::: "memory");
     for(;;) {

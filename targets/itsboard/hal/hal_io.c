@@ -12,6 +12,7 @@
  */
 
 #include "board.h"
+#include "cads/diag/forensic.h"
 #include "cads_hal.h"
 #include "hal_gpio.h"
 
@@ -111,6 +112,19 @@ __attribute__((noreturn)) void cads_hal_panic(const char* reason) {
         cads_hal_console_write(reason, length);
     }
     cads_hal_console_write(" ***\r\n", 6u);
+
+    /* No exception frame here - this is a plain C call, not a hardware
+     * fault entry - so the ring records the reason string and whatever
+     * CFSR/HFSR happen to hold (typically 0: most panics, like a stack
+     * overflow or an LWIP_PLATFORM_ASSERT, are software checks, not CPU
+     * faults) rather than fabricating register state that was never
+     * pushed. See fault_handlers.c's own use of this same ring for the
+     * exception-entry case, which does have a real frame. */
+    uint32_t cfsr = SCB->CFSR;
+    bool mmfar_valid = (cfsr & SCB_CFSR_MMARVALID_Msk) != 0u;
+    bool bfar_valid = (cfsr & SCB_CFSR_BFARVALID_Msk) != 0u;
+    cads_forensic_record(
+        reason, NULL, cfsr, SCB->HFSR, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR);
 
     /* Stop with everything intact so the attached ST-Link can inspect it. */
     __asm volatile("bkpt #0" ::: "memory");

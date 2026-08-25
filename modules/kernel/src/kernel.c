@@ -37,8 +37,19 @@ void cads_kernel_init(void) {
     cads_scheduler_started = false;
 }
 
+/* See core/cads_hal.h's own comment on cads_hal_watchdog_init for the
+ * reasoning; 2000 is the timeout in ms this passes down to it. */
+#define CADS_WATCHDOG_TIMEOUT_MS 2000u
+
 void cads_kernel_start(void) {
     cads_scheduler_started = true;
+
+    /* Started here, immediately before the call that makes SysTick (and
+     * therefore vApplicationTickHook below) start firing, so the gap
+     * between "watchdog armed" and "watchdog being fed" is one tick
+     * period, not an open window sized by whatever happens to run next. */
+    cads_hal_watchdog_init(CADS_WATCHDOG_TIMEOUT_MS);
+
     vTaskStartScheduler();
 
     /* Only reached if the scheduler could not start, which on a static
@@ -253,6 +264,20 @@ __attribute__((noreturn)) void cads_kernel_assert(const char* file, int line) {
 }
 
 /* --- kernel hooks --------------------------------------------------------- */
+
+/*
+ * Feeds the independent watchdog once per SysTick (1 kHz, configTICK_RATE_HZ),
+ * regardless of which task is running or what it is doing - deliberately
+ * not tied to any application task's own progress. See core/cads_hal.h's
+ * own comment on cads_hal_watchdog_init for the full reasoning: this
+ * proves the interrupt subsystem is alive (catching a HardFault-recursion
+ * lockup or an interrupts-disabled deadlock) with zero risk of a spurious
+ * reset during any legitimate long operation, since none of them ever stop
+ * the tick from firing.
+ */
+void vApplicationTickHook(void) {
+    cads_hal_watchdog_feed();
+}
 
 void vApplicationStackOverflowHook(TaskHandle_t task, char* name) {
     (void)task;

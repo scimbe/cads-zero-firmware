@@ -64,7 +64,10 @@
 #define configCHECK_FOR_STACK_OVERFLOW          2
 #define configUSE_MALLOC_FAILED_HOOK            0  /* no heap to fail */
 #define configUSE_IDLE_HOOK                     0
-#define configUSE_TICK_HOOK                     0
+/* On: vApplicationTickHook (kernel.c) feeds the independent watchdog every
+ * SysTick. See core/cads_hal.h's own comment on cads_hal_watchdog_init for
+ * why the tick rather than an application task. */
+#define configUSE_TICK_HOOK                     1
 #define configUSE_TRACE_FACILITY                1
 #define configGENERATE_RUN_TIME_STATS           0
 #define configRECORD_STACK_HIGH_ADDRESS         1

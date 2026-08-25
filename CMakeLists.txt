@@ -116,6 +116,11 @@ add_subdirectory(modules/net)
 # the same board/host split as cads/net/net.h and for the same reason.
 add_subdirectory(modules/cli)
 
+# The crash-forensics ring buffer is fully portable (see modules/diag's own
+# CMakeLists.txt) - only its callers (the board's fault handlers and panic
+# path) are target specific.
+add_subdirectory(modules/diag)
+
 if(CADS_TARGET STREQUAL "itsboard")
     add_subdirectory(modules/kernel)
 endif()
@@ -271,7 +276,7 @@ if(CADS_APP_GAME)
     target_link_libraries(cads_apps PUBLIC cads_app_game)
 endif()
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
-target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli)
+target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli cads_diag)
 if(CADS_TARGET STREQUAL "itsboard")
     target_link_libraries(cads_apps PUBLIC cads_kernel)
 endif()
@@ -293,7 +298,7 @@ if(CADS_TARGET STREQUAL "itsboard")
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)
 
     add_executable(cads-zero.elf targets/itsboard/main.c)
-    target_link_libraries(cads-zero.elf PRIVATE cads_apps cads_services cads_gui cads_kernel cads_hal_itsboard cads_flags)
+    target_link_libraries(cads-zero.elf PRIVATE cads_apps cads_services cads_gui cads_kernel cads_hal_itsboard cads_diag cads_flags)
     target_link_options(cads-zero.elf PRIVATE
         -T${CADS_LINKER_SCRIPT}
         -Wl,--gc-sections

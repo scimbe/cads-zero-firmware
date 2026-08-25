@@ -23,6 +23,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_freqcounter.c
     hal/hal_pwm.c
     hal/hal_sample_timer.c
+    hal/hal_watchdog.c
     hal/hal_init.c
 )
 
@@ -30,6 +31,7 @@ target_include_directories(cads_hal_itsboard PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/hal
     ${CADS_ROOT}/core
+    ${CADS_ROOT}/modules/diag/include
     ${CADS_ROOT}/lib/CMSIS_6/CMSIS/Core/Include
     ${CADS_ROOT}/lib/cmsis_device_f4/Include
 )
