@@ -73,6 +73,7 @@
 uint16_t cads_hal_touch_read_raw_x(void);
 uint16_t cads_hal_touch_read_raw_y(void);
 bool cads_hal_touch_irq_raw(void);
+void cads_hal_touch_read_raw_bytes(uint8_t* x_high, uint8_t* x_low, uint8_t* y_high, uint8_t* y_low);
 #endif
 
 static void cads_put_hex16(uint32_t value) {
@@ -730,12 +731,22 @@ void cads_explorer_run(void) {
                     uint16_t raw_x = cads_hal_touch_read_raw_x();
                     uint16_t raw_y = cads_hal_touch_read_raw_y();
                     bool irq = cads_hal_touch_irq_raw();
+                    uint8_t x_high = 0u, x_low = 0u, y_high = 0u, y_low = 0u;
+                    cads_hal_touch_read_raw_bytes(&x_high, &x_low, &y_high, &y_low);
                     cads_probe_puts("RAW x=");
                     cads_probe_put_uint(raw_x);
                     cads_probe_puts(" y=");
                     cads_probe_put_uint(raw_y);
                     cads_probe_puts(" irq=");
                     cads_probe_put_uint(irq ? 1u : 0u);
+                    cads_probe_puts(" xhi=");
+                    cads_probe_put_uint(x_high);
+                    cads_probe_puts(" xlo=");
+                    cads_probe_put_uint(x_low);
+                    cads_probe_puts(" yhi=");
+                    cads_probe_put_uint(y_high);
+                    cads_probe_puts(" ylo=");
+                    cads_probe_put_uint(y_low);
                     cads_probe_puts("\r\n");
                     cads_hal_delay_ms(200u);
                 }

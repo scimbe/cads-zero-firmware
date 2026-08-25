@@ -198,6 +198,39 @@ uint16_t cads_hal_touch_read_raw_y(void) {
     return raw;
 }
 
+/*
+ * Diagnostic only: a single unmedianed masked-mode read, byte pair exposed
+ * directly instead of pre-combined into the 12 bit result. Added to answer
+ * one question precisely - cads_hal_touch_read_raw_x/y() report only 0..15
+ * even mid-drag, and (high << 8 | low) >> 3 can only land in that range if
+ * high is exactly 0 on every sample. This makes that testable directly
+ * instead of inferred from the combined value.
+ */
+void cads_hal_touch_read_raw_bytes(
+    uint8_t* x_high,
+    uint8_t* x_low,
+    uint8_t* y_high,
+    uint8_t* y_low) {
+    cads_hal_spi_claim_bus();
+    cads_hal_spi_set_speed(CadsSpiSpeedTouch);
+
+    cads_touch_cs(true);
+    (void)cads_hal_spi_transfer(XPT2046_CMD_X_MASKED);
+    *x_high = cads_hal_spi_transfer(0x00u);
+    *x_low = cads_hal_spi_transfer(0x00u);
+    cads_touch_cs(false);
+
+    cads_touch_cs(true);
+    (void)cads_hal_spi_transfer(XPT2046_CMD_Y_MASKED);
+    *y_high = cads_hal_spi_transfer(0x00u);
+    *y_low = cads_hal_spi_transfer(0x00u);
+    cads_touch_cs(false);
+
+    cads_touch_rearm_penirq();
+    cads_hal_spi_restore_display_speed();
+    cads_hal_spi_release_bus();
+}
+
 bool cads_hal_touch_irq_raw(void) {
     return cads_touch_pressed();
 }
