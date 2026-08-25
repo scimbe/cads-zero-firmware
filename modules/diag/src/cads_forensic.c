@@ -42,17 +42,28 @@
 
 #include "cads_hal.h"
 
-#define CADS_FORENSIC_MAGIC 0x43614673u /* "CaFs" in little-endian bytes */
+/* Two independent 32-bit words, not one - confirmed live on hardware that
+ * a single word is not enough: this board's CCM, reset dozens of times in
+ * one debugging session without an intervening true power cycle, produced
+ * a 1-in-4-billion coincidental match on the first word alone within the
+ * first hour of this feature existing. A specific PAIR of unrelated
+ * constants both landing in the two right places by chance is the same
+ * problem again squared - a practical non-issue even on a CCM region this
+ * heavily reused, where a single word demonstrably was not. */
+#define CADS_FORENSIC_MAGIC_A 0x43614673u /* "CaFs" */
+#define CADS_FORENSIC_MAGIC_B 0x21215246u /* "RF!!" */
 
 typedef struct {
-    uint32_t magic;
+    uint32_t magic_a;
+    uint32_t magic_b;
     cads_forensic_record_t record;
 } cads_forensic_slot_t;
 
 CADS_CCM_SECTION static cads_forensic_slot_t cads_forensic_ring[CADS_FORENSIC_RING_DEPTH];
 
 static bool cads_forensic_slot_valid(uint32_t index) {
-    return cads_forensic_ring[index].magic == CADS_FORENSIC_MAGIC;
+    return cads_forensic_ring[index].magic_a == CADS_FORENSIC_MAGIC_A &&
+           cads_forensic_ring[index].magic_b == CADS_FORENSIC_MAGIC_B;
 }
 
 void cads_forensic_record(
@@ -99,7 +110,13 @@ void cads_forensic_record(
     out->bfar_valid = bfar_valid;
     out->bfar = bfar;
 
-    cads_forensic_ring[target].magic = CADS_FORENSIC_MAGIC;
+    /* Both words last, after every record field: a slot only reads as
+     * valid once its content is already fully in place, so a write cut
+     * short (another fault landing mid-record, or the watchdog finally
+     * catching a lockup this same call was trying to explain) leaves the
+     * slot correctly reading as invalid rather than valid-but-torn. */
+    cads_forensic_ring[target].magic_a = CADS_FORENSIC_MAGIC_A;
+    cads_forensic_ring[target].magic_b = CADS_FORENSIC_MAGIC_B;
 }
 
 uint32_t cads_forensic_count(void) {

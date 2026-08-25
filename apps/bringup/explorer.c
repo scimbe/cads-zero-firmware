@@ -617,6 +617,26 @@ void cads_explorer_run(void) {
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
             case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'x': cads_explorer_kernel_test(); break;
+#ifdef CADS_TARGET_ITSBOARD
+            case 'X': {
+                /* Diagnostic only: proves (or disproves) the watchdog in
+                 * complete isolation from fault_handlers.c's bkpt/HardFault-
+                 * escalation machinery, which has too many moving parts of
+                 * its own to be a clean first test. This starves
+                 * vApplicationTickHook (modules/kernel/src/kernel.c) the
+                 * simplest possible way - interrupts globally off, nothing
+                 * else running - and does nothing else. If IWDG is actually
+                 * armed and counting, the board resets within ~2s; if
+                 * printed at all, "still here" past that point means the
+                 * watchdog is not doing its job, independent of anything
+                 * about fault recursion. */
+                cads_probe_puts("# disabling interrupts and spinning - watchdog should reset this board in ~2s\r\n");
+                __asm volatile("cpsid i" ::: "memory"); /* PRIMASK=1, no CMSIS header dependency */
+                for(;;) {
+                }
+                break;
+            }
+#endif
             case 'w': cads_watch_ports(cads_parse_uint(argument) ?: 20u); break;
             case 'o': {
                 uint32_t value = cads_parse_hex(argument);

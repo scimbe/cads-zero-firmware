@@ -59,19 +59,35 @@ void cads_hal_watchdog_init(uint32_t timeout_ms) {
      * attaches. */
     DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;
 
+    /* Order matters and this is now deliberately ST's own documented/HAL
+     * sequence, not the "configure then start" order an earlier version of
+     * this function used (which built and ran without an obvious fault,
+     * but never actually recovered a live fault-injection test - IWDG
+     * appears to need the enable key written before it, or before its
+     * register-access unlock, does anything meaningful; RM0090 20.3.2 and
+     * ST's own HAL_IWDG_Init() both write 0xCCCC first). Starting before
+     * PR/RLR are configured briefly runs with the hardware reset default
+     * (~512 ms at /4, RLR=0xFFF) rather than the intended ~2 s - strictly
+     * shorter, never a correctness problem, and this whole function
+     * completes in well under a millisecond so there is no real window for
+     * that default to matter. */
+    IWDG->KR = CADS_IWDG_START_KEY;
     IWDG->KR = CADS_IWDG_UNLOCK_KEY;
     IWDG->PR = CADS_IWDG_PRESCALER_BITS;
     IWDG->RLR = CADS_IWDG_RELOAD_VALUE;
-    while(IWDG->SR & (IWDG_SR_PVU | IWDG_SR_RVU)) {
-        /* RM0090 20.4.3: PR/RLR are on IWDG's own async clock domain: the
-         * write is not visible to a read-back until the update completes.
-         * Bounded by construction - LSI is running and this loop is only
-         * waiting out that domain-crossing delay, not an external event
-         * that could hang. */
+
+    /* RM0090 20.4.3: PR/RLR are on IWDG's own LSI-clocked domain, and PVU/
+     * RVU only clear once that domain has processed the write. Bounded,
+     * same fix shape as this same session's earlier hal_spi.c PA7 DMASR
+     * drain fix (an unbounded register-status poll that hung the board on
+     * real hardware) - proceeding after the timeout without the
+     * acknowledgement just means this boot's actual reload value might
+     * still be settling for a moment longer, not a hang. */
+    uint64_t deadline = cads_hal_ticks_us() + 2000u;
+    while((IWDG->SR & (IWDG_SR_PVU | IWDG_SR_RVU)) && cads_hal_ticks_us() < deadline) {
     }
 
-    IWDG->KR = CADS_IWDG_RELOAD_KEY; /* First feed. */
-    IWDG->KR = CADS_IWDG_START_KEY;
+    IWDG->KR = CADS_IWDG_RELOAD_KEY; /* First feed, with the real values applied. */
 }
 
 void cads_hal_watchdog_feed(void) {
