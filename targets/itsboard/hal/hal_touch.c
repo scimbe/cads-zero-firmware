@@ -54,9 +54,20 @@ static bool cads_touch_pressed(void) {
 }
 
 static uint16_t cads_touch_read_axis(uint8_t command) {
+    /* No delay between the command byte and the two data bytes: this used
+     * to stall 10us here for "conversion time", which is exactly what was
+     * breaking every reading. The XPT2046's SAR is a charge-redistribution
+     * DAC that is power-down-idle between conversions (PD1PD0=00 in the
+     * command byte); stopping the clock mid-transaction for 10us gives
+     * that charge time to droop toward zero before the data bytes are even
+     * clocked out. Confirmed live on hardware: with the delay, IRQ tracked
+     * real touch/release correctly but the 12-bit result was always
+     * single/low-double digits (high byte ~0, only the low byte varying) -
+     * exactly what a drooped SAR produces. Every known-good XPT2046 driver
+     * clocks the command and the two data bytes as one continuous 24-clock
+     * burst with no gap; this now does the same. */
     cads_touch_cs(true);
     (void)cads_hal_spi_transfer(command);
-    cads_hal_delay_us(10u); /* conversion time */
     uint8_t high = cads_hal_spi_transfer(0x00u);
     uint8_t low = cads_hal_spi_transfer(0x00u);
     cads_touch_cs(false);
