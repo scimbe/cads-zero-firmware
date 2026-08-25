@@ -29,8 +29,17 @@ typedef struct {
 
 static cads_button_t cads_buttons[CADS_BUTTON_COUNT];
 
-/* Logical key -> physical button. Positional by default: key n is Sn. */
-static uint8_t cads_key_binding[CADS_BUTTON_COUNT] = {0, 1, 2, 3, 4, 5, 6, 7};
+/*
+ * Logical key -> physical button. Was the identity mapping (key n is Sn),
+ * changed 2026-08-25 to the layout the user asked for after using the
+ * default one live at the board: Up/Down swapped (S0=Down, S1=Up), OK
+ * moved to S7 and Back to S6 (both were the two rightmost buttons under
+ * the default mapping, matching a "primary actions live at the far end of
+ * the row" preference), F1/F2 slid into the two slots that frees (S4, S5)
+ * so every physical button still does something. cads_input_bind() at
+ * runtime overrides any of this per key; this is only the boot default.
+ */
+static uint8_t cads_key_binding[CADS_BUTTON_COUNT] = {1, 0, 2, 3, 7, 6, 4, 5};
 
 static cads_input_callback_t cads_callback;
 static void* cads_callback_context;
