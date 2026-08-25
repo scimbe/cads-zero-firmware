@@ -19,3 +19,8 @@ Read them in roughly this order:
    costs 448 ms, measured. Everything about the drawing model follows.
 5. **[Clean room, and what that means here](clean-room.md)** — what was borrowed,
    what was not, and the licensing consequence.
+
+Separately, on how the build itself is set up rather than how the firmware is
+shaped: **[The toolchain, and why it comes from vcpkg](toolchain.md)** — why the
+compiler is `arm-none-eabi-gcc`, where it is provisioned from and what that does
+and does not pin, and the one piece of the rationale that was never written down.
