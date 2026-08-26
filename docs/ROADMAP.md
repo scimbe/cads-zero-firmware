@@ -2004,6 +2004,49 @@ final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
       regenerate them is the actual remaining work, not new capture
       tooling. `[swarm-ready]`
 
+## M9 — Active network tooling  `[ ]`
+
+Queued 2026-08-26 from the user's own suggestion, in the same spirit as
+the Flipper Zero WiFi devboard research this session: this board already
+carries an extensive PASSIVE network Swiss-army-knife (`apps/bringup/
+explorer.c`'s A/P/T/G/C/M/N/R/B/U/O commands - ARP scan, ping,
+traceroute, packet generator, promiscuous capture, MAC table, L2 recon,
+rogue-DHCP watch, ARP watch, SSDP/UPnP watch, traffic overview), plus an
+iperf2-compatible server (M5). What it does not have yet is anything
+ACTIVE/offensive - tools that inject forged traffic rather than only
+observing it. Deliberately not started the same session it was
+requested in, and for a sharper reason than M8's "needs real design
+attention": these transmit forged packets onto whatever network the
+board is plugged into, including networks other devices depend on -
+the blast radius of a bug here is not "the demo looks wrong," it is
+"something else on the LAN loses connectivity." Real design attention
+means at minimum: a dry-run mode that logs what it would send without
+transmitting, an explicit target/scope confirmation before the first
+real packet goes out (same spirit as the M4 hardware gate's jumper
+requirement - make the operator confirm they mean it), and a clear
+statement in the command's own help text that this is for a controlled/
+isolated test network, not a shared one. `[needs-decision]` on the
+confirmation UX specifically - that's a real design choice, not
+something to pick blind at 1am.
+
+- [ ] ARP spoofing: send forged ARP replies to redirect traffic between
+      two hosts through this board (or to itself), for testing how
+      other devices/software on a controlled network detect or react to
+      it. Natural counterpart to the already-implemented ARP watch (`B`)
+      - that command exists specifically to detect this attack, so this
+      board can now demonstrate both sides of the same technique.
+      `[needs-decision]`
+- [ ] DHCP spoofing / rogue DHCP server: answer DHCP requests with
+      attacker-controlled lease info (gateway/DNS), for the same
+      controlled-network testing purpose. Counterpart to the existing
+      rogue-DHCP watch (`R`). `[needs-decision]`
+- [ ] Whatever else fits the same bar once the confirmation-UX decision
+      is made - the user asked for "everything what is possible useful,"
+      but scope that against what a Flipper-class tool actually ships
+      (this list, plus maybe deauth-adjacent Wi-Fi tooling once/if the
+      Flipper Zero WiFi devboard integration research from this session
+      turns into real hardware work) rather than open-ended scope creep.
+
 ## Open decisions (need the user)
 
 _None outstanding._
