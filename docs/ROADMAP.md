@@ -2063,8 +2063,168 @@ _None outstanding._
 
 ## Log
 
-- 2026-08-26 (latest) — Ethernet reachability root-caused to a physical RMII
+- 2026-08-26 (RESOLVED) — **Ethernet reachability fixed. 15/15 ping replies,
+  0% loss, sub-millisecond RTT, ARP resolving to the board's real MAC on the
+  bench Mac - the first successful end-to-end traffic in this project's
+  history.** Root cause was two independent firmware bugs, both found the
+  same way: flashing the confirmed-working vendor `iperf` build and CaDS
+  Zero in turn on the same board and diffing the full ETH/GPIO/RCC register
+  file live over SWD (`st-util --no-reset`) at the same execution point
+  (post link-up). The entries below record the two wrong turns this
+  investigation took first (a broken vendor-image extraction, then a
+  premature "it must be PA7 starvation alone" theory); this entry records
+  what was actually wrong.
+  **Bug 1 - `hal_eth_mac.c`: the DMABMR.SR software reset ran AFTER MAC
+  configuration and silently wiped all of it.** RM0090's SR bit resets the
+  entire MAC/DMA register file to defaults. The old order (set MACA0, set
+  MACCR, then reset) left the MAC running at the reset-default **10M
+  half-duplex against a 100M full-duplex link** - garbling the RMII wire in
+  both directions, which is why autonegotiation (pure PHY-analog) always
+  looked fine while not one frame ever survived in either direction, why
+  Wireshark on the Mac saw literally nothing, and why the MAC's own
+  `tx_good` counter still incremented (the MAC believed its 10M-timed
+  transmit worked). It also left MACA0 at FF:FF:FF:FF:FF:FF and the MDC
+  divider at Div42 (4.3 MHz, over the LAN8742A's 2.5 MHz ceiling). The
+  smoking gun in the dumps: vendor `MACCR=0xce0c` (DM=1, FES=1) vs ours
+  `0x800c` (DM=0, FES=0); vendor MACA0 = its real MAC vs ours = all-ones.
+  Fix: reset first, then restore the MDC divider, then configure address
+  and MACCR.
+  **Bug 2 - `hal_spi.c`: PA7/CRS_DV parked on the SPI alternate function at
+  idle, so the MAC's receive path was electrically disconnected except
+  inside a display blit's release window.** `cads_eth_rmii_pins_init()`
+  deliberately leaves PA7 alone and `cads_hal_spi_release_bus()` only
+  flips it to AF11 after the NEXT blit - so between `mac_start()` and that
+  next blit (during console-driven diagnostics: forever), CRS_DV never
+  reached the MAC. The vendor parks PA7 on AF11/ETH at idle (measured:
+  `GPIOA_AFRL` pin-7 nibble 0xB vs our 0x5). Fix:
+  `cads_hal_spi_set_eth_datapath_active(true)` now parks PA7 on AF11
+  immediately; claim/release still borrows it per blit chunk.
+  With bug 1 fixed alone: still 0 RX (PA7 disconnected). With both: first
+  test showed rx=7/tx=7 within seconds (the Mac's ARP probes being
+  received and answered), second test 15/15 ping replies at ~0.9 ms avg
+  plus the user's own independent long-running ping stabilizing at
+  0.5-1.2 ms. Multi-second RTTs right at bring-up are expected: they are
+  packets that queued while the netif was still down, drained on link-up.
+  Replies flow only while something calls `cads_net_poll()` (the `h`
+  gate, a net app in the app tree) - that is the design, not a bug, but
+  worth remembering when a ping "stops": check what app is foregrounded
+  before suspecting the driver again.
+  Also fixed en route (correct but neither sufficient): MAC-before-DMA
+  enable order in `cads_hal_eth_mac_start()` (RM0090/ST-HAL order), and
+  chunked display blits (24 rows per claim/release instead of a whole
+  screen - keeps PA7's ETH windows frequent under display load; visually
+  verified clean via webcam). M5's hardware gate can finally move off
+  `[!]` - end-to-end RX/TX is proven on real hardware. The
+  SB121/SB122/PB5 rework remains available as the permanent way to end
+  PA7 sharing entirely, but is no longer required for basic reachability.
+
+- 2026-08-26 (superseded by the RESOLVED entry above) — Follow-on to the retraction below: with
+  hardware and toolchain now cleared, went looking for the real cause of
+  CaDS Zero's own Ethernet reachability failure and found one real, wrong-
+  ordering bug (fixed, kept), one real and significant resource-starvation
+  issue (found, partially mitigated, but **the mitigation did not fix
+  reachability - still 100% loss**), and ended the session with the actual
+  root cause still open. Recorded in full because the next session should
+  not re-walk this same path.
+  **Fixed: `cads_hal_eth_mac_start()` enabled DMA (`DMAOMR.ST/SR`) before
+  the MAC (`MACCR.TE/RE`)**, backwards from RM0090's own recommended order
+  and from ST's HAL `HAL_ETH_Start()` (MAC first, then DMA) - also now
+  symmetric with `cads_hal_eth_mac_stop()`'s already-correct MAC-then-DMA
+  teardown order. Correct and kept, but flashing it alone changed nothing
+  (still 0/N ping replies) - not the root cause by itself.
+  **Found: PA7/CRS_DV starvation is real and measured, not theoretical.**
+  Read `GPIOA_AFRL` live over SWD (`st-util --no-reset`, so nothing about
+  the running board was disturbed) at 0x40020020, bits[31:28] = pin 7's
+  alternate function. During the explorer console's non-GUI diagnostic
+  commands (`h`, `C`, `G` - none of which touch the display) it read
+  **0x5 (SPI1)**, never 0xB (ETH), for the whole test window: PA7 was
+  parked on SPI the entire time, so CRS_DV was never electrically connected
+  to the MAC and RX could not have worked regardless of anything else -
+  explaining why `C 8` (promiscuous capture) caught 0 frames over 8s on an
+  active switch even with 0 RX-descriptor and 0 FIFO-overflow drops (the
+  MAC's own view: nothing arrived, not "arrived and got dropped"). During
+  active GUI blitting (`g`) the same read came back **0xB (ETH)** - the
+  claim/release arbitration in hal_spi.c works correctly when it actually
+  runs; the diagnostic commands just never called it.
+  **Mitigated, not fixed: chunked `cads_hal_display_blit()`** (hal_display.c)
+  from one claim/release per whole blit to one per
+  `CADS_DISPLAY_BLIT_CHUNK_ROWS` (24) rows, reissuing CASET/PASET/RAMWR and
+  re-bracketing CS per chunk - safe (each chunk is structurally identical to
+  two independent blit calls, which the codebase already does correctly
+  today; visually verified via webcam afterward, no tearing/artifacts) and
+  gives Ethernet roughly an order of magnitude more, shorter windows per
+  screen instead of one ~450 ms one (measured bus rate: 342 kpixel/s over
+  480x320). Board self-test and host `ctest` (30/30) both still pass.
+  **Flashed and retested: still 15/15 packets lost, no change at all** -
+  not a partial improvement, literally identical to before the chunking.
+  That is itself informative: a pure duty-cycle/timing explanation should
+  have produced at least occasional lucky hits once windows became this
+  much more frequent, especially against a static test pattern where the
+  display is mostly idle between chunks and touch polling is the only other
+  claimant. It did not. **Conclusion: PA7 starvation is real and measured,
+  but the evidence now says it is not sufficient by itself to explain 100%,
+  every-single-time loss - something else is still wrong, not yet found.**
+  Next session should not re-verify PA7 (it's confirmed, both ways) or
+  retry mild mitigations of it (already tried, measured no effect) -
+  instead get a side-by-side register/state comparison against the
+  confirmed-working vendor build at the same point in execution (post
+  link-up, pre-first-frame), or actual signal-level (logic analyzer/scope)
+  capture on TX_EN/TXD0/TXD1/RXD0/RXD1 while both firmwares run in turn on
+  the same physical setup - the software-visible surface (descriptor rings,
+  MAC/DMA register values, GPIO AF/pin config, MDIO/PHY state) has now been
+  checked as far as it goes without new instrumentation. The permanent fix
+  already designed into the code (`CADS_SPI_MOSI_ON_PB5=1` after swapping
+  SB121/SB122) remains available and untried - a physical rework, not a
+  software change, still the user's call.
+
+- 2026-08-26 — **RETRACTION of the entry below**: the "physical RMII
+  hardware fault" conclusion was wrong, caused by a broken test, not a broken
+  board. "Decisive test 1" in that entry extracted the vendor flash image with
+  `objcopy -O binary --only-section=ER_IROM1` and called it complete. It
+  wasn't: AC6/armlink emits the `.data` load-copy (184 bytes here) as a
+  *second, same-named* `RW_IRAM1` section whose VMA and LMA both read
+  `0x20000000` in the ELF - a toolchain-specific metadata quirk (GCC-linked
+  ELFs, including ours, give `.data` its own correct flash LMA and don't do
+  this). Filtering to `ER_IROM1` silently dropped that section, so the
+  flashed vendor binary ran with whatever stale bytes were already sitting at
+  that flash offset standing in for its initialized globals - the kind of
+  corruption that kills Ethernet/lwIP init silently while leaving
+  `.rodata`-driven boot text on the LCD working fine. The user caught this by
+  independently building and flashing the same `iperf` branch through their
+  own already-working CMSIS-Toolbox/pyOCD VS Code setup
+  (`~/Documents/git/ITS-BRD-VSC-build`) and getting a clean ping - directly
+  contradicting "decisive test 1" and prompting a re-check instead of a
+  defense of the earlier conclusion. Re-extracted the missing 184 bytes from
+  the same `.axf`'s raw file offsets (contiguous with `ER_IROM1`'s own bytes
+  in the file, despite the misleading LMA) and reflashed: ping went from
+  100% loss to 0% loss with no other change. **The vendor `iperf` firmware
+  works fine on this exact board, switch, and cable** - and by extension the
+  earlier "`main` branch fails identically" test (same extraction method) is
+  equally unreliable and should not be trusted either.
+  Checked whether CaDS Zero's own flash image could have the same defect:
+  no. `CMakeLists.txt:330` does a plain `objcopy -O binary` (no section
+  filter) on a GCC-linked ELF, whose `.data` section already carries a
+  correct, distinct flash LMA (`0x080435ec` at time of writing, contiguous
+  right after `.text`/`.rodata`) - and the resulting `.bin`'s size already
+  equals `text + data` exactly, with no gap. Different toolchain, different
+  linker convention, bug does not transfer.
+  **Net effect: hardware and toolchain are both cleared. CaDS Zero's own
+  Ethernet/lwIP stack has a real, still-unexplained reachability bug**, and
+  the investigation restarts from a clean slate on the RMII/MAC/PHY/lwIP
+  init path - this time with a *confirmed-working* reference build on the
+  same physical setup to diff behavior against (not source, per the
+  clean-room policy - only documented pin/register/init-order facts).
+  Lesson for next time: when an extraction/dump step describes itself as
+  "the correct N KB image, avoiding [past bug]", that confidence is exactly
+  where a second, different bug hides - verify a flashed image actually
+  matches `size`'s `text+data` byte-for-byte before trusting a negative
+  result built on it, the same way the RAM-budget and view-capacity checks
+  already get verified elsewhere in this project.
+
+- 2026-08-26 — Ethernet reachability root-caused to a physical RMII
   fault on the board itself, not software, not the bench Mac's USB chain.
+  **(Superseded by the retraction above - kept for the trail, not the
+  conclusion.)**
   Long investigation (see the entry below this one for the full trail);
   this entry records the conclusion reached at the very end, with the
   decisive new evidence.
