@@ -135,6 +135,27 @@ static void cads_eth_desc_rings_init(void) {
 void cads_hal_eth_mac_init(const uint8_t mac_address[6], bool full_duplex, bool speed_100) {
     cads_eth_rmii_pins_init();
 
+    /* Software reset FIRST: DMABMR.SR, self-clearing, resets the ENTIRE
+     * MAC/DMA register file to defaults - MACA0, MACCR, MACMIIAR, all of it.
+     * This used to run after the MACA0/MACCR configuration below and silently
+     * wiped it: the MAC then ran at its reset default of 10M half-duplex
+     * against a 100M full-duplex link (garbling both directions on the RMII
+     * wire - the root cause of the "autonegotiates fine, zero frames ever
+     * pass in either direction" symptom, found by diffing this register file
+     * live over SWD against the vendor reference firmware on the same board),
+     * with a MAC address of FF:FF:FF:FF:FF:FF for good measure. RM0090
+     * requires reading SR as 0 before touching any other register of the
+     * core - so wait, then configure. */
+    ETH->DMABMR |= ETH_DMABMR_SR;
+    uint32_t guard = 100000u;
+    while((ETH->DMABMR & ETH_DMABMR_SR) && guard--) {
+    }
+
+    /* The reset also wiped the MDC divider hal_eth_mdio.c set at boot -
+     * restore it, or every MDIO transfer from here on runs MDC at
+     * HCLK/42 = 4.3 MHz, over the PHY's 2.5 MHz ceiling. */
+    ETH->MACMIIAR = (ETH->MACMIIAR & ~ETH_MACMIIAR_CR) | ETH_MACMIIAR_CR_Div102;
+
     /* MAC address: MACA0HR bits [15:0] hold bytes 5:4 (big end of the
      * address); MACA0LR holds bytes 3:0. MACA0HR bit 31 (MO) always reads 1
      * for address 0 and cannot be cleared - RM0090 table under
@@ -151,13 +172,6 @@ void cads_hal_eth_mac_init(const uint8_t mac_address[6], bool full_duplex, bool 
     if(speed_100) maccr |= ETH_MACCR_FES;
     maccr |= ETH_MACCR_APCS; /* strip pad/FCS on receive - lwIP wants the payload, not padding */
     ETH->MACCR = maccr;
-
-    /* Software reset: DMABMR.SR, self-clearing. RM0090 requires reading it
-     * as 0 before touching any other register of the core. */
-    ETH->DMABMR |= ETH_DMABMR_SR;
-    uint32_t guard = 100000u;
-    while((ETH->DMABMR & ETH_DMABMR_SR) && guard--) {
-    }
 
     cads_eth_desc_rings_init();
 
@@ -176,8 +190,14 @@ void cads_hal_eth_mac_init(const uint8_t mac_address[6], bool full_duplex, bool 
 }
 
 void cads_hal_eth_mac_start(void) {
-    ETH->DMAOMR |= ETH_DMAOMR_ST | ETH_DMAOMR_SR;
+    /* MAC transmitter/receiver enabled before the DMA is told to start, not
+     * after: RM0090's own recommended bring-up order (and ST's HAL
+     * HAL_ETH_Start()) enables MACCR.TE/RE first so the line-side state
+     * machines are already live when DMAOMR.ST/SR lets the DMA begin
+     * fetching descriptors - matches cads_hal_eth_mac_stop()'s already-
+     * symmetric MAC-then-DMA teardown order below. */
     ETH->MACCR |= ETH_MACCR_TE | ETH_MACCR_RE;
+    ETH->DMAOMR |= ETH_DMAOMR_ST | ETH_DMAOMR_SR;
 }
 
 void cads_hal_eth_mac_stop(void) {
