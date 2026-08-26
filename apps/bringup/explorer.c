@@ -410,6 +410,7 @@ static void cads_help(void) {
         "#   T <hex-target> [max-hops]  traceroute, e.g. T c0a80101 16, default 16\r\n"
         "#   I <sec>    iperf2-compatible TCP server: TCP :5001, default 30s\r\n"
         "#   Y <hex-target> [sec]  iperf2 TCP client to <target>:5001, e.g. Y c0a86301 10\r\n"
+        "#   Z <reg> [hex-value]  raw PHY register read, or write+read-back, e.g. Z 0 1140\r\n"
         "#   G <pps> [sec]  packet generator, TIM6-paced, e.g. G 1000 5, default 100pps/5s\r\n"
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
@@ -500,6 +501,15 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'I': cads_explorer_iperf_demo(cads_parse_uint(argument) ?: 30u); break;
+            case 'Z': {
+                uint32_t reg = 0u, value = 0u;
+                const char* end = argument;
+                cads_str_to_uint(end, &reg, &end);
+                end = cads_str_skip_spaces(end);
+                bool do_write = cads_str_to_hex(end, &value, &end);
+                cads_explorer_phy_reg((uint8_t)reg, do_write, (uint16_t)value);
+                break;
+            }
             case 'Y': {
                 uint32_t target = 0u, seconds = 0u;
                 const char* end = argument;

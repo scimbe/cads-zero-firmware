@@ -13,7 +13,9 @@
 
 #include <string.h>
 
+#include "board.h"
 #include "cads/net/net.h"
+#include "cads/toolbox/fmt.h"
 #include "cads_hal.h"
 #include "hal_eth_mac.h"
 #include "hal_eth_mdio.h"
@@ -346,5 +348,61 @@ void cads_explorer_net_test(uint32_t seconds) {
     cads_probe_put_uint(mmc_after.rx_crc_errors - mmc_before.rx_crc_errors);
     cads_probe_puts(" rx_align_err=");
     cads_probe_put_uint(mmc_after.rx_alignment_errors - mmc_before.rx_alignment_errors);
+    cads_probe_puts("\r\n");
+}
+
+void cads_explorer_phy_reg(uint8_t reg, bool do_write, uint16_t value) {
+    char hex[6];
+
+    /* Same "once per boot" idempotent init cads_explorer_eth_status() (the
+     * 'e' command) uses - MDIO needs SYSCFG_PMC's RMII select bit and the
+     * MAC clock enabled before any transaction reads back anything but 0,
+     * and this command has to work standalone, not only after 'e' or 'h'
+     * happened to run first. */
+    static bool initialised = false;
+    if(!initialised) {
+        cads_hal_eth_mdio_init();
+        initialised = true;
+    }
+
+    if(do_write) {
+        cads_probe_puts("# phy: writing reg ");
+        cads_probe_put_uint(reg);
+        cads_probe_puts(" = 0x");
+        cads_fmt_hex(hex, sizeof(hex), value, 4u, false);
+        cads_probe_puts(hex);
+        cads_probe_puts("\r\n");
+        if(!cads_hal_eth_mdio_write(CADS_ETH_PHY_ADDR, reg, value)) {
+            cads_probe_puts("# phy: write failed (MDIO timeout)\r\n");
+            return;
+        }
+    }
+
+    uint16_t readback = 0u;
+    if(!cads_hal_eth_mdio_read(CADS_ETH_PHY_ADDR, reg, &readback)) {
+        cads_probe_puts("# phy: read failed (MDIO timeout)\r\n");
+        return;
+    }
+
+    cads_probe_puts("# phy: reg ");
+    cads_probe_put_uint(reg);
+    cads_probe_puts(" = 0x");
+    cads_fmt_hex(hex, sizeof(hex), readback, 4u, false);
+    cads_probe_puts(hex);
+    if(reg == 0u) {
+        cads_probe_puts(" (BMCR: reset=");
+        cads_probe_put_uint((readback >> 15) & 1u);
+        cads_probe_puts(" loopback=");
+        cads_probe_put_uint((readback >> 14) & 1u);
+        cads_probe_puts(" an_enable=");
+        cads_probe_put_uint((readback >> 12) & 1u);
+        cads_probe_puts(" power_down=");
+        cads_probe_put_uint((readback >> 11) & 1u);
+        cads_probe_puts(" isolate=");
+        cads_probe_put_uint((readback >> 10) & 1u);
+        cads_probe_puts(" an_restart=");
+        cads_probe_put_uint((readback >> 9) & 1u);
+        cads_probe_puts(")");
+    }
     cads_probe_puts("\r\n");
 }

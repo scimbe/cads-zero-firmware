@@ -1,6 +1,7 @@
 #ifndef CADS_EXPLORER_ETH_H
 #define CADS_EXPLORER_ETH_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -36,6 +37,17 @@ void cads_explorer_eth_linklog_poll_and_dump(void);
 /** Read and print the MAC's six hardware traffic counters. Non-disruptive,
  *  no MDIO involved - direct MAC register access. */
 void cads_explorer_eth_mmc(void);
+
+/**
+ * Raw PHY register access - read `reg`, and if `do_write` is set, write
+ * `value` first and read back the result. Diagnostic only: for checking
+ * whether something (any prior firmware run, any MDIO write anywhere in
+ * this session) left the PHY in a state that survives a plain MCU
+ * reset/reflash - unlike the MCU, the PHY has no reset tied to the debug
+ * probe's reset line, so its own registers (BMCR's Isolate/Power-Down bits
+ * in particular) persist across everything except a real power cycle.
+ */
+void cads_explorer_phy_reg(uint8_t reg, bool do_write, uint16_t value);
 
 /**
  * M5 bring-up gate: cads_net_init() once, then poll for `seconds` (default
