@@ -23,6 +23,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 #include "board.h"
 #include "cads_hal.h"
@@ -66,6 +67,23 @@ static volatile bool cads_spi_dma_active = false;
 static StaticSemaphore_t cads_spi_mutex_storage;
 static SemaphoreHandle_t cads_spi_mutex;
 
+/*
+ * The bus is claimed during early bring-up too - the self test and the boot
+ * splash both flush the panel (apps/bringup/bringup.c) long before
+ * cads_kernel_start() ever runs the scheduler. A recursive mutex take is a
+ * blocking FreeRTOS call, and FreeRTOS forbids those before the scheduler is
+ * running: xSemaphoreTakeRecursive dereferences pxCurrentTCB, which is NULL
+ * until vTaskStartScheduler() runs, jumping the core to a null pointer
+ * (observed live: UsageFault, PC=0x0, CFSR INVSTATE, in a boot reset loop
+ * with no console output and no forensic record). Before the scheduler
+ * exists boot is single-threaded by construction, so no lock is needed;
+ * gate on the scheduler state and only take/give the mutex once concurrent
+ * tasks can actually exist.
+ */
+static bool cads_spi_lock_active(void) {
+    return xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED;
+}
+
 
 static uint32_t cads_spi_br_bits(uint32_t divider) {
     switch(divider) {
@@ -100,6 +118,29 @@ void cads_hal_spi_init(void) {
         CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, CADS_PIN_SPI_MOSI_AF, CadsGpioPullNone);
 
     cads_spi_mutex = xSemaphoreCreateRecursiveMutexStatic(&cads_spi_mutex_storage);
+
+    /*
+     * Re-enable interrupts after creating the mutex - non-obvious, load
+     * bearing. This runs during cads_hal_init(), long before the scheduler
+     * starts. Mutex creation takes a FreeRTOS critical section internally
+     * (xQueueGenericReset -> taskENTER_CRITICAL), and before the scheduler
+     * runs, uxCriticalNesting holds the CM4F port's poison init value
+     * (0xaaaaaaaa, reset to 0 only by xPortStartScheduler). So the matching
+     * taskEXIT_CRITICAL decrements the poison instead of reaching zero and
+     * NEVER restores BASEPRI: it stays clamped at
+     * configMAX_SYSCALL_INTERRUPT_PRIORITY (0x50) for the rest of boot. That
+     * masks every interrupt at priority >= 0x50 - including this driver's own
+     * DMA2_Stream3 completion IRQ (priority 6 -> 0x60) - so the very first
+     * boot-time display flush starts its DMA, the transfer completes, but the
+     * completion ISR that clears cads_spi_dma_active can never fire, and
+     * cads_hal_spi_wait() spins forever (observed live: BASEPRI=0x50,
+     * NDTR mid-count, TCIF pending, board hung after the banner with a blank
+     * white panel). This is a documented FreeRTOS gotcha (FreeRTOS-Kernel
+     * issue #254): a pre-scheduler critical section leaves interrupts
+     * disabled. Boot is single-threaded and must run with interrupts enabled,
+     * so force BASEPRI back to 0 here.
+     */
+    portENABLE_INTERRUPTS();
 
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
     RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
@@ -183,7 +224,7 @@ void cads_hal_spi_set_eth_datapath_active(bool active) {
 #endif
 
 void cads_hal_spi_claim_bus(void) {
-    xSemaphoreTakeRecursive(cads_spi_mutex, portMAX_DELAY);
+    if(cads_spi_lock_active()) xSemaphoreTakeRecursive(cads_spi_mutex, portMAX_DELAY);
 #if !CADS_SPI_ETH_COEXIST
     if(cads_eth_claim_depth++ != 0u) return;
 
@@ -235,7 +276,7 @@ void cads_hal_spi_release_bus(void) {
         }
     }
 #endif
-    xSemaphoreGiveRecursive(cads_spi_mutex);
+    if(cads_spi_lock_active()) xSemaphoreGiveRecursive(cads_spi_mutex);
 }
 
 /* --- polled byte transfers (commands, touch) ------------------------------ */

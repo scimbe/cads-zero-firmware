@@ -2063,6 +2063,59 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 (later) — PC=0x0 boot crash ROOT-CAUSED and fixed; a SECOND
+  boot hang then surfaced; bench blocked on a wedged ST-Link. In order:
+  (1) **Root cause of the "NOT YET VERIFIED STABLE" mutex commit's PC=0x0 /
+  INVSTATE fault, confirmed.** The board arrived this session already
+  crash-looping on the HEAD firmware (9506a46): connect-under-reset was the
+  only way to flash it, and a live `st-util --no-reset` read **PC=0x0** with
+  an empty forensic ring and no console output - exactly the commit's own
+  described symptom ("before console-up even printed"). Cause: 9506a46 made
+  `cads_hal_spi_claim_bus()` take a **recursive** FreeRTOS mutex
+  *unconditionally*, but the boot path flushes the panel (self-test +
+  splash, apps/bringup/bringup.c) BEFORE `cads_kernel_start()` runs the
+  scheduler. `xSemaphoreTakeRecursive` dereferences `pxCurrentTCB`, which is
+  NULL until the scheduler starts -> null jump -> UsageFault INVSTATE PC=0x0,
+  in a loop with no forensic record because it faults before anything is up.
+  FreeRTOS forbids blocking API calls before `vTaskStartScheduler()`.
+  **Fix (targets/itsboard/hal/hal_spi.c):** gate the take/give on
+  `xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED` - boot is
+  single-threaded by construction, so the lock is unnecessary AND unsafe
+  before the scheduler exists. Gated on FreeRTOS's own API, not
+  `cads_kernel_running()`, to avoid the HAL depending upward on the kernel
+  module. **Verified the fix advances boot:** after flashing it the board
+  now prints "console up" + the M0 banner, which it never reached before.
+  (2) **A SECOND boot hang, ALSO caused by the mutex commit, ROOT-CAUSED and
+  fixed.** With (1) fixed the board printed the banner then hung before the
+  "1..10" TAP plan; webcam showed a **backlit white panel, no content** and
+  the forensic ring stayed empty (a HANG, not a fault - a fault writes a
+  record). `# DBG a..f` markers around each boot step localised it to the
+  FIRST `cads_canvas_flush()` (bringup.c). Caught live with a debugger:
+  the DMA was actually running (NDTR counting down) but **BASEPRI read 0x50**
+  = `configMAX_SYSCALL_INTERRUPT_PRIORITY`. This driver's DMA2_Stream3
+  completion IRQ is priority 6 -> register 0x60, and BASEPRI=0x50 masks every
+  interrupt >= 0x50, so the transfer completes, TCIF latches, but the ISR
+  that clears `cads_spi_dma_active` never fires and `cads_hal_spi_wait()`
+  spins forever. Why BASEPRI=0x50 during boot: creating the recursive mutex
+  in `cads_hal_spi_init()` (9506a46, pre-scheduler) takes a FreeRTOS critical
+  section (`xQueueGenericReset` -> `taskENTER_CRITICAL`); before the scheduler
+  runs `uxCriticalNesting` holds the CM4F port's poison init 0xaaaaaaaa (reset
+  to 0 only by `xPortStartScheduler`), so the matching exit decrements the
+  poison instead of reaching zero and NEVER restores BASEPRI. Documented
+  FreeRTOS gotcha (FreeRTOS-Kernel issue #254; confirmed from the port source
+  and a live register read, not assumed). **Fix (hal_spi.c):** call
+  `portENABLE_INTERRUPTS()` right after the mutex create to force BASEPRI back
+  to 0 - boot is single-threaded and must run interrupts-enabled.
+  **RESOLVED and hardware-verified:** with both fixes the board boots clean
+  and the M0 gate passes **10/10, RESULT: PASS** on the real board; the panel
+  renders the brand colour bars + UI surface (photographed), and the explorer
+  is fully responsive. RAM margin unchanged at 256 B, host ctest 30/30. The
+  DBG markers were removed before committing.
+  Bench note: heavy connect-under-reset + `st-util` cycling twice wedged the
+  ST-Link V2 USB (`LIBUSB_ERROR_TIMEOUT`, `chipid 0x000`); a physical USB
+  replug is the only recovery on macOS - budget for it during long autonomous
+  hardware sessions.
+
 - 2026-08-26 — Crash investigation, reframed: the tick hook is very likely
   an EXPOSER, not the cause. Background research (independently re-deriving
   the priority chain from source rather than trusting the earlier summary)
