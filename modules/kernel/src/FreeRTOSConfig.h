@@ -63,7 +63,11 @@
  * cycles saved. */
 #define configCHECK_FOR_STACK_OVERFLOW          2
 #define configUSE_MALLOC_FAILED_HOOK            0  /* no heap to fail */
-#define configUSE_IDLE_HOOK                     0
+/* On: vApplicationIdleHook (apps/bringup/tasks.c) rechecks the stack-guard
+ * sentinels. The MSP - the shared ISR/handler stack - has no other overflow
+ * check at all (configCHECK_FOR_STACK_OVERFLOW below sees task stacks only,
+ * and only at a context switch). */
+#define configUSE_IDLE_HOOK                     1
 /* On: vApplicationTickHook (kernel.c) feeds the independent watchdog every
  * SysTick. See core/cads_hal.h's own comment on cads_hal_watchdog_init for
  * why the tick rather than an application task. */

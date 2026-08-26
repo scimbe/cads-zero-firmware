@@ -101,6 +101,14 @@ bool cads_hal_user_button(void) {
 __attribute__((noreturn)) void cads_hal_panic(const char* reason) {
     __disable_irq();
 
+    /* Stack pointers of the context that panicked - an assert, a stack-guard
+     * sentinel breach (apps/bringup/tasks.c), an lwIP check. There is no
+     * exception frame on this path, so these are the only stack evidence the
+     * record carries; captured first, before this frame grows. */
+    uint32_t msp_now, psp_now;
+    __asm volatile("mrs %0, msp" : "=r"(msp_now));
+    __asm volatile("mrs %0, psp" : "=r"(psp_now));
+
     cads_gpio_write(CADS_PIN_LED_RED_PORT, CADS_PIN_LED_RED, true);
 
     /* The console is polled and interrupt-free, so it still works here. */
@@ -124,7 +132,8 @@ __attribute__((noreturn)) void cads_hal_panic(const char* reason) {
     bool mmfar_valid = (cfsr & SCB_CFSR_MMARVALID_Msk) != 0u;
     bool bfar_valid = (cfsr & SCB_CFSR_BFARVALID_Msk) != 0u;
     cads_forensic_record(
-        reason, NULL, cfsr, SCB->HFSR, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR);
+        reason, NULL, cfsr, SCB->HFSR, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR,
+        msp_now, psp_now);
 
     /* Stop with everything intact so the attached ST-Link can inspect it. */
     __asm volatile("bkpt #0" ::: "memory");

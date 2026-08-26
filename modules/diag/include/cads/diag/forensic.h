@@ -52,6 +52,8 @@ typedef struct {
     uint32_t mmfar;
     bool bfar_valid;
     uint32_t bfar;
+    uint32_t msp;         /**< MSP at capture. From a task fault this is the ISR stack; compare against the 4K CCM main stack. */
+    uint32_t psp;         /**< PSP at capture; the faulting/panicking task's own stack pointer. */
 } cads_forensic_record_t;
 
 /**
@@ -67,7 +69,9 @@ void cads_forensic_record(
     bool mmfar_valid,
     uint32_t mmfar,
     bool bfar_valid,
-    uint32_t bfar);
+    uint32_t bfar,
+    uint32_t msp,
+    uint32_t psp);
 
 /** How many valid records are currently in the ring, 0..CADS_FORENSIC_RING_DEPTH. */
 uint32_t cads_forensic_count(void);

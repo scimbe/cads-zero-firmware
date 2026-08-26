@@ -104,6 +104,17 @@ __attribute__((noreturn)) static void cads_fault_dump(const char* name, uint32_t
     cads_fault_field("PC ", frame->pc);
     cads_fault_field("PSR", frame->xpsr);
 
+    /* Stack pointers of the faulting context. psp is exact - Handler mode
+     * never alters it, so it still holds the interrupted task's SP; msp is
+     * this handler's live MSP, a small fixed frame below the fault-time
+     * value, enough to see an MSP run to its 4K CCM limit. `stacked` itself
+     * points into whichever of the two the exception frame was pushed onto. */
+    uint32_t msp_at_fault, psp_at_fault;
+    __asm volatile("mrs %0, msp" : "=r"(msp_at_fault));
+    __asm volatile("mrs %0, psp" : "=r"(psp_at_fault));
+    cads_fault_field("MSP", msp_at_fault);
+    cads_fault_field("PSP", psp_at_fault);
+
     /* CFSR packs three byte/halfword sub-registers: MMFSR (bits 7:0), BFSR
      * (bits 15:8), UFSR (bits 31:16) - PM0214 4.4.7-4.4.9. Read as one word
      * here rather than split, since a reader with the manual open can shift
@@ -126,7 +137,8 @@ __attribute__((noreturn)) static void cads_fault_dump(const char* name, uint32_t
         .r0 = frame->r0, .r1 = frame->r1, .r2 = frame->r2, .r3 = frame->r3,
         .r12 = frame->r12, .lr = frame->lr, .pc = frame->pc, .xpsr = frame->xpsr};
     cads_forensic_record(
-        name, &forensic_frame, cfsr, hfsr, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR);
+        name, &forensic_frame, cfsr, hfsr, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR,
+        msp_at_fault, psp_at_fault);
 
     __asm volatile("bkpt #0" ::: "memory");
     for(;;) {

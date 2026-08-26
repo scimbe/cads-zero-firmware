@@ -65,6 +65,16 @@ target_compile_options(cads_flags INTERFACE
     -fdata-sections
 )
 
+# -fstack-usage: emit one .su file per translation unit giving each function's
+# stack frame size, so the worst-case MSP nesting chain (SysTick + a nested
+# USART3/DMA2 frame + the fault dump) and the UI task's deepest path can be
+# bounded statically from the call graph rather than guessed. Compile-time
+# only: no code, no RAM, no effect on __cads_heap_size. Firmware target only -
+# the host build has no fixed stack worth bounding.
+if(CADS_TARGET STREQUAL "itsboard")
+    target_compile_options(cads_flags INTERFACE -fstack-usage)
+endif()
+
 # Every CADS_APP_* option above becomes a CADS_APP_*_ENABLED compile
 # definition on cads_flags - which essentially every target in this
 # project already links (cads_apps, cads_app_menu, and each per-app

@@ -41,6 +41,66 @@ static cads_thread_t cads_ui_thread;
 static cads_thread_t cads_input_thread;
 static cads_thread_t cads_console_thread;
 
+/* --- stack-guard sentinels ------------------------------------------------
+ *
+ * configCHECK_FOR_STACK_OVERFLOW (method 2, modules/kernel/src/FreeRTOSConfig.h)
+ * watches the task stacks but is blind to the MSP - the shared ISR/handler
+ * stack, 4K at the top of CCM - and only samples at a context switch. This
+ * puts one sentinel word at the overflow end (lowest address) of each stack
+ * that matters and rechecks them from the idle hook, so an MSP overflow, or a
+ * task stack driven to its absolute limit, surfaces as a named panic with a
+ * forensic record instead of silent corruption that faults elsewhere later.
+ *
+ * The canary value is 0xA5A5A5A5 on purpose: it is exactly FreeRTOS's own
+ * tskSTACK_FILL_BYTE pattern, so the task stacks already carry it from
+ * xTaskCreateStatic and this code never writes into them - a different value
+ * would fight method 2's own check of those same bytes. Only the MSP word,
+ * which FreeRTOS does not own, is painted (cads_stackguard_arm).
+ *
+ * The table is static const, so it lives in flash and costs nothing from the
+ * RAM budget (scripts/check_ram_budget.py). It lives here, with the stacks it
+ * guards, rather than in modules/kernel with the other vApplication* hooks:
+ * cads_kernel must not depend on cads_apps (the reverse already holds), and a
+ * const-in-flash table needs the task-stack symbols, file-static to this unit. */
+#define CADS_STACKGUARD_CANARY 0xA5A5A5A5u
+
+extern uint32_t __cads_stack_bottom; /* linker: lowest word of the 4K MSP region in CCM */
+
+typedef struct {
+    const char* name;
+    volatile const uint32_t* sentinel; /* lowest word of the stack; last hit on overflow */
+} cads_stackguard_t;
+
+static const cads_stackguard_t cads_stackguards[] = {
+    {"msp", &__cads_stack_bottom},
+    {"ui", cads_ui_stack},
+    {"input", cads_input_stack},
+    {"console", cads_console_stack},
+};
+
+static void cads_stackguard_arm(void) {
+    /* Task stacks are already 0xA5-filled by xTaskCreateStatic; only the MSP
+     * sentinel needs painting, and only from here - before the scheduler
+     * starts, with the MSP shallow, so its lowest word is safe to write. */
+    __cads_stack_bottom = CADS_STACKGUARD_CANARY;
+}
+
+static const char* cads_stackguard_breached(void) {
+    for(uint32_t i = 0u; i < (uint32_t)(sizeof(cads_stackguards) / sizeof(cads_stackguards[0])); i++) {
+        if(*cads_stackguards[i].sentinel != CADS_STACKGUARD_CANARY) {
+            return cads_stackguards[i].name;
+        }
+    }
+    return NULL;
+}
+
+void vApplicationIdleHook(void) {
+    const char* breached = cads_stackguard_breached();
+    if(breached != NULL) {
+        cads_hal_panic(breached); /* names the overflowed stack; does not return */
+    }
+}
+
 /*
  * THE DISPLAY HAS EXACTLY ONE FLUSHER.
  *
@@ -114,6 +174,11 @@ void cads_tasks_start(void) {
     cads_thread_start(
         &cads_console_thread, "console", cads_console_task, NULL, cads_console_stack,
         CADS_CONSOLE_STACK, CadsPriorityLow);
+
+    /* Paint the MSP sentinel now that the task stacks exist (FreeRTOS filled
+     * theirs at creation above) and before the scheduler starts feeding the
+     * idle hook that rechecks them. */
+    cads_stackguard_arm();
 
     cads_kernel_start(); /* does not return */
 }

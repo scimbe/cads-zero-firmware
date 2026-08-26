@@ -26,7 +26,7 @@ void setUp(void) {
      * records first so every test starts from a known, fully-evicted state
      * rather than depending on test execution order. */
     for(uint32_t i = 0; i < CADS_FORENSIC_RING_DEPTH; i++) {
-        cads_forensic_record("setUp-flush", NULL, 0u, 0u, false, 0u, false, 0u);
+        cads_forensic_record("setUp-flush", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
     }
 }
 
@@ -50,7 +50,7 @@ static void test_single_record_with_frame(void) {
     cads_forensic_frame_t frame = {
         .r0 = 0x11111111u, .r1 = 0x22222222u, .r2 = 0x33333333u, .r3 = 0x44444444u,
         .r12 = 0x55555555u, .lr = 0x66666666u, .pc = 0x77777777u, .xpsr = 0x88888888u};
-    cads_forensic_record("HardFault", &frame, 0xCAFEu, 0xBEEFu, true, 0xAAAAu, true, 0xBBBBu);
+    cads_forensic_record("HardFault", &frame, 0xCAFEu, 0xBEEFu, true, 0xAAAAu, true, 0xBBBBu, 0u, 0u);
 
     cads_forensic_record_t out;
     TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
@@ -67,7 +67,7 @@ static void test_single_record_with_frame(void) {
 }
 
 static void test_panic_record_has_no_frame(void) {
-    cads_forensic_record("stack overflow", NULL, 0u, 0u, false, 0u, false, 0u);
+    cads_forensic_record("stack overflow", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
 
     cads_forensic_record_t out;
     TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
@@ -78,9 +78,9 @@ static void test_panic_record_has_no_frame(void) {
 }
 
 static void test_get_orders_newest_first(void) {
-    cads_forensic_record("first", NULL, 0u, 0u, false, 0u, false, 0u);
-    cads_forensic_record("second", NULL, 0u, 0u, false, 0u, false, 0u);
-    cads_forensic_record("third", NULL, 0u, 0u, false, 0u, false, 0u);
+    cads_forensic_record("first", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
+    cads_forensic_record("second", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
+    cads_forensic_record("third", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
 
     cads_forensic_record_t out;
     TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
@@ -94,7 +94,7 @@ static void test_get_orders_newest_first(void) {
 static void test_sequence_is_monotonic_across_the_ring(void) {
     uint32_t first_sequence = 0u;
     for(uint32_t i = 0u; i < CADS_FORENSIC_RING_DEPTH + 3u; i++) {
-        cads_forensic_record("seq", NULL, 0u, 0u, false, 0u, false, 0u);
+        cads_forensic_record("seq", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
         cads_forensic_record_t out;
         TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
         if(i == 0u) first_sequence = out.sequence;
@@ -108,7 +108,7 @@ static void test_eviction_beyond_depth_keeps_newest_and_count_capped(void) {
      * records have been written - proves eviction genuinely rotates
      * through every slot, not just the one it happened to pick last time. */
     for(uint32_t i = 0u; i < CADS_FORENSIC_RING_DEPTH; i++) {
-        cads_forensic_record("fresh", NULL, 0u, 0u, false, 0u, false, 0u);
+        cads_forensic_record("fresh", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
     }
 
     TEST_ASSERT_EQUAL_UINT32(CADS_FORENSIC_RING_DEPTH, cads_forensic_count());
@@ -121,7 +121,7 @@ static void test_eviction_beyond_depth_keeps_newest_and_count_capped(void) {
 
 static void test_uptime_is_captured_at_record_time(void) {
     cads_fake_set_ms(12345u);
-    cads_forensic_record("timed", NULL, 0u, 0u, false, 0u, false, 0u);
+    cads_forensic_record("timed", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
 
     cads_forensic_record_t out;
     TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));

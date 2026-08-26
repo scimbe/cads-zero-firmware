@@ -74,7 +74,9 @@ void cads_forensic_record(
     bool mmfar_valid,
     uint32_t mmfar,
     bool bfar_valid,
-    uint32_t bfar) {
+    uint32_t bfar,
+    uint32_t msp,
+    uint32_t psp) {
     uint32_t target = 0u;
     bool have_target = false;
     uint32_t max_sequence = 0u;
@@ -109,6 +111,8 @@ void cads_forensic_record(
     out->mmfar = mmfar;
     out->bfar_valid = bfar_valid;
     out->bfar = bfar;
+    out->msp = msp;
+    out->psp = psp;
 
     /* Both words last, after every record field: a slot only reads as
      * valid once its content is already fully in place, so a write cut
