@@ -16,10 +16,10 @@
  * Register the menu's view.
  *
  * Also registers apps/settings, apps/about, apps/gpio, apps/netinfo,
- * apps/filebrowser and apps/game - the menu's item table is what turns
- * their view ids into named rows, so it is the one place in this
- * milestone that needs to know all six exist. Call this after
- * cads_desktop_init() and before pushing CADS_VIEW_ID_DESKTOP.
+ * apps/filebrowser, apps/game and apps/netiperf - the menu's item table is
+ * what turns their view ids into named rows, so it is the one place that
+ * needs to know all seven exist. Call this after cads_desktop_init() and
+ * before pushing CADS_VIEW_ID_DESKTOP.
  */
 void cads_menu_app_init(cads_view_dispatcher_t* dispatcher);
 

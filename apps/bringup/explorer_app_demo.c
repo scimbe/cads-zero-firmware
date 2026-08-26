@@ -61,8 +61,13 @@
  * comment already describes once, caught this time by updating both this
  * constant and tests/unit/test_app_tree.c's mirrored one together rather
  * than by a human noticing a dead cartridge on the panel.
+ *
+ * Bumped from 14 to 16 when apps/netiperf added its two views (server,
+ * client) - the fully-saturated-at-14 count meant those two were exactly
+ * the ones silently dropped this time (test_app_tree.c caught it on host
+ * before it ever reached hardware, same regression guard as above).
  */
-#define CADS_APP_DEMO_VIEW_CAPACITY 14u
+#define CADS_APP_DEMO_VIEW_CAPACITY 16u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];

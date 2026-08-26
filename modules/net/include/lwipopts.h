@@ -36,10 +36,30 @@
  * actually needs at once. */
 #define MEM_SIZE                    (2 * 1024)
 
-#define MEMP_NUM_PBUF               16
-#define MEMP_NUM_UDP_PCB            4
+/* Was 16; trimmed to 12 for the same reason as the pools below it - still
+ * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data
+ * buffers) on a link this firmware never drives past one connection's worth
+ * of in-flight traffic at once. */
+#define MEMP_NUM_PBUF               12
+/* Was 4; trimmed to 2 for the same reason as MEMP_NUM_TCP_PCB_LISTEN below.
+ * The DHCP client (when cads/net's config is DHCP, not this bench's static
+ * default) takes exactly one UDP pcb; DNS resolution is never actually
+ * performed by this firmware (see LWIP_DNS's own comment above - only the
+ * DHCP-supplied server address is displayed, never queried), so it needs
+ * none. 2 leaves headroom for one of each without the old default's slack
+ * for concurrent UDP use this firmware never exercises. */
+#define MEMP_NUM_UDP_PCB            2
 #define MEMP_NUM_TCP_PCB            4
-#define MEMP_NUM_TCP_PCB_LISTEN     4
+/* Was 4; trimmed to 2 to offset apps/netiperf's static state against the
+ * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard, the same lever
+ * MEMP_NUM_TCP_SEG used below for the net-config feature. This firmware
+ * never actually needs 4 simultaneous listening sockets: the CLI (:4242),
+ * screencast (:4244), HTTP status (:80) and iperf server (:5001) each run
+ * from their own single blocking explorer-command loop except the iperf
+ * server, which is a GUI view that aborts its own listener the moment the
+ * user navigates away (apps/netiperf/cads_netiperf.c's exit callback) - so
+ * at most one or two listeners genuinely coexist, never four. */
+#define MEMP_NUM_TCP_PCB_LISTEN     2
 /* Was 16; trimmed to 14 to offset the net-config feature's static state
  * (modules/net's cads_net_config_t default + the netinfo toggle) against the
  * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard - the same headroom

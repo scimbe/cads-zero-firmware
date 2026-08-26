@@ -29,6 +29,9 @@
 #ifdef CADS_APP_GAME_ENABLED
 #include "../game/cads_game.h"
 #endif
+#ifdef CADS_APP_NETIPERF_ENABLED
+#include "../netiperf/cads_netiperf.h"
+#endif
 
 typedef struct {
     cads_view_t view;
@@ -58,6 +61,10 @@ static const cads_menu_item_t cads_menu_app_items[] = {
 #endif
 #ifdef CADS_APP_GAME_ENABLED
     {"Reflex Test", NULL, CADS_VIEW_ID_GAME},
+#endif
+#ifdef CADS_APP_NETIPERF_ENABLED
+    {"iperf Server", NULL, CADS_VIEW_ID_IPERF_SERVER},
+    {"iperf Client", NULL, CADS_VIEW_ID_IPERF_CLIENT},
 #endif
 };
 
@@ -116,6 +123,9 @@ void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
 #endif
 #ifdef CADS_APP_GAME_ENABLED
     cads_game_init(dispatcher);
+#endif
+#ifdef CADS_APP_NETIPERF_ENABLED
+    cads_netiperf_init(dispatcher);
 #endif
 
     s_menu_app.dispatcher = dispatcher;

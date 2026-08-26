@@ -35,11 +35,11 @@
 #include "input/cads_input.h"
 
 /* Mirrors apps/bringup/explorer_app_demo.c's own CADS_APP_DEMO_VIEW_CAPACITY
- * (14) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
+ * (16) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
  * than a shared header because the two are otherwise unrelated translation
  * units and a shared constant would be the only reason to couple them; see
- * that file's own comment for exactly what the 14 counts. */
-#define VIEW_CAPACITY 14u
+ * that file's own comment for exactly what the 16 counts. */
+#define VIEW_CAPACITY 16u
 #define STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[VIEW_CAPACITY];
