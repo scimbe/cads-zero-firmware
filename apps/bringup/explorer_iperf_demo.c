@@ -91,3 +91,36 @@ void cads_explorer_iperf_demo(uint32_t seconds) {
     if(session) lwiperf_abort(session);
     cads_probe_puts("# iperf: done\r\n");
 }
+
+void cads_explorer_iperf_client_demo(uint32_t target, uint32_t seconds) {
+    if(!seconds) seconds = 30u;
+
+    cads_net_init(cads_explorer_net_mac());
+
+    ip_addr_t target_addr;
+    ip4_addr_set_u32(ip_2_ip4(&target_addr), lwip_htonl(target));
+#if LWIP_IPV6
+    IP_SET_TYPE_VAL(target_addr, IPADDR_TYPE_V4);
+#endif
+
+    char target_text[16];
+    cads_fmt_ipv4(target_text, sizeof(target_text), target);
+    cads_probe_puts("# iperf: connecting to ");
+    cads_probe_puts(target_text);
+    cads_probe_puts(":5001\r\n");
+
+    void* session = lwiperf_start_tcp_client_default(&target_addr, cads_iperf_report, NULL);
+    if(!session) {
+        cads_probe_puts("# iperf: failed to start\r\n");
+        return;
+    }
+
+    uint32_t start = cads_hal_ticks_ms();
+    while((cads_hal_ticks_ms() - start) < seconds * 1000u) {
+        cads_net_poll();
+        cads_hal_delay_ms(10u);
+    }
+
+    lwiperf_abort(session);
+    cads_probe_puts("# iperf: done\r\n");
+}

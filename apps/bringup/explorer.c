@@ -409,6 +409,7 @@ static void cads_help(void) {
         "#   P <hex-target> [count]  ping, e.g. P c0a80101 4, default count 4\r\n"
         "#   T <hex-target> [max-hops]  traceroute, e.g. T c0a80101 16, default 16\r\n"
         "#   I <sec>    iperf2-compatible TCP server: TCP :5001, default 30s\r\n"
+        "#   Y <hex-target> [sec]  iperf2 TCP client to <target>:5001, e.g. Y c0a86301 10\r\n"
         "#   G <pps> [sec]  packet generator, TIM6-paced, e.g. G 1000 5, default 100pps/5s\r\n"
         "#   C <sec>    promiscuous capture to /sniff.pcap, default 10s\r\n"
         "#   M <sec>    MAC address table, switch-style learning with aging, default 15s\r\n"
@@ -499,6 +500,15 @@ void cads_explorer_run(void) {
                 break;
             }
             case 'I': cads_explorer_iperf_demo(cads_parse_uint(argument) ?: 30u); break;
+            case 'Y': {
+                uint32_t target = 0u, seconds = 0u;
+                const char* end = argument;
+                cads_str_to_hex(end, &target, &end);
+                end = cads_str_skip_spaces(end);
+                cads_str_to_uint(end, &seconds, &end);
+                cads_explorer_iperf_client_demo(target, seconds);
+                break;
+            }
             case 'G': {
                 uint32_t pps = 0u, seconds = 0u;
                 const char* end = argument;

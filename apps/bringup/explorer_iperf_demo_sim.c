@@ -13,3 +13,9 @@ void cads_explorer_iperf_demo(uint32_t seconds) {
     (void)seconds;
     cads_probe_puts("# iperf: not available in the simulator\r\n");
 }
+
+void cads_explorer_iperf_client_demo(uint32_t target, uint32_t seconds) {
+    (void)target;
+    (void)seconds;
+    cads_probe_puts("# iperf: not available in the simulator\r\n");
+}
