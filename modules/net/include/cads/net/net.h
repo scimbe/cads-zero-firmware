@@ -58,6 +58,33 @@ void cads_net_poll(void);
 void cads_net_status(cads_net_status_t* status);
 
 /**
+ * How the interface gets its address. All fields are host byte order.
+ * When `use_dhcp` is true the static fields are ignored and a DHCP lease is
+ * requested once the link is up; when false the static ip/netmask/gateway
+ * are applied directly (useful on a segment with no DHCP server - the case
+ * this bench is in).
+ */
+typedef struct {
+    bool use_dhcp;
+    uint32_t ip;       /**< static host address, used when use_dhcp is false */
+    uint32_t netmask;  /**< static subnet mask */
+    uint32_t gateway;  /**< static default gateway */
+} cads_net_config_t;
+
+/** Read the current addressing configuration. */
+void cads_net_get_config(cads_net_config_t* config);
+
+/**
+ * Set the addressing configuration and apply it immediately. If the link is
+ * already up the change takes effect at once (static: stop DHCP and set the
+ * addresses; DHCP: clear the static address and start the DHCP client);
+ * otherwise it is applied the next time the link comes up. The config is
+ * held in RAM only - it resets to the built-in default (static
+ * 192.168.33.99/24, gateway 192.168.33.1) on reboot.
+ */
+void cads_net_set_config(const cads_net_config_t* config);
+
+/**
  * Send one ARP request for `ip` (host byte order) and report whether the
  * ARP table already holds, or comes to hold within `timeout_ms`, a
  * resolved hardware address for it. Calls cads_net_poll() internally, so

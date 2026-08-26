@@ -42,6 +42,7 @@ typedef struct {
 static cads_netinfo_t s_netinfo;
 
 static const cads_softkey_t cads_netinfo_keys[] = {
+    {CadsKeyOk, "DHCP/Static"},
     {CadsKeyBack, "Back"},
 };
 
@@ -126,10 +127,42 @@ static void cads_netinfo_draw(cads_rect_t area, void* context) {
     cads_netinfo_draw_field(
         area, row++, "DNS server:", s->dns_server[0] != '\0' ? s->dns_server : "-", CadsColorGray);
 
+    cads_net_config_t cfg;
+    cads_net_get_config(&cfg);
+    char cfg_text[24];
+    if(cfg.use_dhcp) {
+        cads_str_copy(cfg_text, sizeof(cfg_text), "DHCP");
+    } else {
+        char cfg_ip[16];
+        cads_netinfo_format_ip(cfg.ip, cfg_ip, sizeof(cfg_ip));
+        cads_str_copy(cfg_text, sizeof(cfg_text), "Static ");
+        cads_str_append(cfg_text, sizeof(cfg_text), cfg_ip);
+    }
+    cads_netinfo_draw_field(area, row++, "Config:", cfg_text, CadsColorBrandLight);
+
     row++;
+    cads_netinfo_draw_line(
+        area, row++, cfg.use_dhcp ? "OK: switch to static IP" : "OK: switch to DHCP");
     cads_netinfo_draw_line(area, row++, "Display and Ethernet time-share pin PA7 during a redraw.");
     cads_netinfo_draw_line(area, row++, "Longest blackout: ~22.5 ms per band (safe /16 clock).");
     cads_netinfo_draw_line(area, row++, "See docs/explanation/pa7-conflict.md.");
+}
+
+static bool cads_netinfo_input(const cads_input_event_t* event, void* context) {
+    cads_netinfo_t* app = (cads_netinfo_t*)context;
+    /* OK toggles between DHCP and the static address. A touch on the "OK"
+     * soft-key label arrives here as the same CadsKeyOk press, so tap and
+     * button both work. */
+    if(event->type == CadsInputPress && event->key == CadsKeyOk) {
+        cads_net_config_t cfg;
+        cads_net_get_config(&cfg);
+        cfg.use_dhcp = !cfg.use_dhcp;
+        cads_net_set_config(&cfg);
+        cads_netinfo_refresh(app);
+        cads_view_dirty_rect(&app->view, cads_view_area(&app->view));
+        return true;
+    }
+    return false;
 }
 
 static void cads_netinfo_enter(void* context) {
@@ -140,7 +173,7 @@ static void cads_netinfo_enter(void* context) {
 void cads_netinfo_init(cads_view_dispatcher_t* dispatcher) {
     if(dispatcher == NULL) return;
 
-    cads_view_init(&s_netinfo.view, cads_netinfo_draw, NULL, &s_netinfo);
+    cads_view_init(&s_netinfo.view, cads_netinfo_draw, cads_netinfo_input, &s_netinfo);
     cads_view_set_lifecycle(&s_netinfo.view, cads_netinfo_enter, NULL);
     cads_view_set_title(&s_netinfo.view, "Network Info");
     cads_view_set_softkeys(

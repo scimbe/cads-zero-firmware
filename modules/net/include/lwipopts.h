@@ -40,7 +40,14 @@
 #define MEMP_NUM_UDP_PCB            4
 #define MEMP_NUM_TCP_PCB            4
 #define MEMP_NUM_TCP_PCB_LISTEN     4
-#define MEMP_NUM_TCP_SEG            16
+/* Was 16; trimmed to 14 to offset the net-config feature's static state
+ * (modules/net's cads_net_config_t default + the netinfo toggle) against the
+ * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard - the same headroom
+ * recovery PBUF_POOL_SIZE and MEMP_NUM_RAW_PCB already did above. 14 in-flight
+ * TCP segments is still generous for this bench: TCP_SND_BUF is at lwIP's
+ * default (~2 MSS), so no single connection queues anywhere near 14, and the
+ * HTTP/screen/iperf servers here are never many-connection. */
+#define MEMP_NUM_TCP_SEG            14
 /* cads_net_ping() (modules/net/src/cads_net_board.c) creates one raw pcb
  * per call and removes it before returning - never more than one in use
  * at a time, so lwIP's default of 4 is RAM this firmware does not have to

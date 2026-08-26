@@ -27,6 +27,26 @@ void cads_net_status(cads_net_status_t* status) {
     memcpy(status->mac, cads_net_sim_mac, sizeof(status->mac));
 }
 
+/* Same built-in default as the board (static 192.168.33.99/24, gw .1); there
+ * is no netif here to apply it to, so set just records the choice and get
+ * reports it - enough for the netinfo app to build and toggle on host. */
+#define CADS_IP4(a, b, c, d)                                                              \
+    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+static cads_net_config_t cads_net_sim_cfg = {
+    .use_dhcp = false,
+    .ip = CADS_IP4(192, 168, 33, 99),
+    .netmask = CADS_IP4(255, 255, 255, 0),
+    .gateway = CADS_IP4(192, 168, 33, 1),
+};
+
+void cads_net_get_config(cads_net_config_t* config) {
+    *config = cads_net_sim_cfg;
+}
+
+void cads_net_set_config(const cads_net_config_t* config) {
+    cads_net_sim_cfg = *config;
+}
+
 bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
     (void)ip;
     (void)timeout_ms;

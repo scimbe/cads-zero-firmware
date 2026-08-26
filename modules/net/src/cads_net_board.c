@@ -44,6 +44,19 @@ static uint32_t cads_net_rx_frames = 0u;
 static uint32_t cads_net_tx_frames = 0u;
 static uint32_t cads_net_rx_dropped = 0u;
 
+/* Addressing configuration. Default is a STATIC address, not DHCP: this
+ * board's bench segment has no DHCP server, so a lease never binds there and
+ * a static address is what makes the board reachable out of the box. Held in
+ * RAM only, reset to this default on reboot. See cads_net_set_config(). */
+#define CADS_IP4(a, b, c, d)                                                              \
+    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+static cads_net_config_t cads_net_cfg = {
+    .use_dhcp = false,
+    .ip = CADS_IP4(192, 168, 33, 99),
+    .netmask = CADS_IP4(255, 255, 255, 0),
+    .gateway = CADS_IP4(192, 168, 33, 1),
+};
+
 /* Staging buffer for linkoutput: pbufs may be chained, but
  * cads_hal_eth_mac_transmit() wants one contiguous buffer (see that
  * function's own "copies into the next free TX buffer" contract). Sized to
@@ -121,6 +134,39 @@ void cads_net_init(const uint8_t mac_address[6]) {
      * the PHY actually resolve one - see this file's header comment. */
 }
 
+/* Write the configured static address onto the netif. */
+static void cads_net_apply_static_addr(void) {
+    ip4_addr_t ip, mask, gw;
+    ip4_addr_set_u32(&ip, lwip_htonl(cads_net_cfg.ip));
+    ip4_addr_set_u32(&mask, lwip_htonl(cads_net_cfg.netmask));
+    ip4_addr_set_u32(&gw, lwip_htonl(cads_net_cfg.gateway));
+    netif_set_addr(&cads_netif, &ip, &mask, &gw);
+}
+
+/* Bring the current config into effect for a link that is already up:
+ * DHCP -> drop any static address and (re)start the client; static -> stop
+ * the client and set the addresses. A no-op while the link is down; the
+ * config is applied in cads_net_link_check() when the link next comes up. */
+static void cads_net_apply_config(void) {
+    if(!cads_net_link_was_up) return;
+    if(cads_net_cfg.use_dhcp) {
+        netif_set_addr(&cads_netif, IP4_ADDR_ANY4, IP4_ADDR_ANY4, IP4_ADDR_ANY4);
+        dhcp_start(&cads_netif);
+    } else {
+        dhcp_stop(&cads_netif);
+        cads_net_apply_static_addr();
+    }
+}
+
+void cads_net_get_config(cads_net_config_t* config) {
+    *config = cads_net_cfg;
+}
+
+void cads_net_set_config(const cads_net_config_t* config) {
+    cads_net_cfg = *config;
+    cads_net_apply_config();
+}
+
 static void cads_net_link_check(void) {
     cads_eth_phy_status_t phy;
     bool link_up = cads_hal_eth_phy_status(CADS_ETH_PHY_ADDR, &phy) && phy.link_up &&
@@ -133,10 +179,16 @@ static void cads_net_link_check(void) {
         cads_hal_spi_set_eth_datapath_active(true);
         cads_hal_eth_mac_start();
         netif_set_link_up(&cads_netif);
-        /* dhcp_start() is itself safe to call repeatedly (it (re)starts
-         * negotiation rather than erroring on an existing client), so a new
-         * link session always gets a fresh lease attempt. */
-        dhcp_start(&cads_netif);
+        if(cads_net_cfg.use_dhcp) {
+            /* dhcp_start() is itself safe to call repeatedly (it (re)starts
+             * negotiation rather than erroring on an existing client), so a
+             * new link session always gets a fresh lease attempt. */
+            dhcp_start(&cads_netif);
+        } else {
+            /* Static: no lease to wait for, the address is usable the moment
+             * the link is up. */
+            cads_net_apply_static_addr();
+        }
     } else if(!link_up && cads_net_link_was_up) {
         /* dhcp_stop(), not dhcp_release_and_stop(): the link is already
          * down by the time this runs, so there is no carrier left to send a
