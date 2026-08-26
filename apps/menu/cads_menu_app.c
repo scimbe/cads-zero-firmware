@@ -32,6 +32,9 @@
 #ifdef CADS_APP_NETIPERF_ENABLED
 #include "../netiperf/cads_netiperf.h"
 #endif
+#ifdef CADS_APP_NETTOOLS_ENABLED
+#include "../nettools/cads_nettools.h"
+#endif
 
 typedef struct {
     cads_view_t view;
@@ -53,18 +56,25 @@ static const cads_menu_item_t cads_menu_app_items[] = {
 #ifdef CADS_APP_GPIO_ENABLED
     {"GPIO", "16/8", CADS_VIEW_ID_GPIO},
 #endif
+#ifdef CADS_APP_NETTOOLS_ENABLED
+    /* The one "Network" section row: netinfo and the iperf views moved into
+     * its submenu (apps/nettools) rather than each having a flat top-level
+     * row of their own here. */
+    {"Network", "tools", CADS_VIEW_ID_NETTOOLS},
+#else
 #ifdef CADS_APP_NETINFO_ENABLED
     {"Network Info", "Ethernet", CADS_VIEW_ID_NETINFO},
+#endif
+#ifdef CADS_APP_NETIPERF_ENABLED
+    {"iperf Server", NULL, CADS_VIEW_ID_IPERF_SERVER},
+    {"iperf Client", NULL, CADS_VIEW_ID_IPERF_CLIENT},
+#endif
 #endif
 #ifdef CADS_APP_FILEBROWSER_ENABLED
     {"Files", NULL, CADS_VIEW_ID_FILEBROWSER},
 #endif
 #ifdef CADS_APP_GAME_ENABLED
     {"Reflex Test", NULL, CADS_VIEW_ID_GAME},
-#endif
-#ifdef CADS_APP_NETIPERF_ENABLED
-    {"iperf Server", NULL, CADS_VIEW_ID_IPERF_SERVER},
-    {"iperf Client", NULL, CADS_VIEW_ID_IPERF_CLIENT},
 #endif
 };
 
@@ -126,6 +136,9 @@ void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
 #endif
 #ifdef CADS_APP_NETIPERF_ENABLED
     cads_netiperf_init(dispatcher);
+#endif
+#ifdef CADS_APP_NETTOOLS_ENABLED
+    cads_nettools_init(dispatcher);
 #endif
 
     s_menu_app.dispatcher = dispatcher;

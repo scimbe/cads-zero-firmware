@@ -67,7 +67,7 @@
  * the ones silently dropped this time (test_app_tree.c caught it on host
  * before it ever reached hardware, same regression guard as above).
  */
-#define CADS_APP_DEMO_VIEW_CAPACITY 16u
+#define CADS_APP_DEMO_VIEW_CAPACITY 20u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];

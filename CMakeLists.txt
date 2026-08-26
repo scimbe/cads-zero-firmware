@@ -45,6 +45,7 @@ option(CADS_APP_NETINFO "Include the Network Info app" ON)
 option(CADS_APP_FILEBROWSER "Include the file browser app" ON)
 option(CADS_APP_GAME "Include the Reflex Test game" ON)
 option(CADS_APP_NETIPERF "Include the iperf server/client app" ON)
+option(CADS_APP_NETTOOLS "Include the network tools menu (ping/ARP/traceroute)" ON)
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -106,6 +107,9 @@ if(CADS_APP_GAME)
 endif()
 if(CADS_APP_NETIPERF)
     target_compile_definitions(cads_flags INTERFACE CADS_APP_NETIPERF_ENABLED)
+endif()
+if(CADS_APP_NETTOOLS)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_NETTOOLS_ENABLED)
 endif()
 
 # --- modules -----------------------------------------------------------------
@@ -233,6 +237,9 @@ if(CADS_APP_GAME)
 endif()
 if(CADS_APP_NETIPERF)
     add_subdirectory(apps/netiperf)
+endif()
+if(CADS_APP_NETTOOLS)
+    add_subdirectory(apps/nettools)
 endif()
 add_subdirectory(apps/menu)
 

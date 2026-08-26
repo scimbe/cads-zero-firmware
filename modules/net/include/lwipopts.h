@@ -34,7 +34,12 @@
  * ~1072 B, since this file leaves TCP_SND_BUF/TCP_WND at their lwIP
  * defaults) that a single client on this bench's one physical cable
  * actually needs at once. */
-#define MEM_SIZE                    (2 * 1024)
+/* Trimmed again 2048 -> 1792 to offset apps/nettools' static state (three
+ * small views + the Network submenu) against the same 48K guard. The
+ * running-total arithmetic above still holds: ~150 B DHCP + ~1072 B one
+ * connection's send window + one ~100 B lwiperf session leaves ~400 B of
+ * slack even at the worst simultaneous case this firmware can produce. */
+#define MEM_SIZE                    1792
 
 /* Was 16; trimmed to 12 for the same reason as the pools below it - still
  * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data
@@ -49,7 +54,11 @@
  * none. 2 leaves headroom for one of each without the old default's slack
  * for concurrent UDP use this firmware never exercises. */
 #define MEMP_NUM_UDP_PCB            2
-#define MEMP_NUM_TCP_PCB            4
+/* Was 4; trimmed to 3 for apps/nettools (same 48K-guard offset as every
+ * trim in this file). 3 concurrent TCP connections is still one more than
+ * anything this firmware has ever had live at once: one CLI/HTTP/screencast
+ * client plus one iperf session is the realistic ceiling. */
+#define MEMP_NUM_TCP_PCB            3
 /* Was 4; trimmed to 2 to offset apps/netiperf's static state against the
  * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard, the same lever
  * MEMP_NUM_TCP_SEG used below for the net-config feature. This firmware
@@ -63,11 +72,11 @@
 /* Was 16; trimmed to 14 to offset the net-config feature's static state
  * (modules/net's cads_net_config_t default + the netinfo toggle) against the
  * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard - the same headroom
- * recovery PBUF_POOL_SIZE and MEMP_NUM_RAW_PCB already did above. 14 in-flight
- * TCP segments is still generous for this bench: TCP_SND_BUF is at lwIP's
- * default (~2 MSS), so no single connection queues anywhere near 14, and the
- * HTTP/screen/iperf servers here are never many-connection. */
-#define MEMP_NUM_TCP_SEG            14
+ * recovery PBUF_POOL_SIZE and MEMP_NUM_RAW_PCB already did above; 14 -> 12
+ * later for apps/nettools. Still generous for this bench: TCP_SND_BUF is at
+ * lwIP's default (~2 MSS), so no single connection queues anywhere near 12,
+ * and the HTTP/screen/iperf servers here are never many-connection. */
+#define MEMP_NUM_TCP_SEG            12
 /* cads_net_ping() (modules/net/src/cads_net_board.c) creates one raw pcb
  * per call and removes it before returning - never more than one in use
  * at a time, so lwIP's default of 4 is RAM this firmware does not have to
