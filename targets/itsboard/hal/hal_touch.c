@@ -153,7 +153,10 @@ void cads_hal_touch_read(cads_touch_state_t* state) {
     if(raw_x == 0u || raw_x >= 0x0FFFu) return;
 
     /* The panel is mounted rotated relative to the controller's axes: the
-     * controller's Y runs along the display's X. */
+     * controller's Y runs along the display's X (not mirrored), and the
+     * controller's X runs along the display's Y (mirrored). Verified on
+     * hardware with the quadrant test pattern: touching the red (top-left)
+     * quadrant reads display x<240, y<160, matching where it renders. */
     state->x = cads_touch_scale(
         raw_y, cads_touch_calibration.y_min, cads_touch_calibration.y_max, CADS_DISPLAY_WIDTH);
     state->y = (uint16_t)(CADS_DISPLAY_HEIGHT - 1u -

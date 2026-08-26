@@ -39,7 +39,10 @@ static cads_button_t cads_buttons[CADS_BUTTON_COUNT];
  * so every physical button still does something. cads_input_bind() at
  * runtime overrides any of this per key; this is only the boot default.
  */
-static uint8_t cads_key_binding[CADS_BUTTON_COUNT] = {1, 0, 2, 3, 7, 6, 4, 5};
+/* Left/Right swapped 2026-08-26 (Left=S3, Right=S2): confirmed at the board
+ * that S3 sits physically left of S2, so the prior Left=S2/Right=S3 moved the
+ * cursor opposite to the pressed button. */
+static uint8_t cads_key_binding[CADS_BUTTON_COUNT] = {1, 0, 3, 2, 7, 6, 4, 5};
 
 static cads_input_callback_t cads_callback;
 static void* cads_callback_context;
