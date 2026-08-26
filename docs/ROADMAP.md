@@ -2063,6 +2063,70 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 (latest) — Ethernet reachability root-caused to a physical RMII
+  fault on the board itself, not software, not the bench Mac's USB chain.
+  Long investigation (see the entry below this one for the full trail);
+  this entry records the conclusion reached at the very end, with the
+  decisive new evidence.
+  **Decisive test 1: the Vendor reference firmware, built and flashed to
+  this exact board, shows the identical symptom.** Cloned
+  `Transport-Protocol/ITS-BRD-VSC` (a HAW Hamburg teaching reference for
+  this board, lwIP-based, confirmed working by the user elsewhere) with
+  its submodules into a scratch directory (no code copied into this
+  repo - clean-room preserved), built it for real with the already-
+  installed CMSIS-Toolbox/Arm Compiler 6 toolchain (0 errors), extracted
+  the correct 101 KB flash image (`objcopy -O binary --only-section=
+  ER_IROM1`, avoiding the naive whole-ELF dump that balloons to 400 MB
+  across the Flash/SRAM address gap), and flashed it to the real board -
+  same static IP the vendor code hardcodes, 192.168.33.99. Result:
+  0 packets received on the Mac side, identical to CaDS Zero's own
+  firmware. This is conclusive: the vendor's own "known good" code,
+  built with the vendor's own toolchain, fails identically on this
+  specific board - the defect is not in either firmware, it is in this
+  board's hardware. CaDS Zero's own firmware was reflashed back and
+  reverified (10/10 self-test) immediately after.
+  **Decisive test 2: Wireshark, live on the Mac's own dongle port,
+  confirms the board's outgoing frames never leave the wire at all.**
+  Earlier tests only ever showed netstat/ifconfig packet counters (an OS
+  view several layers up); with Wireshark capturing directly on the
+  dongle interface while the board's packet generator (`G`) sent 119
+  frames (board's own DMA/MMC counters: sent, 0 dropped), filtering for
+  the board's MAC (02:CA:D5:5E:00:01) or IP (192.168.33.99) showed
+  **nothing** - not even a corrupted or malformed frame. The only frames
+  Wireshark saw were the Mac's own routine background traffic (mDNS,
+  ARP for its own address, IPv6 RS), confirming the dongle/OS network
+  stack itself works fine and captures correctly - it simply never
+  receives anything from the board, at the physical layer, full stop.
+  **The reframe this enables:** autonegotiation succeeding (link up,
+  100M full, confirmed independently on both the Mac's ifconfig and the
+  board's own MDIO-read PHY status) does NOT prove the RMII data path
+  works - autonegotiation is pure analog PHY-to-PHY signalling (FLP
+  bursts) that never touches the MAC<->PHY RMII interface at all. A
+  board whose RMII *data* lines (TX_EN/TXD0/TXD1 for transmit,
+  RXD0/RXD1/CRS_DV for receive) are physically broken between the
+  STM32F429 MAC and the LAN8742A PHY - while REF_CLK/MDIO/MDC (control/
+  management, a completely separate signal set) stay intact - would
+  autonegotiate successfully and pass every register-level and firmware-
+  level check this session ran, while never moving one real data frame
+  in either direction. That fits every single symptom collected this
+  session: TX and RX equally dead (one shared interface fault, not two
+  independent bugs), unaffected by any Mac-side change (9+ interventions:
+  cables, two physically different dongles, hub power-cycle, service
+  toggles, connector reseating - none of which touch the board's own
+  MAC-PHY traces), and identical between two completely independent
+  firmware codebases (both drive the same physical RMII pins on the same
+  silicon).
+  **Conclusion: this is very likely a physical hardware fault on the
+  ITSboard itself - a broken trace, cold solder joint, or PHY-side fault
+  on the RMII data lines (board.h: TX_EN=PG11, TXD0=PG13, TXD1=PB13,
+  RXD0=PC4, RXD1=PC5, RXER=PG2) - not a CaDS Zero firmware bug, not the
+  bench Mac's USB/dongle chain, not the cable.** Nothing further here is
+  resolvable by software; the next diagnostic step needs a multimeter or
+  oscilloscope directly on those board pins, which is out of this
+  agent's reach. M5's own hardware gate stays `[!]` for this reason,
+  now with a much more specific root-cause hypothesis than "no DHCP
+  server on this bench" ever was.
+
 - 2026-08-26 (even later) — Network config (DHCP/static) + iperf server/client
   apps shipped and hardware-verified; end-to-end reachability from the
   maintainer's own bench Mac investigated in depth and isolated to a
