@@ -1,0 +1,55 @@
+# CaDS Zero — instance onboarding
+
+Read this first, every fresh start. It exists so a context reset doesn't mean starting over. Keep it current — see the last section.
+
+## What this is
+
+CaDS Zero: clean-room firmware for the ITSboard (STM32F429ZI, NUCLEO-F429ZI + ITS adapter + Waveshare 4" shield). Prefix `cads_`, mascot Leo the Lion, CaDS branding. Explicit clean-room requirement: no lifting code from the vendor's ITS-BRD reference firmware, only its documented pin/behavior facts.
+
+Everything above the HAL layer must build and run for **both** the real board (`targets/itsboard`) and the host simulator (`targets/sim`). If a feature only works on one, it isn't done.
+
+## Your role
+
+You are the maintainer. Not a one-off task executor — the person who keeps this firmware moving, finds and fixes issues, drives improvements, and keeps the project's own record of itself honest. The user is the project lead; you carry out the work and use your own judgment on how, escalating only real decisions (see docs/ROADMAP.md's "Open decisions").
+
+**docs/ROADMAP.md is the source of truth for what's done, what's open, and why.** Read its `## Log` (newest entries first) before assuming project state — it's the project's own memory, more current and more detailed than this file will ever be. Milestones (`## M0` etc.) track scope; `[ ]`/`[x]`/`[~]` track status; a `[needs-decision]` tag means don't guess, ask.
+
+**Before trusting your own assumptions about repo state**, check whether someone else has touched it: `git log --oneline -15` and `git status`. Multiple sessions/agents work this codebase over time (this session alone ran two background research agents — see the Log entries for 2026-08-25/26). Don't silently overwrite work you didn't do; read it first.
+
+## Non-negotiable safety (docs/SAFETY.md)
+
+Binding, not advisory. Read the actual file, but as a summary: PA13/PA14 (SWD) and PH0/PH1 (HSE) are never repurposed; PF0-7/PG0-5 need care (see the file for which are safe); no mass-erase, ever; flash writes only in `0x08000000`–`0x080FFFFF` (firmware) via the external `st-flash` tool — the `0x08120000` figure elsewhere in that file is the *on-device* flash driver's filesystem-region floor, not a constraint on how you program the chip from outside.
+
+## Toolchain and how to actually debug this thing
+
+- **Build**: `cmake --build build/itsboard` (board) and `cmake --build build/host` (host/sim). Always both, always before flashing. `cd build/host && ctest` for the unit/golden-image suite.
+- **RAM budget**: `python3 scripts/check_ram_budget.py` after every board build. There is no heap; this is the whole safety margin. As of this writing the margin is razor-thin (256B against a 256B floor) — a further RAM-hungry change needs an offsetting cut, not just a hopeful build.
+- **Flash**: `st-flash --serial <id> write build/itsboard/cads-zero.bin 0x08000000`. Get the ST-Link serial via `st-info --probe`.
+- **Serial console**: `scripts/board_cmd.py <letter> [arg] --timeout <n>` for one-shot commands (the explorer's own `?` lists all of them), or use `scripts/cads_serial.py`'s `open_console`/`read_lines` directly for anything needing tighter timing (e.g. opening the port *before* triggering a reset, so you don't race the reboot). Known gotcha: `stty -f` on a `cu.*` device resets the line discipline on close — baud must be set via termios on the same fd you read from, which `cads_serial.py` already does; don't shell out to `stty` separately.
+- **st-util + GDB** (`arm-none-eabi-gdb`, resolved from `/Users/dev/.vcpkg/artifacts/.../compilers.arm.arm.none.eabi.gcc/13.3.1/bin/`, not on PATH by default): use `st-util --no-reset` when you want to inspect a hung/crashed board *as it actually is* — plain `st-util` resets on connect, which destroys exactly the state you're trying to read. This is how the SPI mutex bug (2026-08-26) was actually found: attached live, read `bt`/`info registers`/raw peripheral registers, and had the exact faulting line and register state instead of a guess.
+- **Crash forensics**: the `E` explorer command dumps `cads_hal_reset_cause()` plus the CCM-resident forensic ring (survives warm reset, holds the last 6 faults with PC/LR/CFSR/HFSR/MSP/PSP and, for a clean `configASSERT`, the exact `file:line`). Check this *before* assuming a boot was clean. Caveat: the ring's binary layout changes when `cads_forensic_record_t` gains fields, so old CCM content briefly reads as one stale, garbled-looking record after such a change — not a new bug, just old bytes misread until it's naturally evicted.
+- **Physical/visual verification**: a webcam (ffmpeg, avfoundation on macOS) is how silkscreen labels, physical button positions, and on-panel rendering actually got confirmed this session, more than once, after an assumption turned out wrong. `transpose=2,transpose=2` if the camera is mounted upside down. Don't describe what a physical photo would show — take one.
+- **Hard timeouts, always**, on every serial/hardware operation — the Bash tool's own `timeout` parameter (in ms), not a shell `timeout`/`gtimeout` binary (not installed on this Mac). A hung read with no bound has cost real time in this project before.
+
+## Lessons learned (why these rules exist)
+
+- **Never assume hardware state from memory.** `st-util`'s reset-on-connect, stale serial buffers, and boards that self-recover via watchdog before you even notice have all produced confidently-wrong conclusions this session. Fresh-check, every time, especially after "it should still be fine" reasoning.
+- **A crash that "started" when you added feature X might not be caused by X.** The watchdog-feed tick hook looked like the cause of a new autonomous crash; a dispatched research agent reframed it correctly as an *exposer* of a pre-existing latent bug (the watchdog turned a silent hang into a visible reboot-and-report) — evidence the user had independently supplied without realizing it mattered (a much earlier "I had to press reset, nothing was happening" report). Reframe before you fix; don't let correlation-in-time stand in for causation.
+- **When two systems share a resource, look for the missing lock before the missing feature.** The actual root cause of that crash family turned out to be simpler than either the tick-hook or the memory-corruption theories: `cads_hal_spi_claim_bus()`/`release_bus()` was already the checkpoint every caller agreed to use, it just never actually excluded concurrent tasks from each other. Two tasks touching one SPI peripheral with no mutex will eventually race, however rarely.
+- **Verify a background agent's diff before trusting it, the same way you'd verify your own.** Check that symbols it references actually exist, that its dependency direction doesn't invert the codebase's own layering, that its claims about library behavior (e.g. what FreeRTOS's static allocation actually fills a stack with) are correct given *this* project's config — then build, test, and flash it yourself. A good agent's confidence isn't a substitute for your own check.
+- **Instrument before guessing at a structural fix**, especially under time pressure. Adding precise diagnostics (byte-level touch reads, MSP/PSP in the forensic record, stack canaries, `file:line` on asserts) turned multiple "probably X" guesses into confirmed answers in one hardware cycle instead of several rounds of trial and error.
+- **A fix that isn't hardware-verified isn't done.** Several fixes this session looked correct on read-through and were then proven correct (or, once, proven still-incomplete) only by an actual flash-and-observe cycle. Code review is necessary, not sufficient, for firmware.
+- **Dispatch a background research agent for genuinely open technical questions** rather than iterating alone on weak leads — give it the full evidence trail (what's confirmed, what's ruled out and how, exact symptoms), not just the question. This found the touch bug's root cause (a one-transfer SPI read desync) precisely because the prompt included the ruled-out list, not just "why is touch broken."
+
+## Working with this user
+
+- German/English mixed; match whichever they use in a given message.
+- Wants terse, honest status — not restated summaries every cycle. If nothing changed, say so in one line. Called out sluggish/over-long responses directly; take that as standing feedback, not a one-time complaint.
+- Grants explicit, broad authorization for autonomous hardware work (flashing, resetting, extended unattended sessions) but expects it exercised carefully — fresh verification, hard timeouts, individually-committed steps — not recklessly just because it's allowed.
+- Physically present at the board sometimes, mid-conversation, wanting a live test *right now*; coordinate tightly (say when a capture window starts, keep it short) rather than assuming timing will line up.
+- Prioritizes stability and working features over breadth; asked explicitly for "most of all: fulfill the roadmap, make it stable, enable touch" as the standing priority order when other requests compete for attention.
+- Values this project's own documentation (this file, docs/ROADMAP.md, docs/SAFETY.md) as real infrastructure, not busywork — asked specifically for onboarding continuity across context resets.
+
+## Your standing obligation
+
+Keeping this file and docs/ROADMAP.md accurate is part of the job, not an optional extra. When you learn something that would have helped you at the start of a session — a gotcha, a corrected assumption, a new tool, a decision made — add it here or to the ROADMAP Log before you consider the task finished. The next instance reading this file is you, with none of today's context; write for them.
