@@ -29,6 +29,7 @@
  * the logo (user request, 2026-08-26). CADS_DESKTOP_EYES_MARGIN is the inset
  * from the content area's top and right edges.
  */
+#define CADS_DESKTOP_CAPTION_H     44
 #define CADS_DESKTOP_EYES_MARGIN   8
 #define CADS_DESKTOP_EYES_WIDTH    48
 #define CADS_DESKTOP_EYES_HEIGHT   16
@@ -142,7 +143,15 @@ static void cads_desktop_layout(cads_desktop_t* app, cads_rect_t area) {
     app->portrait_rect.width = (int16_t)cads_leo.width;
     app->portrait_rect.height = (int16_t)cads_leo.height;
     app->portrait_rect.x = (int16_t)(area.x + (area.width - cads_leo.width) / 2);
-    app->portrait_rect.y = (int16_t)(area.y + 12);
+    /* Centre the logo+caption block vertically in the content area rather
+     * than pinning it 12px from the top, which read as top-heavy (user
+     * request, 2026-08-27). The caption sits 8px under the logo and is
+     * CADS_DESKTOP_CAPTION_H tall; centre the whole group, with a 12px floor
+     * so a short area never pushes the logo above the status bar. */
+    int16_t block_h = (int16_t)(cads_leo.height + 8 + CADS_DESKTOP_CAPTION_H);
+    int16_t top = (int16_t)(area.y + (area.height - block_h) / 2);
+    if(top < (int16_t)(area.y + 12)) top = (int16_t)(area.y + 12);
+    app->portrait_rect.y = top;
 
     app->eyes_rect.width = CADS_DESKTOP_EYES_WIDTH;
     app->eyes_rect.height = CADS_DESKTOP_EYES_HEIGHT;
@@ -158,7 +167,7 @@ static void cads_desktop_layout(cads_desktop_t* app, cads_rect_t area) {
     app->caption_rect.x = area.x;
     app->caption_rect.y = (int16_t)(app->portrait_rect.y + app->portrait_rect.height + 8);
     app->caption_rect.width = area.width;
-    app->caption_rect.height = 44;
+    app->caption_rect.height = CADS_DESKTOP_CAPTION_H;
 }
 
 /* --- drawing ----------------------------------------------------------------- */
