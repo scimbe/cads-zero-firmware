@@ -1,0 +1,67 @@
+# CaDS Zero clang-format, matched to the style already used throughout this
+# codebase (see apps/, gui/, modules/, targets/itsboard/hal/) rather than a
+# stock preset: 4-space indent, braces attached to the same line (including
+# function definitions), no space between a control keyword and its `(`,
+# pointer/reference `*`/`&` bound to the type, not the variable name,
+# single-statement `if` bodies kept on one line (AllowShortIfStatementsOnASingleLine:
+# WithoutElse - verified empirically against hal_touch.c's `if(x) return;` style).
+#
+# NOT yet done: BinPackArguments/BinPackParameters. Real code mixes two
+# different conventions clang-format's stock settings can't reproduce with a
+# single value - call sites like kernel.c's `xTaskCreateStatic(entry, name,
+# stack_words, ...)` pack multiple arguments onto one wrapped line, but
+# function *declarations* like `cads_hal_touch_set_calibration(uint16_t
+# x_min, ...)` put one parameter per line even when they would fit combined.
+# That is exactly the split BinPackArguments (call sites) vs
+# BinPackParameters (declarations) is supposed to express, but this clang-
+# format version's BinPackParameters enum (BinPack / OnePerLine /
+# AlwaysOnePerLine) does not cleanly express "pack it on one line if it
+# fits, otherwise one per line" the way the codebase actually writes it -
+# OnePerLine still collapses short multi-param signatures onto one line
+# rather than respecting how they're actually written. Needs more targeted
+# iteration than a night's idle-time slot allows - see docs/ROADMAP.md's M8
+# entry. Left at the stock BinPack default for both rather than guessing.
+#
+# Verify with: clang-format --dry-run -Werror <file>. This has NOT yet been
+# run clean against the whole tree - see docs/ROADMAP.md's M8 entry for the
+# CI check that should follow once this config itself is confirmed to leave
+# the existing code alone (or once any real drift it finds is deliberately
+# accepted and reformatted in its own commit, not silently).
+
+BasedOnStyle: LLVM
+Language: Cpp
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+BreakBeforeBraces: Attach
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortBlocksOnASingleLine: Never
+
+SpaceBeforeParens: Never
+SpaceAfterCStyleCast: false
+SpacesInParentheses: false
+SpaceBeforeAssignmentOperators: true
+
+PointerAlignment: Left
+ReferenceAlignment: Left
+DerivePointerAlignment: false
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignTrailingComments: true
+BinPackArguments: true
+BinPackParameters: true
+
+IndentCaseLabels: false
+IndentPPDirectives: None
+
+SortIncludes: false
+IncludeBlocks: Preserve
+
+ReflowComments: false
