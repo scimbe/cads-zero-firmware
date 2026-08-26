@@ -2063,6 +2063,31 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 (later still) — Touch and buttons verified on hardware with the
+  user driving; Left/Right button mapping fixed; M3 navigation demonstrated.
+  After the boot fixes above the board is stable, so the M3 input path could
+  finally be exercised by a human. Findings, all live at the bench:
+  - **Touch works** end to end. Raw XPT2046 stream (`Q`) while pressed: 118/122
+    samples with `irq=1`, X/Y ADC varying across the full range (X ~1595-3686,
+    xhi nonzero) - the old "raw X stuck at 0, TP_IRQ never toggles" symptom is
+    gone. Scaled reads (`t`) verified against the quadrant test pattern:
+    touching red (top-left) reads display x<240, y<160, matching where it
+    renders. The touch X mapping was already correct - a mid-session hunch that
+    it was mirrored was disproven by the quadrant test and reverted (the user's
+    "left/right swapped" report was about the buttons, not touch).
+  - **All 8 buttons register** (`s`). **Left/Right were bound to the wrong
+    physical buttons**: the board has S3 physically left of S2, but the boot
+    default bound Left=S2/Right=S3, moving the cursor opposite to the press.
+    Fixed in services/input/cads_input.c (`cads_key_binding` Left=S3, Right=S2);
+    physically-left now reports Left. Committed.
+  - **M3 three-level navigation demonstrated:** app demo (`d`) with the user
+    navigating desktop -> menu -> app by both buttons and touch: 110 frames
+    flushed, 1.83 Mpixel, **8 navigation transitions**, no fault, no lost task,
+    explorer responsive after. (An earlier run with the swapped buttons managed
+    only 1 transition - the fix is what unblocked real navigation.) This is the
+    human-driven half of HARDWARE GATE M3; see that item for the remaining
+    formal sign-off wording.
+
 - 2026-08-26 (later) — PC=0x0 boot crash ROOT-CAUSED and fixed; a SECOND
   boot hang then surfaced; bench blocked on a wedged ST-Link. In order:
   (1) **Root cause of the "NOT YET VERIFIED STABLE" mutex commit's PC=0x0 /
