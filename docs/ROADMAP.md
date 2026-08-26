@@ -1980,7 +1980,7 @@ final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
       `scripts/*.py` tooling is already dependency-free Python for
       exactly this reason (see `scripts/cads_serial.py`'s own header),
       the new pieces should hold to the same bar. `[swarm-ready]`
-- [ ] Decision-rationale documentation: expand `docs/explanation/` and/or
+- [x] Decision-rationale documentation: expand `docs/explanation/` and/or
       `docs/how-to/debug.md` with the "why" behind standing choices that
       are currently only explained in scattered code comments and this
       file's own Log - starting with why this specific compiler toolchain
@@ -1988,7 +1988,13 @@ final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
       `docs/how-to/build.md`) over alternatives, and a real walkthrough of
       the debugging tools already in daily use this session (`st-util` +
       GDB, `scripts/board_test.py`, the explorer's own diagnostic command
-      table). `[swarm-ready]`
+      table). Done same day: `docs/explanation/toolchain.md` (new) covers
+      the vcpkg/Keil-Studio provenance, what is and is not actually
+      pinned, and explicitly does not invent a rationale the repository
+      never recorded; `docs/how-to/debug.md` rewritten around the three
+      tools actually in daily use (fault console, st-util+GDB, the
+      explorer), including the verified `z FAULT` reference signature and
+      a symptom-to-command table.
 - [ ] More board photos in `docs/`, plus a repeatable routine that
       refreshes them when the UI actually changes - `tests/gallery/
       gallery.c`'s host-rendered PPMs already exist for exactly this and
@@ -2013,6 +2019,53 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-26 — Touch root-caused and fixed: a one-transfer SPI read desync,
+  not a wiring or timing fault. The delay-removal fix (2026-08-25) and the
+  PENIRQ-masking fix (this session, reapplied after being reverted and
+  cleared of an unrelated crash correlation) both left the same signature
+  unexplained: during confirmed real presses (PENIRQ correctly asserting),
+  the 12-bit result was always 0-15, and a new byte-level diagnostic
+  (`Q`'s xhi/xlo/yhi/ylo` output, `cads_hal_touch_read_raw_bytes()` in
+  hal_touch.c) proved the high byte was exactly 0x00 on every sample,
+  symmetrically on both axes.
+  A background research agent (dispatched with the full ruled-out list -
+  SPI mode, clock speed, command bytes, CS timing, PD1PD0 reference-off
+  semantics in differential mode - all independently confirmed clean)
+  found the actual cause: the display's own writes are TX-only (polled
+  command bytes, both DMA paths) and never read SPI1->DR back, leaving a
+  byte sitting in DR with RXNE set. `cads_hal_spi_transfer()` waits for
+  RXNE, not specifically for its own transfer's RXNE, so the touch
+  driver's next polled read (command, then two data bytes) silently
+  desyncs by one transfer: "high" returns the stale leftover - which is
+  reliably 0x00, since the XPT2046 holds DOUT low for the entire command
+  byte - and "low" is really the true high byte (the top 7 conversion
+  bits, range 0-127, matching the observed 0-15 after the `>>3` shift
+  exactly). Fixed in `cads_hal_spi_wait()` - the one checkpoint every
+  polled-after-DMA caller already funnels through before touching the bus
+  again - by draining DR then SR (RM0090 28.3.7's documented OVR-clear
+  order) once quiescence is confirmed. One drain is enough; this SPI has
+  no RX FIFO to loop over.
+  CONFIRMED on hardware, and confirmed as the actual bug rather than
+  merely correlated with one: the idle-state raw Y reading changed from a
+  suspiciously stable small value (yhi=0x00, ylo~120 - the display's own
+  stale byte, misread every time) to a genuinely noisy, full-range
+  floating-input reading (yhi~120, ylo swinging 32-216) the moment the fix
+  landed - the exact byte that could never carry conversion data under the
+  desync is now carrying real MSB-range data. That is a direct observation
+  of the pathological byte fixed, not a correlation. Host suite 30/30,
+  board self-test 10/10, RAM/CCM budget unchanged (416 B margin).
+  STILL OPEN: end-to-end coordinate accuracy under a genuine firm press
+  has not been re-verified tonight - only a passively resting stylus was
+  available (a resident's suggestion; insufficient force on a resistive
+  panel, as expected - PENIRQ never asserted). This is a calibration/
+  scaling check now, not a fix-verification question: `cads_touch_scale()`
+  needs raw ADC values landing in the ~200-3900 calibrated band and
+  tracking finger position, and the `Q` command's raw reads already
+  ignore PENIRQ entirely (by original design, to separate "does the pin
+  toggle" from "does the ADC work"), so this needs nothing more than
+  someone physically pressing the panel while `Q <sec>` runs. Left for the
+  next time the user or a session is at the board.
 
 - 2026-08-25 — Watchdog-fed crash forensics: hardware-gated, with one real
   bug found and fixed along the way and one narrower question still open.
