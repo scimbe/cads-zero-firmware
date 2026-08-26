@@ -2063,6 +2063,57 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 — Network tools promoted to a GUI "Network" menu section, touch
+  calibration implemented, and the 48K-heap-floor fight won with a better
+  lever than starving lwIP. (Commits pending a clean split: the shared build
+  files this touches are currently tangled with a second developer's
+  in-progress M9 "Active Net Tools"/`modules/netx` work, so these land as one
+  integrated commit once their `external.done` signals - the code itself is
+  built, flashed, and host-tested now.)
+  **apps/nettools**: a single "Network" launcher row opens a submenu holding
+  three new GUI tools - Ping, ARP Scan, Traceroute - alongside the existing
+  Network Info and iperf views (which lost their flat top-level rows). Built
+  on modules/net's portable API, so the app is fully portable with honest sim
+  stubs, no board/sim source split. Ping/traceroute block for their bounded
+  run (they own a poll loop); the **ARP scan is a non-blocking state machine**
+  (cads_nettools_tick, wired into the app-tree loop) sweeping **.1 to a
+  Up/Down-configurable upper bound, default .254** - one request per 30 ms
+  tick, each reply harvested a 4-tick window later so lwIP's bounded ARP
+  table cannot evict a pending entry first. New portable
+  cads_net_arp_request()/cads_net_arp_lookup() split out for it. Verified on
+  hardware: the user navigated by touch to ARP Scan, ran it, panel showed the
+  bench Mac's IP+MAC.
+  **Touch calibration** (apps/settings/cads_touch_calib): the Settings row
+  that said "not implemented yet" now opens a real 2-point crosshair flow -
+  tap top-left then bottom-right, raw XPT2046 ADC counts at each corner are
+  extrapolated to the full-panel min/max range (inverting hal_touch.c's own
+  raw->pixel mapping) and applied live via cads_hal_touch_set_calibration().
+  Portable (host build shows "needs a real panel"); the raw sampling runs in
+  cads_touch_calib_tick() on a fresh-press edge, not the input handler, so a
+  finger lifting mid-read is rejected. **Known gap: does not survive a reboot
+  yet** - it writes the four values to cads/storage kv, but nothing in this
+  firmware opens kv at boot (brightness/SPI-clock don't persist either), so
+  cross-reboot persistence waits on a separate kv-boot-open task. Live
+  in-session calibration works. Touch itself verified healthy independently:
+  `q 200` soak returned 0 ghosts.
+  **RAM lever - the important structural note for next time:** three new
+  features' static state (nettools views ~872 B, calibration view ~100 B,
+  bigger dispatcher table) blew the `ASSERT(__cads_heap_size >= 48K)` guard.
+  The wrong fix - the one this project kept reaching for all through M5/M6 -
+  is trimming lwIP's own working memory (MEM_SIZE, the MEMP pools); that
+  directly degrades the network robustness just fixed above, and there is a
+  second developer about to need lwIP RAM too. The **right lever, found by
+  actually reading the top static-RAM symbols** (`nm --size-sort` across the
+  objects) instead of reflexively shaving pools: `cads_eth_tx_buf` was
+  4x1536 B, and 4 TX descriptors is pure slack - the DMA drains a frame in
+  ~123 us, far faster than this software-checksummed single-loop TX path
+  refills it, so 2 never blocks a realistic sender (hal_eth_mac.c
+  CADS_ETH_TX_COUNT 4->2, frees 3072 B). That paid for all three features
+  AND let MEM_SIZE go back up to a robust 2048. Margin now **1088 B**, with
+  headroom for the incoming netx merge. RX ring stays 4 - incoming bursts are
+  not ours to pace. Lesson: measure the actual RAM map before trimming; the
+  biggest static consumer is rarely the pool you reach for by habit.
+
 - 2026-08-26 (RESOLVED) — **Ethernet reachability fixed. 15/15 ping replies,
   0% loss, sub-millisecond RTT, ARP resolving to the board's real MAC on the
   bench Mac - the first successful end-to-end traffic in this project's
