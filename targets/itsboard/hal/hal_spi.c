@@ -210,6 +210,24 @@ static bool cads_eth_datapath_active = false;
 
 void cads_hal_spi_set_eth_datapath_active(bool active) {
     cads_eth_datapath_active = active;
+    /* Park PA7 on the winner immediately, not lazily. Before this, PA7 only
+     * ever became ETH inside cads_hal_spi_release_bus() - i.e. after the NEXT
+     * display blit. Between cads_net's mac_start() and that next blit (which
+     * during console-driven diagnostics never comes at all), CRS_DV stayed
+     * electrically disconnected from the MAC and RX was silently dead - the
+     * vendor reference on this same board parks PA7 on AF11/ETH at idle,
+     * measured live via GPIOA_AFRL over SWD. Callers only flip this outside
+     * any claim (cads_net's link_check), so no in-flight SPI transfer can be
+     * under way on PA7 here. */
+    if(active) {
+        cads_gpio_set_alternate(CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, 11u);
+        cads_gpio_set_mode(
+            CADS_PIN_SPI_MOSI_PORT,
+            CADS_PIN_SPI_MOSI,
+            CadsGpioModeAlternate,
+            CadsGpioPullNone,
+            CadsGpioSpeedHigh);
+    }
 }
 
 static bool cads_eth_is_running(void) {
