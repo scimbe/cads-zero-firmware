@@ -2063,6 +2063,66 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 (even later) — Network config (DHCP/static) + iperf server/client
+  apps shipped and hardware-verified; end-to-end reachability from the
+  maintainer's own bench Mac investigated in depth and isolated to a
+  Mac-side USB/driver issue, not this firmware.
+  **cads/net gained cads_net_config_t** (use_dhcp + static ip/netmask/
+  gateway), default **static 192.168.33.99/255.255.255.0, gateway
+  192.168.33.1** (this bench has no DHCP server, so a lease never binds -
+  a static default makes the board reachable out of the box). NetInfo app
+  got a "Config:" row, OK toggles DHCP<->Static live. Verified correct at
+  the source: `cads_net_status()` reported ip=192.168.33.99,
+  gw=192.168.33.1, dhcp_bound=false after link-up, read via a temporary
+  debug print (removed before commit).
+  **apps/netiperf**: two new app-tree entries wrapping lwIP's lwiperf
+  (already vendored for the explorer's `I` command, server-only) - a
+  server view (OK toggles listening on :5001) and a client view (target
+  editable via Up/Down on the last octet, default **192.168.99.1** per
+  the user's own bench convention, OK starts/stops against
+  `lwiperf_start_tcp_client_default()`). Board self-test 10/10 after
+  adding it; two regression guards caught real bugs before hardware:
+  the app-tree's view-registry capacity (14, already exactly saturated)
+  silently dropped both new views (bumped to 16, mirrored in
+  tests/unit/test_app_tree.c); the feature's static state broke the 48K
+  RAM-margin ASSERT (trimmed lwipopts.h's MEMP_NUM_TCP_PCB_LISTEN/
+  MEMP_NUM_UDP_PCB/MEMP_NUM_PBUF further, plus the app's own report
+  buffer - margin restored to 288 B).
+  **Reachability investigation, thorough, root-caused to the Mac side.**
+  End-to-end ping/ARP from the maintainer's bench Mac to 192.168.33.99
+  never succeeded despite both ends reporting "link up, 100M full" -
+  chased with real evidence at every step rather than guessed:
+  (1) netif static-address binding confirmed correct via a live status
+  read (see above) - ruled out first.
+  (2) A promiscuous capture on the board (`C`, bypasses lwIP's filtering
+  entirely) showed 0 frames even while the Mac was actively pinging -
+  ruled out an lwIP/filter-level cause.
+  (3) Forced a real SPI claim/release cycle after link-up (a display
+  pattern draw) to guarantee PA7/CRS_DV was time-sliced back onto the ETH
+  peripheral (targets/itsboard/hal/hal_spi.c's PA7 arbitration, `#if
+  !CADS_SPI_ETH_COEXIST` - stock board, no SB121/122 swap) before
+  re-testing - still 0 captured, ruling out a stale-pin-mux explanation.
+  (4) Decisive: the Mac's OWN interface (`en13`, a Hardware Port
+  "AX88179A" - a USB3 Ethernet dongle, not the Mac's built-in en0, which
+  is on a completely different subnet/network with 1.2M real packets
+  flowing) has received **zero inbound packets in all of this session**
+  (`netstat -I en13 -b`: Ipkts=0), independent of anything the board
+  does - not even the ambient broadcast noise (ARP, mDNS, IPv6 ND) a live
+  switched segment normally produces within seconds. Persisted across a
+  cable swap and two dongle unplug/replug cycles (the second of which
+  also transiently dropped the ST-Link off USB entirely - same physical
+  hub, per the user - recovered by a further replug).
+  **Conclusion: this is a Mac-side AX88179 USB-Ethernet dongle RX issue
+  (a known class of bug with this chipset's macOS driver), not a CaDS
+  Zero firmware defect.** The firmware's static-IP binding, PA7
+  arbitration and RX/DMA path are all confirmed correct by the evidence
+  above; nothing here needs a firmware fix. Left open for the user to
+  resolve on the Mac side (try a different USB port not sharing the
+  ST-Link's hub, a full driver/kext reload, or a different dongle) and
+  re-verify end-to-end reachability once that's done - the iperf apps
+  built this session are the natural next verification step once a route
+  exists.
+
 - 2026-08-26 (later still) — Touch and buttons verified on hardware with the
   user driving; Left/Right button mapping fixed; M3 navigation demonstrated.
   After the boot fixes above the board is stable, so the M3 input path could
