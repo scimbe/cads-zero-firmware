@@ -2020,6 +2020,53 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 — Crash investigation, in progress (not yet resolved): the
+  autonomous, sporadic crash first seen after tonight's watchdog work
+  (`vApplicationTickHook()` feeding IWDG from inside `xPortSysTickHandler`,
+  ~1kHz) is still reproducing, now on three separate hardware captures with
+  three DIFFERENT fault signatures - a clean `configASSERT` panic (reason
+  recorded as port.c's path, no hardware fault frame), a UsageFault
+  decoding via addr2line to inside `xTaskIncrementTick`'s call site in
+  `SysTick_Handler` (CFSR UNDEFINSTR), and freshest, a precise BusFault
+  with BFAR pointing at a garbage, unmapped address (0x5808615E - not
+  flash/RAM/CCM/any peripheral). Varying signatures across occurrences
+  reads more like memory corruption than one deterministic logic bug.
+  Ruled out tonight, with evidence not just assumption: an ISR calling a
+  FreeRTOS FromISR API above `configMAX_SYSCALL_INTERRUPT_PRIORITY` (the
+  classic port.c `configASSERT` pitfall) - only two real ISR handlers
+  exist anywhere in the tree (USART3 priority 8, DMA2_Stream3 priority 6,
+  both correctly masked, both grepped clean of any FreeRTOS API call), and
+  the project's only ISR-safe queue wrapper (`cads_queue_send_from_isr`)
+  has zero callers. `vApplicationTickHook`'s signature also re-confirmed
+  exact against FreeRTOS's own task.h. NOT yet independently verified:
+  `SCB->AIRCR`'s priority-grouping bits are never explicitly set anywhere
+  in this codebase (grepped clean of `NVIC_SetPriorityGrouping`/`AIRCR`/
+  `PRIGROUP`), relying entirely on silicon reset defaults - FreeRTOS's
+  ARM_CM4F port has its own assert for exactly this
+  (`vPortValidateInterruptPriority`, port.c:904) but that code path is
+  only exercised by a FromISR call, which - see above - never currently
+  happens, so a wrong PRIGROUP value would not be caught by the kernel's
+  own safeguard and remains an open, unconfirmed variable.
+  Also fixed along the way, independent of the root cause:
+  `cads_kernel_assert()` (modules/kernel/src/kernel.c) previously
+  discarded the `configASSERT` line number, recording only the file -
+  port.c alone has 15+ assert call sites, so "reason: port.c" could not
+  say which one fired without decoding a PC through addr2line. Now
+  records "file:line" into a static buffer. RAM margin 416B -> 320B,
+  still passing the 256B floor.
+  A background research agent (crash-research) is digging into the
+  PRIGROUP question and the MSP-stack-depth-under-ISR-nesting hypothesis
+  in parallel with continued work. Leading candidate fix if the stack-
+  depth theory holds: move the watchdog feed out of the tick hook into a
+  low-priority periodic task instead, trading away "catches an
+  interrupts-disabled deadlock" for "stops adding depth to the one stack
+  every ISR shares" - not applied yet, waiting for the research pass
+  rather than guessing, same discipline that worked for tonight's touch
+  bug. Board self-recovers from every occurrence so far (watchdog-reset,
+  confirmed via `cads_hal_reset_cause()`), so this is a real but bounded
+  problem, not a hard hang - still the top priority for the rest of the
+  night per explicit instruction.
+
 - 2026-08-26 — Touch root-caused and fixed: a one-transfer SPI read desync,
   not a wiring or timing fault. The delay-removal fix (2026-08-25) and the
   PENIRQ-masking fix (this session, reapplied after being reverted and
