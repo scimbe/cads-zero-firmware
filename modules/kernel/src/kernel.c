@@ -258,9 +258,40 @@ uint32_t cads_kernel_task_count(void) {
     return (uint32_t)uxTaskGetNumberOfTasks();
 }
 
+/*
+ * configASSERT expands to this with __FILE__/__LINE__. port.c alone has 15+
+ * call sites (interrupt priority validation, critical-nesting checks, CPU ID
+ * checks and more), so the file name alone cannot tell a future forensic
+ * read which one fired - it previously discarded `line` and every crash
+ * report just said "port.c", forcing a PC decode through addr2line to even
+ * guess. Builds "file:line" into a static buffer instead - safe with no
+ * lifetime concerns since this function never returns, so there is no
+ * caller frame to outlive and no re-entrancy to race. No toolbox/fmt.h
+ * dependency pulled in for one bounded unsigned-decimal loop.
+ */
 __attribute__((noreturn)) void cads_kernel_assert(const char* file, int line) {
-    (void)line;
-    cads_hal_panic(file ? file : "kernel assert");
+    static char location[96];
+
+    if(!file) cads_hal_panic("kernel assert");
+
+    size_t len = strlen(file);
+    if(len > sizeof(location) - 12u) len = sizeof(location) - 12u; /* room for ":NNNNN\0" */
+    memcpy(location, file, len);
+    location[len++] = ':';
+
+    uint32_t value = (line >= 0) ? (uint32_t)line : 0u;
+    char digits[10];
+    uint32_t digit_count = 0u;
+    do {
+        digits[digit_count++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while(value != 0u && digit_count < sizeof(digits));
+    while(digit_count > 0u && len < sizeof(location) - 1u) {
+        location[len++] = digits[--digit_count];
+    }
+    location[len] = '\0';
+
+    cads_hal_panic(location);
 }
 
 /* --- kernel hooks --------------------------------------------------------- */
