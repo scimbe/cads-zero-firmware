@@ -22,12 +22,14 @@
  * portrait, in one small fixed rectangle; each state (open/closed) is fully
  * opaque over that rectangle, so there is nothing to erase between them.
  *
- * The rectangle's position is estimated from the portrait's proportions and
- * has not been checked against the actual pixels on the panel - nudge the two
- * offsets below if the overlay does not land on Leo's eyes.
+ * The blink overlay does not sit on the lion artwork: on this panel the mane
+ * fills the frame with no discernible face where the eyes would land, so two
+ * rectangles in the middle of it read as noise, not a blink. It lives in the
+ * top-right corner of the content area instead - a small blink widget clear of
+ * the logo (user request, 2026-08-26). CADS_DESKTOP_EYES_MARGIN is the inset
+ * from the content area's top and right edges.
  */
-#define CADS_DESKTOP_EYES_OFFSET_X 56
-#define CADS_DESKTOP_EYES_OFFSET_Y 52
+#define CADS_DESKTOP_EYES_MARGIN   8
 #define CADS_DESKTOP_EYES_WIDTH    48
 #define CADS_DESKTOP_EYES_HEIGHT   16
 
@@ -142,10 +144,10 @@ static void cads_desktop_layout(cads_desktop_t* app, cads_rect_t area) {
     app->portrait_rect.x = (int16_t)(area.x + (area.width - cads_leo.width) / 2);
     app->portrait_rect.y = (int16_t)(area.y + 12);
 
-    app->eyes_rect.x = (int16_t)(app->portrait_rect.x + CADS_DESKTOP_EYES_OFFSET_X);
-    app->eyes_rect.y = (int16_t)(app->portrait_rect.y + CADS_DESKTOP_EYES_OFFSET_Y);
     app->eyes_rect.width = CADS_DESKTOP_EYES_WIDTH;
     app->eyes_rect.height = CADS_DESKTOP_EYES_HEIGHT;
+    app->eyes_rect.x = (int16_t)(area.x + area.width - CADS_DESKTOP_EYES_WIDTH - CADS_DESKTOP_EYES_MARGIN);
+    app->eyes_rect.y = (int16_t)(area.y + CADS_DESKTOP_EYES_MARGIN);
 
     app->pet_rect.width = CADS_DESKTOP_PET_WIDTH;
     app->pet_rect.height = CADS_DESKTOP_PET_HEIGHT;
