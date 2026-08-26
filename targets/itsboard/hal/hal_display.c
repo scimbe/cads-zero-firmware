@@ -215,7 +215,26 @@ static void cads_lcd_set_window(uint16_t x, uint16_t y, uint16_t width, uint16_t
  *
  * That changes once there is a scheduler competing for those cycles during a
  * flush. Until then this stays on the path that is proven correct.
+ *
+ * CHUNKING FOR ETHERNET RX. A full-height blit at this bus's own measured
+ * rate (342 kpixel/s) holds PA7/CRS_DV (see hal_spi.c's "THE PA7 PROBLEM")
+ * for the better part of half a second in one claim - no incoming Ethernet
+ * frame's whole duration has anywhere to land inside that. Splitting into
+ * CADS_DISPLAY_BLIT_CHUNK_ROWS-row pieces, each its own claim/release, costs
+ * one extra MAC stop/restart (hal_spi.c's ~200us-bounded drain) per chunk
+ * instead of per whole blit - not free, but nowhere near the byte-at-a-time
+ * "ruinous" cost this file's header already rejected - in exchange for an
+ * order of magnitude more, and shorter, PA7-to-Ethernet windows per screen.
+ * This is a mitigation, not a fix: CRS_DV still is not available for the
+ * majority of the time, so it raises the odds of any one frame's window
+ * lining up rather than guaranteeing it. Each chunk reissues CASET/PASET/
+ * RAMWR and re-brackets CS exactly like two independent blit calls already
+ * do today - this glue logic's 74HC4040 counter resyncs to the command
+ * stream on CS, the same boundary every existing multi-blit redraw already
+ * crosses safely, so splitting one blit into several is not a new pattern.
  */
+#define CADS_DISPLAY_BLIT_CHUNK_ROWS 24u
+
 void cads_hal_display_blit(
     uint16_t x,
     uint16_t y,
@@ -227,18 +246,26 @@ void cads_hal_display_blit(
     if((uint32_t)x + width > CADS_DISPLAY_WIDTH) return;
     if((uint32_t)y + height > CADS_DISPLAY_HEIGHT) return;
 
-    cads_hal_spi_claim_bus();
+    uint16_t row = 0u;
+    while(row < height) {
+        uint16_t chunk_rows = (uint16_t)(height - row);
+        if(chunk_rows > CADS_DISPLAY_BLIT_CHUNK_ROWS) chunk_rows = CADS_DISPLAY_BLIT_CHUNK_ROWS;
 
-    cads_lcd_set_window(x, y, width, height);
-    cads_lcd_command(ILI9486_RAMWR);
+        cads_hal_spi_claim_bus();
 
-    cads_lcd_dc_data();
-    cads_lcd_cs(true);
-    cads_hal_spi_write_dma(pixels, (size_t)width * height * 2u);
-    cads_hal_spi_wait();
-    cads_lcd_cs(false);
+        cads_lcd_set_window(x, (uint16_t)(y + row), width, chunk_rows);
+        cads_lcd_command(ILI9486_RAMWR);
 
-    cads_hal_spi_release_bus();
+        cads_lcd_dc_data();
+        cads_lcd_cs(true);
+        cads_hal_spi_write_dma(pixels + (size_t)row * width, (size_t)width * chunk_rows * 2u);
+        cads_hal_spi_wait();
+        cads_lcd_cs(false);
+
+        cads_hal_spi_release_bus();
+
+        row = (uint16_t)(row + chunk_rows);
+    }
 }
 
 void cads_hal_display_set_fast_clock(bool fast) {
