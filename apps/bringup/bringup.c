@@ -6,9 +6,12 @@
  * whereas `ok 4 - canvas flush` is. scripts/board_test.py flashes the board,
  * reads this stream over the ST-Link VCP and exits non-zero on any `not ok`.
  *
- * The test pattern on the panel is still worth drawing - it is the only way to
- * catch a swapped colour channel or a mirrored scan direction, which no
- * self-test can see because the bus is write-only.
+ * The boot now shows a branded progress splash rather than the raw display
+ * test pattern: the throughput checks still flush a full screen (their
+ * measurement is unchanged), they just flush the progress frame. The test
+ * pattern - still the only way to catch a swapped colour channel or mirrored
+ * scan on this write-only bus - moved to Settings -> Test pattern, run on
+ * demand instead of on every boot (user request, 2026-08-27).
  */
 
 #include "bringup.h"
@@ -91,7 +94,6 @@ static void cads_diag_uint(const char* key, uint32_t value) {
 #endif
 
 static void cads_check_fast_clock(uint64_t safe_us);
-static void cads_draw_test_pattern(void);
 
 static void cads_check_time_base(void) {
     uint32_t start_ms = cads_hal_ticks_ms();
@@ -151,42 +153,12 @@ static void cads_check_clipping(void) {
     cads_tap(ok, "canvas clipping confines drawing");
 }
 
-/* --- the visual test pattern ----------------------------------------------- */
-
-static void cads_draw_test_pattern(void) {
-    cads_canvas_clear(CadsColorBackground);
-
-    /* Brand header. If the panel scan direction were mirrored this bar would
-     * end up at the bottom, which is the whole point of having it. */
-    cads_canvas_fill_rect(0, 0, CADS_CANVAS_WIDTH, 40, CadsColorBrand);
-    cads_canvas_fill_rect(0, 40, CADS_CANVAS_WIDTH, 3, CadsColorAccent);
-
-    /* Sixteen palette swatches. A wrong RGB565 byte order shows up here as
-     * obviously wrong hues rather than a subtle tint. */
-    const int16_t swatch_width = CADS_CANVAS_WIDTH / 16;
-    for(int16_t i = 0; i < 16; i++) {
-        cads_canvas_fill_rect(
-            (int16_t)(i * swatch_width), 60, swatch_width, 80, (cads_color_t)i);
-    }
-
-    /* Corner markers: proves the addressable area really is 480x320 and that
-     * the window command is not off by one. */
-    cads_canvas_fill_rect(0, 0, 8, 8, CadsColorRed);
-    cads_canvas_fill_rect(CADS_CANVAS_WIDTH - 8, 0, 8, 8, CadsColorAccent);
-    cads_canvas_fill_rect(0, CADS_CANVAS_HEIGHT - 8, 8, 8, CadsColorAmber);
-    cads_canvas_fill_rect(CADS_CANVAS_WIDTH - 8, CADS_CANVAS_HEIGHT - 8, 8, 8, CadsColorTeal);
-
-    /* Diagonals: any dropped or duplicated pixel in the blit path breaks the
-     * straightness visibly. */
-    cads_canvas_draw_line(0, 160, CADS_CANVAS_WIDTH - 1, CADS_CANVAS_HEIGHT - 1, CadsColorWhite);
-    cads_canvas_draw_line(CADS_CANVAS_WIDTH - 1, 160, 0, CADS_CANVAS_HEIGHT - 1, CadsColorWhite);
-
-    cads_canvas_draw_rect(
-        4, 44, CADS_CANVAS_WIDTH - 8, CADS_CANVAS_HEIGHT - 48, CadsColorGrayLight);
-}
-
 static void cads_check_display_throughput(void) {
-    cads_draw_test_pattern();
+    /* A full-screen branded progress frame, not the palette test pattern:
+     * cads_splash_draw_progress clears the whole canvas so the flush below
+     * still transfers every pixel (the measurement this check exists for),
+     * while the panel shows boot progress rather than test bars. */
+    cads_splash_draw_progress("checking display", 55u);
 
     uint64_t start = cads_hal_ticks_us();
     uint32_t pixels = cads_canvas_flush();
@@ -231,13 +203,10 @@ static void cads_check_display_throughput(void) {
 static void cads_check_fast_clock(uint64_t safe_us) {
     cads_hal_display_set_fast_clock(true);
 
-    cads_draw_test_pattern();
-    /* Marker band so the panel visibly differs from the safe-clock pattern:
-     * if this band is clean, the faster clock is being latched correctly. */
-    cads_canvas_fill_rect(0, 300, CADS_CANVAS_WIDTH, 20, CadsColorAccent);
-    for(int16_t x = 0; x < CADS_CANVAS_WIDTH; x += 4) {
-        cads_canvas_draw_vline(x, 300, 20, CadsColorBrandDark);
-    }
+    /* Full-screen progress frame at a further-along percent, so this fast-clock
+     * pass is visibly a step past the safe-clock one above, and the flush
+     * still covers every pixel for the timing comparison. */
+    cads_splash_draw_progress("checking display clock", 80u);
 
     uint64_t start = cads_hal_ticks_us();
     uint32_t pixels = cads_canvas_flush();
@@ -294,11 +263,14 @@ void cads_bringup_run(void) {
     cads_canvas_init();
     cads_hal_display_backlight(80u);
 
-    /* Boot screen first: it is the only thing a person standing in front of the
-     * board sees before the self test starts scribbling test patterns. */
-    cads_splash_draw("milestone 1  .  bring-up self test");
+    /* Boot screen first: a branded splash with a progress bar the self test
+     * drives, so a person in front of the board sees activity - not the raw
+     * display test pattern, which now lives under Settings -> Test pattern
+     * (user request, 2026-08-27). A short hold makes the mark readable before
+     * the checks below sweep the bar forward; no fixed 1.5s dead wait. */
+    cads_splash_draw_progress("bring-up self test", 10u);
     cads_canvas_flush();
-    cads_hal_delay_ms(1500u);
+    cads_hal_delay_ms(500u);
 
     /* Assertion count must match exactly what runs below; board_test.py fails
      * the gate when the plan and the stream disagree, which is how a firmware
@@ -319,6 +291,12 @@ void cads_bringup_run(void) {
     cads_probe_put_uint(cads_test_number);
     cads_probe_puts(" passed\r\n");
     cads_probe_puts(cads_test_failures ? "# RESULT: FAIL\r\n" : "# RESULT: PASS\r\n");
+
+    /* End the pre-scheduler screen on a clean, complete splash rather than
+     * whatever the last check flushed - this is what the panel shows until the
+     * app tree takes over, so it should read as "ready", not "mid-test". */
+    cads_splash_draw_progress("ready", 100u);
+    cads_canvas_flush();
 
     /* Everything from here runs under the scheduler. The explorer becomes the
      * lowest-priority task rather than the only thing running, which is also
