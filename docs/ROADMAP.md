@@ -2063,6 +2063,33 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (UI pass) — Boot visuals reworked and a real dispatcher-capacity
+  bug caught. Committed cleanly (not tangled with the parallel M9 work):
+  **the boot no longer leaves the display test pattern on the panel** - it
+  draws a branded splash with a progress bar the self-test drives (55% at the
+  display check, 80% at the clock check, 100% "ready") and ends on the clean
+  "ready" frame. The throughput/fast-clock self-tests still flush a full
+  screen so their measurement is unchanged (verified: 10/10 TAP, flush still
+  342 kpixel/s on hardware, and the sim golden regenerated). The test pattern
+  moved to a portable `cads_test_pattern_draw()` (gui/cads_splash.c) for an
+  on-demand **Settings -> Test pattern** entry. **Desktop logo+caption now
+  centre vertically** in the content area instead of pinning 12px from the top
+  (read as top-heavy). Both verified on the panel by webcam.
+  **Dispatcher-capacity bug (the important one):** the app-tree view registry
+  was at 22 while the tree now registers 24 views (desktop, menu, settings x4
+  incl. calibration+test-pattern, about, gpio, netinfo, filebrowser x2,
+  game x5, netiperf x2, nettools x4, and the parallel dev's active x2) - so
+  two views were being *silently dropped at registration* (cads_view_dispatcher_add
+  returns false, every caller `(void)`s it), exactly the failure class this
+  file's explorer_app_demo.c header already documents twice. The last-registered
+  views (the menu view itself, or an active view) would simply not exist,
+  breaking navigation with no error. Bumped to 26 (mirrored in
+  tests/unit/test_app_tree.c, whose synthetic OK-keypress test is the guard
+  that catches this class on host before hardware). RAM after all of it:
+  640 B margin. Boot/test-pattern/capacity commits are HELD with the rest of
+  the tangled set pending the parallel dev's external.done; the boot-splash,
+  desktop, and golden commits landed clean.
+
 - 2026-08-27 — Network tools promoted to a GUI "Network" menu section, touch
   calibration implemented, and the 48K-heap-floor fight won with a better
   lever than starving lwIP. (Commits pending a clean split: the shared build
@@ -2090,12 +2117,20 @@ _None outstanding._
   raw->pixel mapping) and applied live via cads_hal_touch_set_calibration().
   Portable (host build shows "needs a real panel"); the raw sampling runs in
   cads_touch_calib_tick() on a fresh-press edge, not the input handler, so a
-  finger lifting mid-read is rejected. **Known gap: does not survive a reboot
-  yet** - it writes the four values to cads/storage kv, but nothing in this
-  firmware opens kv at boot (brightness/SPI-clock don't persist either), so
-  cross-reboot persistence waits on a separate kv-boot-open task. Live
-  in-session calibration works. Touch itself verified healthy independently:
-  `q 200` soak returned 0 ghosts.
+  finger lifting mid-read is rejected. **Persistence now implemented**
+  (2026-08-27): the module owns a lazily-mounted, single `/settings.kv` file
+  (cads_settings_kv_ready - mount + cads_kv_open once, on first load/save),
+  with no boot-path change - the open happens at cads_settings_init time on
+  the app-tree path, which is the earliest touch is used through the GUI, so
+  no shared boot file was touched (this was chosen deliberately while a second
+  developer holds the boot/CMake files). cads_kv is a single global table, so
+  a later settings-brightness/SPI-clock persistence task shares this same open
+  and file. Verified: flashed, `d` exercises the mount+open path, forensic
+  ring shows 0 records - the storage mount at init does not fault the boot;
+  first run finds no saved keys and correctly keeps the driver defaults. Not
+  yet verified: the full tap-calibrate -> reboot -> reloaded round trip, which
+  needs a person at the panel to tap the two crosshairs. Touch itself verified
+  healthy independently: `q 200` soak returned 0 ghosts.
   **RAM lever - the important structural note for next time:** three new
   features' static state (nettools views ~872 B, calibration view ~100 B,
   bigger dispatcher table) blew the `ASSERT(__cads_heap_size >= 48K)` guard.
