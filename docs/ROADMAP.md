@@ -2063,6 +2063,55 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-26 — Crash investigation, reframed: the tick hook is very likely
+  an EXPOSER, not the cause. Background research (independently re-deriving
+  the priority chain from source rather than trusting the earlier summary)
+  confirmed clean: configMAX_SYSCALL_INTERRUPT_PRIORITY=0x50/
+  configKERNEL_INTERRUPT_PRIORITY=0xF0 are correctly derived and
+  self-consistent with port.c's own runtime asserts (which pass, since the
+  system runs at all); NVIC priority grouping is never explicitly set
+  anywhere in this codebase, but the silicon reset default (PRIGROUP=0,
+  all-preempt) happens to already be exactly what the CM4F port requires -
+  correct, if implicit and worth hardening with an explicit call later.
+  FPU enable (CPACR CP10/CP11 at startup, ASPEN+LSPEN in port.c) is
+  standard and correct. The tick hook's own body remains exactly one MMIO
+  write with no shared state and no FreeRTOS API - cannot itself corrupt
+  memory or trip any ISR-priority assert.
+  The reframe: three different fault signatures across three captures
+  (clean configASSERT, UsageFault/UNDEFINSTR, precise BusFault to a
+  garbage address) are most likely ONE underlying, still-unlocated memory
+  corruption bug landing on different victims each time - not the tick
+  hook causing three different bugs. Two coincident, non-causal effects
+  explain why it only became visible tonight: (1) the watchdog is active
+  for the first time, so a fault that previously left the board silently
+  hung forever now reboots visibly with a forensic dump instead -
+  visibility changed, not the underlying bug's existence; (2) each
+  rebuild/relink shifts addresses, so the same corruption lands on
+  different memory each time, producing different-looking symptoms. This
+  fits independent evidence from earlier tonight: before any of this
+  session's watchdog work existed, the user reported pressing the
+  physical reset button because "nothing was happening" - a silent hang
+  needing a manual power cycle, exactly the pre-visibility symptom this
+  theory predicts.
+  Leading candidate for the actual corruption source (honestly still
+  unpinned, not confirmed): a transient task-stack overshoot in CCM
+  (task stacks, the MSP and the forensic ring all share that region per
+  the linker script) corrupting a neighbor - `configCHECK_FOR_STACK_
+  OVERFLOW=2` only samples at context switches, so a deep excursion that
+  overflows and returns between switches would be invisible to it, and
+  it has zero visibility into the MSP at all. An Ethernet RX-overrun
+  lead was chased and ruled out (hal_eth_mac.c's copy-out is correctly
+  length-clamped, RBS caps the DMA).
+  Recommendation, agreed and being acted on: do NOT move the watchdog
+  feed out of the tick hook - if the corruption is elsewhere, moving it
+  fixes nothing and only trades away real interrupts-disabled-deadlock
+  detection for no benefit. Instead, adding proper instrumentation before
+  guessing at a structural fix, same discipline that worked for tonight's
+  touch bug: stack canaries (MSP + each CCM task stack, painted at boot,
+  checked in the idle hook), MSP/PSP added to the forensic record, and
+  `-fstack-usage` added to the build for a static worst-case bound. Not
+  yet implemented as of this entry - in progress.
+
 - 2026-08-26 — Crash investigation, in progress (not yet resolved): the
   autonomous, sporadic crash first seen after tonight's watchdog work
   (`vApplicationTickHook()` feeding IWDG from inside `xPortSysTickHandler`,
