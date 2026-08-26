@@ -36,6 +36,20 @@ target_include_directories(cads_hal_itsboard PUBLIC
     ${CADS_ROOT}/lib/cmsis_device_f4/Include
 )
 
+# hal_spi.c needs FreeRTOS's recursive-mutex API to serialize the ui task's
+# display flushes against the input/console tasks' touch reads on the shared
+# SPI peripheral (see hal_spi.c's own comment on cads_spi_mutex for why).
+# Headers only - the actual FreeRTOS object code already lives in cads_kernel
+# and both static libraries end up in the same cads-zero.elf link, so the
+# symbols resolve there without cads_hal_itsboard linking cads_kernel
+# directly (which would invert the kernel-depends-on-HAL direction the rest
+# of this codebase relies on).
+target_include_directories(cads_hal_itsboard PUBLIC
+    ${CADS_ROOT}/lib/FreeRTOS-Kernel/include
+    ${CADS_ROOT}/lib/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+    ${CADS_ROOT}/modules/kernel/src
+)
+
 target_compile_definitions(cads_hal_itsboard PUBLIC
     STM32F429xx
     CADS_TARGET_ITSBOARD=1

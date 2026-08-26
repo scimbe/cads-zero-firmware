@@ -21,6 +21,9 @@
 
 #include "hal_spi.h"
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #include "board.h"
 #include "cads_hal.h"
 #include "hal_gpio.h"
@@ -31,6 +34,38 @@
 #define CADS_SPI_DMA_CHANNEL 3u
 
 static volatile bool cads_spi_dma_active = false;
+
+/*
+ * THE MISSING LOCK.
+ * -----------------
+ * cads_hal_spi_claim_bus()/release_bus() were already the one checkpoint
+ * every caller - the display flush path in hal_display.c and every touch
+ * read in hal_touch.c - agrees to go through before touching this shared
+ * peripheral. What they never did is actually exclude each other: the
+ * existing cads_eth_claim_depth counter below only gates the Ethernet/PA7
+ * arbitration's one-time setup on nested calls FROM THE SAME CALLER, not
+ * concurrent calls from a DIFFERENT task. The ui task (display flush) and
+ * the input/console tasks (touch reads) run this exact code from separate
+ * FreeRTOS tasks with nothing stopping them interleaving.
+ *
+ * Caught live: a console-task touch read hung forever inside
+ * cads_hal_spi_transfer()'s `while(!(SR & RXNE))`, attached with a
+ * debugger before resetting. SR read BSY=0, RXNE=0 - the peripheral
+ * believed itself idle, having apparently abandoned an in-flight
+ * transfer - and CR1's baud-rate bits read back the DISPLAY divider
+ * (16), not the touch divider (128) that this exact code path sets at
+ * its own entry. Something reconfigured CR1 out from under a
+ * transaction in progress: exactly what an unsynchronized concurrent
+ * cads_spi_configure() call from the ui task would do.
+ *
+ * Recursive because the existing depth-counted claim/release pattern
+ * nests legitimately within one caller (hal_display.c's own flush
+ * sequence claims and releases more than once); a plain mutex would
+ * deadlock a task against itself on the second nested claim.
+ */
+static StaticSemaphore_t cads_spi_mutex_storage;
+static SemaphoreHandle_t cads_spi_mutex;
+
 
 static uint32_t cads_spi_br_bits(uint32_t divider) {
     switch(divider) {
@@ -63,6 +98,8 @@ void cads_hal_spi_init(void) {
     cads_gpio_init_alternate(CADS_PIN_SPI_MISO_PORT, CADS_PIN_SPI_MISO, 5u, CadsGpioPullNone);
     cads_gpio_init_alternate(
         CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, CADS_PIN_SPI_MOSI_AF, CadsGpioPullNone);
+
+    cads_spi_mutex = xSemaphoreCreateRecursiveMutexStatic(&cads_spi_mutex_storage);
 
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
     RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
@@ -146,6 +183,7 @@ void cads_hal_spi_set_eth_datapath_active(bool active) {
 #endif
 
 void cads_hal_spi_claim_bus(void) {
+    xSemaphoreTakeRecursive(cads_spi_mutex, portMAX_DELAY);
 #if !CADS_SPI_ETH_COEXIST
     if(cads_eth_claim_depth++ != 0u) return;
 
@@ -186,17 +224,18 @@ void cads_hal_spi_claim_bus(void) {
 
 void cads_hal_spi_release_bus(void) {
 #if !CADS_SPI_ETH_COEXIST
-    if(--cads_eth_claim_depth != 0u) return;
+    if(--cads_eth_claim_depth == 0u) {
+        cads_hal_spi_wait();
 
-    cads_hal_spi_wait();
-
-    if(cads_eth_is_running()) {
-        /* AF11 = ETH on PA7. */
-        cads_gpio_set_alternate(CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, 11u);
-        ETH->MACCR |= cads_eth_saved_maccr;
-        cads_eth_saved_maccr = 0u;
+        if(cads_eth_is_running()) {
+            /* AF11 = ETH on PA7. */
+            cads_gpio_set_alternate(CADS_PIN_SPI_MOSI_PORT, CADS_PIN_SPI_MOSI, 11u);
+            ETH->MACCR |= cads_eth_saved_maccr;
+            cads_eth_saved_maccr = 0u;
+        }
     }
 #endif
+    xSemaphoreGiveRecursive(cads_spi_mutex);
 }
 
 /* --- polled byte transfers (commands, touch) ------------------------------ */
