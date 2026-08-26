@@ -19,6 +19,9 @@
 #ifdef CADS_APP_GPIO_ENABLED
 #include "cads_gpio.h"
 #endif
+#ifdef CADS_APP_NETTOOLS_ENABLED
+#include "cads_nettools.h"
+#endif
 #include "cads_gui.h"
 #include "cads_hal.h"
 #include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo, filebrowser, game */
@@ -145,6 +148,9 @@ void cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_GAME_ENABLED
         cads_game_tick(now);
+#endif
+#ifdef CADS_APP_NETTOOLS_ENABLED
+        cads_nettools_tick(now);
 #endif
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {

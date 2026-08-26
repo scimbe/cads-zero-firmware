@@ -43,6 +43,11 @@ static bool cads_net_full_duplex = false;
 static uint32_t cads_net_rx_frames = 0u;
 static uint32_t cads_net_tx_frames = 0u;
 static uint32_t cads_net_rx_dropped = 0u;
+/* Set by the M9 active-tooling promiscuous capture tools (modules/netx
+ * rawio) while they own the RX ring themselves. While true, cads_net_poll()
+ * is a no-op - see cads_net_set_poll_suppressed(). Default false, restored
+ * on every capture_end. */
+static bool cads_net_poll_suppressed = false;
 
 /* Addressing configuration. Default is a STATIC address, not DHCP: this
  * board's bench segment has no DHCP server, so a lease never binds there and
@@ -227,7 +232,17 @@ static void cads_net_receive_pump(void) {
     }
 }
 
+void cads_net_set_poll_suppressed(bool suppressed) {
+    cads_net_poll_suppressed = suppressed;
+}
+
 void cads_net_poll(void) {
+    /* A promiscuous capture session (modules/netx) owns the RX ring and
+     * the MAC filter for its duration; this poll must not touch either, or
+     * run lwIP timeouts against traffic the netif is no longer receiving -
+     * so it returns outright while suppressed. The session always clears
+     * this on end, including on view exit. */
+    if(cads_net_poll_suppressed) return;
     cads_net_link_check();
     if(cads_net_link_was_up) cads_net_receive_pump();
     sys_check_timeouts();
@@ -258,6 +273,25 @@ void cads_net_status(cads_net_status_t* status) {
         const ip_addr_t* dns = dns_getserver(0u);
         if(dns) status->dns_addr = lwip_ntohl(ip4_addr_get_u32(dns));
     }
+}
+
+bool cads_net_arp_request(uint32_t ip) {
+    if(!cads_net_link_was_up) return false;
+    ip4_addr_t target;
+    ip4_addr_set_u32(&target, lwip_htonl(ip));
+    return etharp_request(&cads_netif, &target) == ERR_OK;
+}
+
+bool cads_net_arp_lookup(uint32_t ip, uint8_t mac_out[6]) {
+    if(!cads_net_link_was_up) return false;
+    ip4_addr_t target;
+    ip4_addr_set_u32(&target, lwip_htonl(ip));
+
+    struct eth_addr* eth_ret;
+    const ip4_addr_t* ip_ret;
+    if(etharp_find_addr(&cads_netif, &target, &eth_ret, &ip_ret) < 0) return false;
+    if(mac_out) memcpy(mac_out, eth_ret->addr, 6u);
+    return true;
 }
 
 bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {

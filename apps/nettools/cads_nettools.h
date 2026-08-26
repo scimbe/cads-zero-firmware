@@ -27,4 +27,11 @@
 
 void cads_nettools_init(cads_view_dispatcher_t* dispatcher);
 
+/**
+ * Drive the ARP scan's non-blocking sweep. Call from the app-tree main loop
+ * alongside cads_game_tick()/cads_gpio_tick() - a no-op unless a scan is
+ * actually running.
+ */
+void cads_nettools_tick(uint32_t now_ms);
+
 #endif /* CADS_NETTOOLS_H */

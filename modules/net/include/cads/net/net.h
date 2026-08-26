@@ -55,6 +55,19 @@ void cads_net_init(const uint8_t mac_address[6]);
  */
 void cads_net_poll(void);
 
+/**
+ * Suppress (or resume) cads_net_poll()'s work. While suppressed, poll is
+ * a no-op: it does not check the link, drain the RX ring, or run lwIP's
+ * timeouts. Used by the M9 "Active Net Tools" promiscuous capture tools
+ * (modules/netx rawio) which take the MAC promiscuous and own the RX ring
+ * themselves for the duration of a session - letting cads_net_poll() drain
+ * the same ring at the same time would steal their frames. The capture
+ * tools always call this in a begin/end pair, so poll resumes when the
+ * session ends (including on view exit). No-op to call repeatedly with the
+ * same value; the bringup loop simply keeps calling poll regardless.
+ */
+void cads_net_set_poll_suppressed(bool suppressed);
+
 void cads_net_status(cads_net_status_t* status);
 
 /**
@@ -95,6 +108,25 @@ void cads_net_set_config(const cads_net_config_t* config);
  * up - there is nothing to probe a subnet through yet.
  */
 bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]);
+
+/**
+ * The non-blocking half of cads_net_arp_probe(), for callers sweeping many
+ * hosts from a polled loop (apps/nettools' subnet scan): fire one ARP
+ * request for `ip` (host byte order) and return immediately - replies are
+ * processed by the cads_net_poll() the caller is already running. Returns
+ * false (nothing sent) if the link is down.
+ */
+bool cads_net_arp_request(uint32_t ip);
+
+/**
+ * Check whether the ARP table currently holds a resolved address for `ip`,
+ * without sending anything. `mac_out`, when not NULL, receives the address
+ * on a true return. Pair with cads_net_arp_request() a poll-loop tick or
+ * two later; the table holds a bounded number of entries (lwipopts.h's
+ * ARP_TABLE_SIZE or lwIP's default), so look an entry up soon after its
+ * request rather than at the end of a long sweep.
+ */
+bool cads_net_arp_lookup(uint32_t ip, uint8_t mac_out[6]);
 
 /**
  * Send one ICMP echo request to `ip` (host byte order) and wait up to

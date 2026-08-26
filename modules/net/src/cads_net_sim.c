@@ -54,6 +54,17 @@ bool cads_net_arp_probe(uint32_t ip, uint32_t timeout_ms, uint8_t mac_out[6]) {
     return false; /* never a link, so never anything to probe - see this file's header */
 }
 
+bool cads_net_arp_request(uint32_t ip) {
+    (void)ip;
+    return false; /* same reasoning as cads_net_arp_probe() above */
+}
+
+bool cads_net_arp_lookup(uint32_t ip, uint8_t mac_out[6]) {
+    (void)ip;
+    (void)mac_out;
+    return false; /* same reasoning as cads_net_arp_probe() above */
+}
+
 bool cads_net_ping(uint32_t ip, uint32_t timeout_ms, uint32_t* rtt_ms) {
     (void)ip;
     (void)timeout_ms;
