@@ -43,7 +43,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # warnings are not ours to fix, so it gets its own library without
     # cads_flags (see modules/storage/CMakeLists.txt's cads_littlefs for the
     # same reasoning).
-    add_library(cads_lwip STATIC ${lwipcore_SRCS} ${lwipcore4_SRCS} ${lwipnetif_SRCS} ${lwipiperf_SRCS})
+    # lwipppp_SRCS: modules/wifi's PPPoS link to the ESP32 co-processor (see
+    # docs/reference/wifi-coprocessor.md). Most of its files compile down to
+    # nearly nothing - CHAP/PAP/MPPE/CCP/multilink/PPPoE/PPPoL2TP are all off
+    # in lwipopts.h, this link has no use for any of them (it is a private,
+    # physically-wired point-to-point link, not a dial-up/VPN scenario) - but
+    # they are still part of lwIP's own Filelists.cmake grouping, and pulling
+    # in the whole group (same as every other lwipXXX_SRCS list here) keeps
+    # this file matching lwIP's own structure rather than hand-picking files
+    # lwIP's own maintainers regroup from release to release.
+    add_library(cads_lwip STATIC
+        ${lwipcore_SRCS} ${lwipcore4_SRCS} ${lwipnetif_SRCS} ${lwipiperf_SRCS} ${lwipppp_SRCS})
     target_include_directories(cads_lwip PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include       # lwipopts.h, arch/cc.h
         ${LWIP_DIR}/src/include

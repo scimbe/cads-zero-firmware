@@ -554,6 +554,33 @@ uint32_t cads_hal_console_overruns(void) {
     return 0u;
 }
 
+/* --- WiFi co-processor link -------------------------------------------------
+ * No ESP32 to talk to on the host: the link never delivers a byte and every
+ * write is a no-op. modules/wifi's PPP negotiation simply never completes,
+ * which is the correct simulator behaviour - "no co-processor attached" -
+ * not a build-breaking gap. */
+
+void cads_hal_wifi_uart_init(void) {
+}
+
+void cads_hal_wifi_uart_write(const void* data, size_t length) {
+    (void)data;
+    (void)length;
+}
+
+bool cads_hal_wifi_uart_read(uint8_t* byte) {
+    (void)byte;
+    return false;
+}
+
+uint32_t cads_hal_wifi_uart_dropped(void) {
+    return 0u;
+}
+
+uint32_t cads_hal_wifi_uart_overruns(void) {
+    return 0u;
+}
+
 /* --- display --------------------------------------------------------------- */
 
 void cads_hal_display_init(void) {

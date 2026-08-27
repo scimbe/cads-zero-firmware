@@ -12,6 +12,7 @@
 #include "explorer_app_demo.h"
 
 #include "cads/net/net.h"
+#include "cads/wifi/wifi.h"
 #include "cads_desktop.h"
 #ifdef CADS_APP_GAME_ENABLED
 #include "cads_game.h"
@@ -203,6 +204,7 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 #ifdef CADS_APP_SETTINGS_ENABLED
         cads_touch_calib_tick(now);
         cads_settings_service_config(); /* console-task storage owner services reload requests */
+        cads_wifi_tick(now); /* no-op until wifi.enabled=1 brings up a PPP session */
 #endif
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {

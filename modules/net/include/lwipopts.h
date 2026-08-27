@@ -189,4 +189,31 @@
 #define LWIP_STATS                  0
 #define LWIP_DEBUG                  0
 
+/* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------
+ * See docs/reference/wifi-coprocessor.md. This is a private, physically
+ * wired point-to-point link between two boards this project controls - not
+ * a dial-up ISP or VPN scenario - so every feature aimed at an untrusted or
+ * third-party peer is off: no authentication (CHAP/PAP - trust the wire,
+ * same as the boot bootstrap line's SSID/password already have to be), no
+ * compression/encryption (CCP/MPPE), no multilink, no PPPoE/PPPoL2TP (this
+ * is PPPoS, plain PPP over a serial byte stream). measured empirically
+ * (2026-08-27, a host-side sizeof() probe against this exact vendored lwIP):
+ * sizeof(ppp_pcb) + sizeof(pppos_pcb) = 488 B with these flags; PPPoS itself
+ * reuses the existing PBUF_POOL/MEM_SIZE pools above for frame data rather
+ * than carrying its own fixed buffers, so there is no larger hidden cost. */
+#define PPP_SUPPORT                 1
+#define PPPOS_SUPPORT               1
+#define PAP_SUPPORT                 0
+#define CHAP_SUPPORT                0
+#define MPPE_SUPPORT                0
+#define CCP_SUPPORT                 0
+#define VJ_SUPPORT                  0
+#define PPP_MULTILINK               0
+#define PPP_IPV6_SUPPORT            0
+#define PPPOE_SUPPORT               0
+#define PPPOL2TP_SUPPORT            0
+#define PPP_MAXIDLEFLAG             0
+#define MEMP_NUM_PPP_PCB            1
+#define MEMP_NUM_PPPOS_INTERFACES   1
+
 #endif /* CADS_LWIPOPTS_H */

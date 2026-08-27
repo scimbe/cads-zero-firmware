@@ -145,6 +145,29 @@ uint32_t cads_hal_console_overruns(void) {
     return 0u;
 }
 
+/* --- WiFi co-processor link -------------------------------------------------- */
+
+void cads_hal_wifi_uart_init(void) {
+}
+
+void cads_hal_wifi_uart_write(const void* data, size_t length) {
+    (void)data;
+    (void)length;
+}
+
+bool cads_hal_wifi_uart_read(uint8_t* byte) {
+    (void)byte;
+    return false;
+}
+
+uint32_t cads_hal_wifi_uart_dropped(void) {
+    return 0u;
+}
+
+uint32_t cads_hal_wifi_uart_overruns(void) {
+    return 0u;
+}
+
 const char* cads_fake_console_text(void) {
     return cads_fake_console;
 }

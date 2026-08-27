@@ -5,6 +5,7 @@
 #include "cads/config/config.h"
 #include "cads/net/net.h"
 #include "cads/storage/storage.h"
+#include "cads/wifi/wifi.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -136,9 +137,15 @@ static volatile bool s_config_reset_requested = false;
 
 /* Push a loaded config into the live subsystems and the settings shadow, so
  * the panel and the Brightness/SPI rows reflect the file. Only re-applies a
- * subsystem whose value changed since the last apply. WiFi fields persist in
- * the file but have no driver yet, so they are not applied here. MUST run on
- * the console task (the storage owner) - see s_config_reload_requested. */
+ * subsystem whose value changed since the last apply. WiFi is opt-in and off
+ * by default (cads_config_defaults(): wifi_enabled=false) - deliberately, it
+ * is the one subsystem in this function not yet hardware-verified (no ESP32
+ * wired to a board as of this writing; see
+ * docs/reference/wifi-coprocessor.md). Gating on wifi_enabled keeps this
+ * entirely inert for every board that has not explicitly opted in via
+ * /config.txt, the same "features as tests" reasoning
+ * docs/explanation/config-design.md already applies to build profiles. MUST
+ * run on the console task (the storage owner) - see s_config_reload_requested. */
 static void cads_settings_apply_config(const cads_config_t* cfg) {
     bool first = !s_have_applied_config;
 
@@ -159,6 +166,18 @@ static void cads_settings_apply_config(const cads_config_t* cfg) {
             .use_dhcp = cfg->net_dhcp, .ip = cfg->net_ip,
             .netmask = cfg->net_netmask, .gateway = cfg->net_gateway};
         cads_net_set_config(&net);
+    }
+
+    if(first) {
+        cads_wifi_init();
+    }
+    if(cfg->wifi_enabled &&
+       (first || !s_have_applied_config || cfg->wifi_enabled != s_applied_config.wifi_enabled ||
+        !cads_str_equal(cfg->wifi_ssid, s_applied_config.wifi_ssid) ||
+        !cads_str_equal(cfg->wifi_password, s_applied_config.wifi_password))) {
+        (void)cads_wifi_connect(cfg->wifi_ssid, cfg->wifi_password);
+    } else if(!cfg->wifi_enabled && (first || s_applied_config.wifi_enabled)) {
+        cads_wifi_disconnect();
     }
 
     s_applied_config = *cfg;

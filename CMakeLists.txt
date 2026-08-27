@@ -218,6 +218,7 @@ add_subdirectory(modules/config)
 # src/cads_net_sim.c, an honest "no link" stub - see that file's own header
 # for why the simulator does not pretend to have RMII hardware).
 add_subdirectory(modules/net)
+add_subdirectory(modules/wifi)
 
 # netx is the active-tooling counterpart to net/net: net owns the honest lwIP
 # netif, netx owns the forged-frame builders (portable, host unit-tested) and
@@ -411,7 +412,7 @@ if(CADS_APP_SETTINGS)
 endif()
 target_link_libraries(cads_apps PUBLIC cads_config)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
-target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli cads_diag)
+target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_wifi cads_cli cads_diag)
 if(CADS_TARGET STREQUAL "itsboard")
     target_link_libraries(cads_apps PUBLIC cads_kernel)
 endif()

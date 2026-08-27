@@ -136,6 +136,17 @@ uint32_t cads_hal_console_dropped(void);
 /** Hardware receive overruns. Non-zero means bytes were lost before the ISR. */
 uint32_t cads_hal_console_overruns(void);
 
+/* --- WiFi co-processor link (USART6 -> ESP32 on hardware, no-op in the
+ * simulator - see docs/reference/wifi-coprocessor.md). Byte-oriented on
+ * purpose: modules/wifi frames PPP over this, the same way the console frames
+ * command lines over its own byte stream. */
+
+void cads_hal_wifi_uart_init(void);
+void cads_hal_wifi_uart_write(const void* data, size_t length);
+bool cads_hal_wifi_uart_read(uint8_t* byte);
+uint32_t cads_hal_wifi_uart_dropped(void);
+uint32_t cads_hal_wifi_uart_overruns(void);
+
 /* --- display ------------------------------------------------------------- */
 
 void cads_hal_display_init(void);

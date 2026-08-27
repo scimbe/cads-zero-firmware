@@ -239,6 +239,22 @@
 #define CADS_PIN_UART_RX        9u
 #define CADS_UART_AF            7u
 
+/* --- WiFi co-processor: ESP32 over USART6, PPPoS -----------------------------
+ * PC6/PC7 are free (not RMII, not adapter I/O, not the SPI3/timer headers
+ * used elsewhere) - see docs/reference/wifi-coprocessor.md for the wiring
+ * rationale and the full link protocol. AF8 carries USART6 on this port,
+ * unlike USART3's AF7 above - confirm against the datasheet before reuse.
+ * High baud because PPP framing (HDLC byte-stuffing) inflates the wire bytes
+ * per IP byte; 460800 keeps the link itself well clear of being the
+ * throughput bottleneck relative to the WiFi hop behind it. */
+#define CADS_WIFI_UART           USART6
+#define CADS_WIFI_BAUD           460800u
+#define CADS_PIN_WIFI_TX_PORT    GPIOC
+#define CADS_PIN_WIFI_TX         6u
+#define CADS_PIN_WIFI_RX_PORT    GPIOC
+#define CADS_PIN_WIFI_RX         7u
+#define CADS_WIFI_UART_AF        8u
+
 /* --- Ethernet: LAN8742A over RMII ------------------------------------------
  * PA1 REF_CLK, PA2 MDIO, PC1 MDC, PA7 CRS_DV, PC4 RXD0, PC5 RXD1,
  * PG2 RXER, PG11 TX_EN, PG13 TXD0, PB13 TXD1.

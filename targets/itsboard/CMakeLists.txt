@@ -7,6 +7,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_clock.c
     hal/hal_time.c
     hal/hal_console.c
+    hal/hal_uart_wifi.c
     hal/hal_spi.c
     hal/hal_display.c
     hal/hal_touch.c

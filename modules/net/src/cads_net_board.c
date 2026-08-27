@@ -256,6 +256,14 @@ u32_t sys_now(void) {
     return cads_hal_ticks_ms();
 }
 
+/* Only PPP's magic.c (modules/wifi's link to the ESP32) calls this, to help
+ * seed its anti-looped-link magic number - any monotonically increasing
+ * counter is fine for that, so this is sys_now() again rather than a
+ * separate free-running counter. */
+u32_t sys_jiffies(void) {
+    return cads_hal_ticks_ms();
+}
+
 void cads_net_status(cads_net_status_t* status) {
     memset(status, 0, sizeof(*status));
     memcpy(status->mac, cads_net_mac, sizeof(status->mac));
