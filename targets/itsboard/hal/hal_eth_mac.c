@@ -53,7 +53,13 @@
 #include "cads_hal.h"
 #include "hal_gpio.h"
 
-#define CADS_ETH_RX_COUNT 4u
+/* 8, deepened from 4: the long-term stress soak measured ~1431 frames dropped
+ * "no RX descriptor free" under a 5000 pps capture flood (issue #68) - the DMA
+ * filled all descriptors before the single-loop software drained them. Doubling
+ * the ring doubles the burst absorbed between drains; affordable now that
+ * gui/canvas.c reclaimed 15 KB (issue #59). Normal traffic never came near the
+ * old depth of 4. Costs CADS_ETH_BUF_SIZE (1536 B) per added descriptor. */
+#define CADS_ETH_RX_COUNT 8u
 /* 2, not 4: cads_hal_eth_mac_transmit() copies one frame into the next TX
  * buffer and hands it to the DMA, which drains a 1522-byte frame in ~123us
  * at 100Mbit - far faster than this software-checksummed, single-loop TX

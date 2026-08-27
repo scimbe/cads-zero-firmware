@@ -309,14 +309,31 @@ void cads_hal_spi_release_bus(void) {
 
 /* --- polled byte transfers (commands, touch) ------------------------------ */
 
+/* A single byte at the slowest divider (/256) is ~11 us on the wire; 1,000,000
+ * guard iterations is ~16 ms at 180 MHz - orders of magnitude above any legal
+ * transfer, well under the IWDG period. A spin that exhausts it means the
+ * peripheral is genuinely wedged (clock gated, SPE cleared out from under a
+ * transfer), so turn the otherwise-silent hang into a named forensic record +
+ * reset instead of a frozen task the tick-fed watchdog can never catch (issue
+ * #66). A plain decrement is far cheaper than a cads_hal_ticks_us() read in
+ * this ~150k-calls-per-flush hot path, and the normal case exits in 1-2
+ * iterations so the guard costs nothing measurable. */
+#define CADS_SPI_XFER_GUARD 1000000u
+
 uint8_t cads_hal_spi_transfer(uint8_t value) {
+    uint32_t guard = CADS_SPI_XFER_GUARD;
     while(!(CADS_LCD_SPI->SR & SPI_SR_TXE)) {
+        if(--guard == 0u) cads_hal_panic("SPI TXE timeout");
     }
     *(volatile uint8_t*)&CADS_LCD_SPI->DR = value;
+    guard = CADS_SPI_XFER_GUARD;
     while(!(CADS_LCD_SPI->SR & SPI_SR_RXNE)) {
+        if(--guard == 0u) cads_hal_panic("SPI RXNE timeout");
     }
     uint8_t received = *(volatile uint8_t*)&CADS_LCD_SPI->DR;
+    guard = CADS_SPI_XFER_GUARD;
     while(CADS_LCD_SPI->SR & SPI_SR_BSY) {
+        if(--guard == 0u) cads_hal_panic("SPI BSY timeout");
     }
     return received;
 }
