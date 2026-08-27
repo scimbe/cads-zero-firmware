@@ -101,6 +101,47 @@ static void test_serialize_round_trips(void) {
     TEST_ASSERT_TRUE(cads_config_equal(&a, &b));
 }
 
+
+static void test_ipv4_strictness(void) {
+    cads_config_t c;
+    const char* cases[] = {
+        "net.ip = 1.2.3.4.5\n",
+        "net.ip = 1.2.3\n",
+        "net.ip = 1.2.3.4x\n",
+        "net.ip = 1.2.3.256\n",
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        cads_config_defaults(&c);
+        cads_config_parse(cases[i], strlen(cases[i]), &c);
+        TEST_ASSERT_EQUAL_HEX32(IP4(192, 168, 33, 99), c.net_ip);
+    }
+    cads_config_defaults(&c);
+    cads_config_parse("net.ip = 10.0.0.7   \n", 22u, &c);
+    TEST_ASSERT_EQUAL_HEX32(IP4(10, 0, 0, 7), c.net_ip);
+}
+
+static void test_bool_tokens(void) {
+    cads_config_t c;
+    struct { const char* text; bool expect; } cases[] = {
+        {"wifi.enabled = On\n", true},   {"wifi.enabled = ON\n", true},
+        {"wifi.enabled = yes\n", true},  {"wifi.enabled = 1\n", true},
+        {"wifi.enabled = ture\n", false},{"wifi.enabled = yellow\n", false},
+        {"wifi.enabled = o\n", false},   {"wifi.enabled = 0\n", false},
+    };
+    for(size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        cads_config_defaults(&c);
+        cads_config_parse(cases[i].text, strlen(cases[i].text), &c);
+        TEST_ASSERT_EQUAL(cases[i].expect, c.wifi_enabled);
+    }
+}
+
+static void test_brightness_rejects_junk(void) {
+    cads_config_t c;
+    cads_config_defaults(&c);
+    cads_config_parse("display.brightness = 42x\n", 24u, &c);
+    TEST_ASSERT_EQUAL_UINT8(80u, c.brightness);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_defaults);
@@ -108,5 +149,8 @@ int main(void) {
     RUN_TEST(test_parse_ignores_junk_and_whitespace);
     RUN_TEST(test_brightness_clamps_to_100);
     RUN_TEST(test_serialize_round_trips);
+    RUN_TEST(test_ipv4_strictness);
+    RUN_TEST(test_bool_tokens);
+    RUN_TEST(test_brightness_rejects_junk);
     return UNITY_END();
 }

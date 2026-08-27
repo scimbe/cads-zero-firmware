@@ -30,41 +30,70 @@ static const char* skip_ws(const char* p, const char* end) {
     return p;
 }
 
-/* Copy [p,vend) into out (bounded), trimming trailing whitespace. */
+/* Copy [p,vend) into out (bounded), trimming trailing whitespace, and
+ * zero-fill the remainder so two configs holding the same string never differ
+ * in the bytes past the NUL (keeps cads_config_equal's memcmp honest). */
 static void copy_trimmed(char* out, size_t out_size, const char* p, const char* vend) {
     while(vend > p && (vend[-1] == ' ' || vend[-1] == '\t' || vend[-1] == '\r')) vend--;
     size_t n = (size_t)(vend - p);
     if(n >= out_size) n = out_size - 1u;
     memcpy(out, p, n);
-    out[n] = '\0';
+    memset(out + n, 0, out_size - n);
 }
 
+/* Case-insensitive equality of [p,end) against a NUL-terminated token. */
+static bool token_eq(const char* p, const char* end, const char* tok) {
+    size_t n = (size_t)(end - p);
+    if(n != strlen(tok)) return false;
+    for(size_t i = 0; i < n; i++) {
+        char a = p[i], b = tok[i];
+        if(a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if(a != b) return false;
+    }
+    return true;
+}
+
+/* A boolean is exactly one of the accepted tokens (case-insensitive); anything
+ * else - including "ture", "yellow", a bare "o" - is false, not "true because
+ * it starts with t". Trailing whitespace is trimmed first. */
 static bool parse_bool(const char* p, const char* end) {
-    /* "1"/"true"/"on"/"yes" true; everything else false. First char is enough
-     * for the accepted set once whitespace is stripped. */
+    while(end > p && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r')) end--;
+    return token_eq(p, end, "1") || token_eq(p, end, "true") ||
+           token_eq(p, end, "on") || token_eq(p, end, "yes");
+}
+
+/* Parse a whole [p,end) span as a 0..max decimal, requiring the ENTIRE span to
+ * be digits (no trailing junk, no silent truncation). Trailing whitespace is
+ * trimmed. Returns false on empty, overflow, non-digit, or > max. */
+static bool parse_uint_full(const char* p, const char* end, uint32_t max, uint32_t* out) {
+    while(end > p && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r')) end--;
     if(p >= end) return false;
-    return *p == '1' || *p == 't' || *p == 'T' || *p == 'y' || *p == 'Y' ||
-           (*p == 'o' && (p + 1 < end) && (p[1] == 'n' || p[1] == 'N'));
+    uint32_t v = 0u;
+    for(const char* q = p; q < end; q++) {
+        if(*q < '0' || *q > '9') return false;
+        if(v > (0xFFFFFFFFu - (uint32_t)(*q - '0')) / 10u) return false; /* overflow */
+        v = v * 10u + (uint32_t)(*q - '0');
+    }
+    if(v > max) return false;
+    *out = v;
+    return true;
 }
 
 static bool parse_ipv4(const char* p, const char* end, uint32_t* out) {
+    /* Trim trailing whitespace so "1.2.3.4  " is accepted but "1.2.3.4.5",
+     * "1.2.3", "1.2.3.4x" and "1.2.3.04" are not - each octet span must be a
+     * complete number and there must be exactly four, nothing trailing. */
+    while(end > p && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r')) end--;
     uint32_t octet[4];
     for(int i = 0; i < 4; i++) {
-        uint32_t v = 0u;
-        const char* np = NULL;
-        char tmp[8];
-        /* isolate up to the next '.' or end */
         const char* dot = p;
         while(dot < end && *dot != '.') dot++;
-        size_t n = (size_t)(dot - p);
-        if(n == 0u || n >= sizeof(tmp)) return false;
-        memcpy(tmp, p, n);
-        tmp[n] = '\0';
-        if(!cads_str_to_uint(tmp, &v, &np) || v > 255u) return false;
-        octet[i] = v;
+        if(!parse_uint_full(p, dot, 255u, &octet[i])) return false;
         if(i < 3) {
-            if(dot >= end) return false; /* ran out before 4 octets */
+            if(dot >= end) return false; /* fewer than 4 octets */
             p = dot + 1;
+        } else {
+            if(dot != end) return false; /* trailing junk after the 4th octet */
         }
     }
     *out = (octet[0] << 24) | (octet[1] << 16) | (octet[2] << 8) | octet[3];
@@ -96,9 +125,8 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                 const char* v = skip_ws(eq + 1, line_end);
 
                 if(key_is(s, kend, "display.brightness")) {
-                    uint32_t val = 0u; const char* np = NULL;
-                    char tmp[8]; copy_trimmed(tmp, sizeof(tmp), v, line_end);
-                    if(cads_str_to_uint(tmp, &val, &np)) {
+                    uint32_t val = 0u;
+                    if(parse_uint_full(v, line_end, 0xFFFFu, &val)) {
                         cfg->brightness = (uint8_t)(val > 100u ? 100u : val); applied++;
                     }
                 } else if(key_is(s, kend, "display.fast_clock")) {
@@ -216,7 +244,24 @@ int cads_config_load(cads_config_t* cfg) {
     (void)cads_storage_close(file);
     if(n < 0) return (int)n;
 
-    cads_config_parse(text, (size_t)n, cfg);
+    /* An empty file (a save that created but never wrote it, say) carries no
+     * config and would leave the self-heal broken - rewrite the base version,
+     * same as a missing file. */
+    if(n == 0) {
+        (void)cads_config_save(cfg); /* cfg still holds defaults from the top */
+        return CADS_STORAGE_OK;
+    }
+
+    /* If the read filled the buffer the file is larger than we read, so the
+     * last line may be truncated mid-value and would parse as a wrong value
+     * (e.g. "net.ip = 192.168.1." or a half-typed number). Drop everything
+     * after the last newline so only complete lines are parsed. */
+    size_t len = (size_t)n;
+    if(len == sizeof(text) - 1u) {
+        while(len > 0u && text[len - 1u] != '\n') len--;
+    }
+
+    cads_config_parse(text, len, cfg);
     return CADS_STORAGE_OK;
 }
 
