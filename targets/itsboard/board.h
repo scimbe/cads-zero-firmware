@@ -239,14 +239,31 @@
 #define CADS_PIN_UART_RX        9u
 #define CADS_UART_AF            7u
 
-/* --- WiFi co-processor: ESP32 over USART6, PPPoS -----------------------------
- * PC6/PC7 are free (not RMII, not adapter I/O, not the SPI3/timer headers
- * used elsewhere) - see docs/reference/wifi-coprocessor.md for the wiring
- * rationale and the full link protocol. AF8 carries USART6 on this port,
- * unlike USART3's AF7 above - confirm against the datasheet before reuse.
- * High baud because PPP framing (HDLC byte-stuffing) inflates the wire bytes
- * per IP byte; 460800 keeps the link itself well clear of being the
- * throughput bottleneck relative to the WiFi hop behind it. */
+/* --- WiFi/Marauder co-processor: ESP32 over USART6 --------------------------
+ * PC6=CN8 pin 8, PC7=CN8 pin 9 (verified against the project's own schematic,
+ * docs/reference/datasheets/ITSBRD-schematic-Jaehnichen-HAW-rev02.pdf, sheet
+ * 5 "Analog and Timers" - CN8 is a 12-pin single row: pin 1 GND, 2 PE8,
+ * 3 PE10, 4 PE14, 5 PB10, 6 PB11, 7 PB0, 8 PC6, 9 PC7, 10 PC8, 11 PC9,
+ * 12 GND). CORRECTION to an earlier version of this comment: these are NOT
+ * free of the timer header - they are two of its twelve pins, silkscreened
+ * TIM8_1/TIM8_2 on the board's own CN8 label. Using them for USART6 leaves
+ * TIM8_CH3/CH4 (PC8/PC9, CN8 pins 10/11) as the only still-available CN8
+ * timer channels.
+ *
+ * SHARED PERIPHERAL WARNING: USART6 is the SAME peripheral this board's
+ * onboard RS232 port (J1, via the MAX3232 level shifter) already uses, on a
+ * DIFFERENT pin pair - PG14=TX/PG9=RX (see the schematic's "Busses" sheet).
+ * Configuring PC6/PC7 as USART6 AF8 does not move the peripheral off
+ * PG14/PG9; it means BOTH pin pairs are live on the same TX/RX shift
+ * registers at once. Harmless with nothing plugged into the RS232 DB9
+ * connector; a real conflict if something is - do not use the onboard RS232
+ * port while an ESP32 co-processor is wired to CN8 pins 8/9.
+ *
+ * AF8 carries USART6 on PC6/PC7, unlike USART3's AF7 above. High baud
+ * because PPP framing (HDLC byte-stuffing) inflates the wire bytes per IP
+ * byte; 460800 keeps the link itself well clear of being the throughput
+ * bottleneck relative to the WiFi hop behind it - Marauder's plain-text CLI
+ * has no framing overhead and would be fine at this baud or lower. */
 #define CADS_WIFI_UART           USART6
 #define CADS_WIFI_BAUD           460800u
 #define CADS_PIN_WIFI_TX_PORT    GPIOC
