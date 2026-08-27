@@ -376,6 +376,30 @@ static void test_coap_get_long_segment_is_build_error(void) {
     TEST_ASSERT_EQUAL_UINT16(0u, n);
 }
 
+
+/* Issue #60 regression: the BOOTP magic cookie must sit at DHCP-payload offset
+ * 236 (the fixed BOOTP header is exactly 236 bytes), not 240. The builder wraps
+ * Eth(14)+IPv4(20)+UDP(8) = 42 bytes of envelope, so the cookie lands at frame
+ * offset 42+236 = 278, and the whole frame is 42 + 274 = 316 bytes. */
+static void test_dhcp_offer_cookie_at_bootp_offset_236(void) {
+    uint8_t out[512];
+    uint16_t n = cads_netx_build_dhcp_offer(out, sizeof(out), MAC_DST, MAC_SRC,
+        IP_HOST, 0xC0A82163u, MAC_DST, 0x12345678u, 86400u, IP_HOST, IP_HOST);
+    const uint16_t D = 42u; /* DHCP payload offset within the frame */
+    TEST_ASSERT_EQUAL_UINT16((uint16_t)(42u + 274u), n);
+    /* Cookie at 236, and the last BOOTP 'file' byte (235) still zero - proving
+     * the cookie was not shoved 4 bytes late over stray zeros. */
+    TEST_ASSERT_EQUAL_UINT8(0x00u, out[D + 235u]);
+    TEST_ASSERT_EQUAL_UINT8(0x63u, out[D + 236u]);
+    TEST_ASSERT_EQUAL_UINT8(0x82u, out[D + 237u]);
+    TEST_ASSERT_EQUAL_UINT8(0x53u, out[D + 238u]);
+    TEST_ASSERT_EQUAL_UINT8(0x63u, out[D + 239u]);
+    /* First option is DHCP Message Type (53,len 1, OFFER=2). */
+    TEST_ASSERT_EQUAL_UINT8(53u, out[D + 240u]);
+    TEST_ASSERT_EQUAL_UINT8(1u,  out[D + 241u]);
+    TEST_ASSERT_EQUAL_UINT8(2u,  out[D + 242u]);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_eth_layout);
@@ -394,5 +418,6 @@ int main(void) {
     RUN_TEST(test_coap_get_well_known);
     RUN_TEST(test_coap_get_no_path_is_bare_header);
     RUN_TEST(test_coap_get_long_segment_is_build_error);
+    RUN_TEST(test_dhcp_offer_cookie_at_bootp_offset_236);
     return UNITY_END();
 }

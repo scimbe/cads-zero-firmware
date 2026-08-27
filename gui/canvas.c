@@ -15,8 +15,16 @@
 
 #define CADS_CLIP_STACK_DEPTH 8
 
-/* One band of RGB565 pixels on its way to the panel. Two of them, so the next
- * band can be converted while the current one is still going out over SPI. */
+/* One band of RGB565 pixels on its way to the panel. A single bank: a second
+ * one only earns its 15 KB if band N+1 can be expanded while band N's DMA is
+ * still running, but cads_hal_display_blit() is fully synchronous (it calls
+ * cads_hal_spi_wait() before returning, hal_display.c), so the next
+ * cads_expand_band() never overlaps the current blit - the bank was always
+ * free again by the time it was reused. Dropped the second bank (was
+ * cads_stage[2][...]) to reclaim 15,360 B of DMA-reachable RAM against the
+ * 48K heap floor; behaviour is byte-for-byte identical. If an async blit is
+ * ever added (kick DMA, no wait) this is where double-buffering would come
+ * back - see issue #59. */
 #define CADS_STAGE_ROWS 16
 #define CADS_STAGE_PIXELS (CADS_CANVAS_WIDTH * CADS_STAGE_ROWS)
 
@@ -24,7 +32,7 @@ CADS_DMA_SECTION __attribute__((aligned(4)))
 static uint8_t cads_framebuffer[CADS_CANVAS_STRIDE * CADS_CANVAS_HEIGHT];
 
 CADS_DMA_SECTION __attribute__((aligned(4)))
-static uint16_t cads_stage[2][CADS_STAGE_PIXELS];
+static uint16_t cads_stage[CADS_STAGE_PIXELS];
 
 /*
  * Palette in native RGB565.
@@ -449,19 +457,16 @@ uint32_t cads_canvas_flush(void) {
     }
 
     uint32_t pixels = 0u;
-    uint32_t bank = 0u;
 
     for(int16_t row = 0; row < height; row += rows_per_band) {
         int16_t rows = (int16_t)((height - row) < rows_per_band ? (height - row) : rows_per_band);
 
-        /* Convert into the bank the panel is not currently reading from. */
-        cads_expand_band(cads_stage[bank], x0, (int16_t)(y0 + row), width, rows);
+        cads_expand_band(cads_stage, x0, (int16_t)(y0 + row), width, rows);
 
         cads_hal_display_blit(
-            (uint16_t)x0, (uint16_t)(y0 + row), (uint16_t)width, (uint16_t)rows, cads_stage[bank]);
+            (uint16_t)x0, (uint16_t)(y0 + row), (uint16_t)width, (uint16_t)rows, cads_stage);
 
         pixels += (uint32_t)width * rows;
-        bank ^= 1u;
     }
 
     return pixels;

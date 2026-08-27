@@ -159,6 +159,15 @@ void cads_hal_spi_init(void) {
 static cads_spi_speed_t cads_spi_display_speed = CadsSpiSpeedDisplay;
 
 void cads_hal_spi_set_speed(cads_spi_speed_t speed) {
+    /* Take the same recursive bus mutex claim_bus() uses. cads_spi_configure()
+     * clears SPE and rewrites CR1's baud bits; doing that unlocked is the exact
+     * failure the mutex was added to stop (this file's header) - a concurrent
+     * task mid-cads_hal_spi_transfer() would then spin forever on RXNE with SPE
+     * cleared. The uncovered callers were the console 'F' command and the
+     * Settings fast-clock apply; the already-locked callers (hal_touch.c,
+     * hal_display.c) are safe because the mutex is recursive, and pre-scheduler
+     * boot stays lock-free via cads_spi_lock_active(). See issue #58. */
+    if(cads_spi_lock_active()) xSemaphoreTakeRecursive(cads_spi_mutex, portMAX_DELAY);
     cads_hal_spi_wait();
     switch(speed) {
     case CadsSpiSpeedTouch:
@@ -174,6 +183,7 @@ void cads_hal_spi_set_speed(cads_spi_speed_t speed) {
         cads_spi_configure(CADS_LCD_SPI_DIV_SAFE, false);
         break;
     }
+    if(cads_spi_lock_active()) xSemaphoreGiveRecursive(cads_spi_mutex);
 }
 
 void cads_hal_spi_restore_display_speed(void) {

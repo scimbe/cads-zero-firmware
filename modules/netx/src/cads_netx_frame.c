@@ -466,8 +466,8 @@ static uint16_t build_dhcp_msg(uint8_t* out, uint16_t cap, uint8_t msg_type,
     uint32_t server_ip_host, uint32_t client_ip_host,
     const uint8_t client_mac[6], uint32_t xid_host,
     uint32_t lease_host, uint32_t router_ip_host, uint32_t dns_ip_host) {
-    if(cap < 278u) return 0u;
-    memset(out, 0u, 240u);
+    if(cap < 274u) return 0u;
+    memset(out, 0u, 236u);
     out[0u] = 2u;   /* op: BOOTREPLY */
     out[1u] = 1u;   /* htype: Ethernet */
     out[2u] = 6u;   /* hlen */
@@ -485,7 +485,11 @@ static uint16_t build_dhcp_msg(uint8_t* out, uint16_t cap, uint8_t msg_type,
     memcpy(out + 28u, client_mac, 6u);   /* chaddr */
     /* chaddr tail (34..43), sname (44..107), file (108..239): zero (memset) */
 
-    uint16_t i = 240u;
+    /* BOOTP fixed header is exactly 236 bytes (op..file); the magic cookie
+     * (RFC 2131) starts there, options at 240. Was 240/244 - 4 bytes too
+     * late, leaving 4 stray zeros at 236..239 and a malformed, over-long
+     * message. See issue #60. */
+    uint16_t i = 236u;
     out[i++] = 0x63u; out[i++] = 0x82u; out[i++] = 0x53u; out[i++] = 0x63u; /* magic cookie */
     out[i++] = 53u; out[i++] = 1u; out[i++] = msg_type;                    /* DHCP Message Type */
     out[i++] = 54u; out[i++] = 4u; put_be32(out + i, server_ip_host); i += 4u; /* Server Identifier */
@@ -494,7 +498,7 @@ static uint16_t build_dhcp_msg(uint8_t* out, uint16_t cap, uint8_t msg_type,
     out[i++] = 6u;  out[i++] = 4u; put_be32(out + i, dns_ip_host); i += 4u;  /* DNS */
     out[i++] = 51u; out[i++] = 4u; put_be32(out + i, lease_host); i += 4u;   /* Lease Time */
     out[i++] = 255u; /* End */
-    return i; /* 278 */
+    return i; /* 274 */
 }
 
 uint16_t cads_netx_build_dhcp_offer(uint8_t* out, uint16_t cap,
