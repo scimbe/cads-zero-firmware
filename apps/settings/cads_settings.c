@@ -2,6 +2,10 @@
 #include "cads_touch_calib.h"
 #include "cads_splash.h"
 
+#include "cads/config/config.h"
+#include "cads/net/net.h"
+#include "cads/storage/storage.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -37,12 +41,14 @@ typedef enum {
     CADS_SETTINGS_ROW_SPI_CLOCK,
     CADS_SETTINGS_ROW_CALIBRATION,
     CADS_SETTINGS_ROW_TEST_PATTERN,
+    CADS_SETTINGS_ROW_CONFIG_RELOAD,
     CADS_SETTINGS_ROW_RESET,
 } cads_settings_row_t;
 
 typedef enum {
     CADS_SETTINGS_CONFIRM_NONE = 0,
     CADS_SETTINGS_CONFIRM_CALIBRATION,
+    CADS_SETTINGS_CONFIRM_CONFIG,
     CADS_SETTINGS_CONFIRM_RESET,
 } cads_settings_confirm_kind_t;
 
@@ -54,6 +60,7 @@ static cads_menu_item_t s_items[] = {
     {"SPI clock", s_spi_detail, CADS_SETTINGS_ROW_SPI_CLOCK},
     {"Touch calibration", NULL, CADS_SETTINGS_ROW_CALIBRATION},
     {"Test pattern", NULL, CADS_SETTINGS_ROW_TEST_PATTERN},
+    {"Reload config", NULL, CADS_SETTINGS_ROW_CONFIG_RELOAD},
     {"Factory reset", NULL, CADS_SETTINGS_ROW_RESET},
 };
 
@@ -108,6 +115,51 @@ static void cads_settings_apply_defaults(void) {
     cads_hal_display_set_fast_clock(s_shadow.fast_clock);
     cads_settings_refresh_details();
     cads_settings_refresh_info();
+}
+
+static void cads_settings_open_confirm(
+    cads_settings_confirm_kind_t kind, const char* title, const char* message,
+    const cads_dialog_answer_t* answers, size_t answer_count);
+
+/* Push a loaded config into the live subsystems and the settings shadow, so
+ * the panel and the Brightness/SPI rows reflect the file. WiFi fields persist
+ * in the file but have no driver yet, so they are not applied here. */
+static void cads_settings_apply_config(const cads_config_t* cfg) {
+    s_shadow.brightness_percent = cfg->brightness;
+    s_shadow.fast_clock = cfg->fast_clock;
+    cads_hal_display_backlight(cfg->brightness);
+    cads_hal_display_set_fast_clock(cfg->fast_clock);
+
+    cads_net_config_t net = {
+        .use_dhcp = cfg->net_dhcp,
+        .ip = cfg->net_ip,
+        .netmask = cfg->net_netmask,
+        .gateway = cfg->net_gateway,
+    };
+    cads_net_set_config(&net);
+
+    cads_settings_refresh_details();
+    cads_settings_refresh_info();
+}
+
+/* Re-read /config.txt and apply it, then report what happened in a dialog.
+ * The file always exists after first boot (cads_config_load writes the base
+ * version when absent), so the common outcome is "reloaded". */
+static void cads_settings_config_reload(void) {
+    cads_config_t cfg;
+    int rc = cads_config_load(&cfg);
+    static const cads_dialog_answer_t answers[] = {{CadsKeyOk, "OK"}};
+    if(rc == CADS_STORAGE_OK) {
+        cads_settings_apply_config(&cfg);
+        cads_menu_invalidate(&s_main.menu);
+        cads_settings_open_confirm(
+            CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
+            "Loaded /config.txt and applied it.", answers, 1u);
+    } else {
+        cads_settings_open_confirm(
+            CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
+            "Storage not available - config unchanged.", answers, 1u);
+    }
 }
 
 static uint8_t cads_settings_next_brightness(uint8_t current) {
@@ -219,6 +271,10 @@ static void cads_settings_activate(const cads_menu_item_t* item, size_t index, v
             (void)cads_view_dispatcher_push(s_main.dispatcher, CADS_VIEW_ID_TEST_PATTERN);
             break;
 
+        case CADS_SETTINGS_ROW_CONFIG_RELOAD:
+            cads_settings_config_reload();
+            break;
+
         case CADS_SETTINGS_ROW_RESET: {
             static const cads_dialog_answer_t answers[] = {
                 {CadsKeyOk, "Yes"}, {CadsKeyBack, "No"}};
@@ -316,6 +372,14 @@ void cads_settings_init(cads_view_dispatcher_t* dispatcher) {
     (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_SETTINGS_CONFIRM, &s_confirm.view);
 
     cads_touch_calib_init(dispatcher);
+
+    /* Load and apply the persistent config file at startup (writes the base
+     * version if none exists). Same app-tree-init timing as touch calibration;
+     * a Settings -> Reload config re-reads it without a reboot. */
+    {
+        cads_config_t cfg;
+        if(cads_config_load(&cfg) == CADS_STORAGE_OK) cads_settings_apply_config(&cfg);
+    }
 
     /* No input handler: the dispatcher's own Back handling pops the view, and
      * the pattern is static, so there is nothing else to do here. */

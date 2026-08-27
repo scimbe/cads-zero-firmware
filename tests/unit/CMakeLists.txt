@@ -191,3 +191,7 @@ target_include_directories(test_eth_linklog PRIVATE
     ${CADS_ROOT}/core
 )
 target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)
+
+# --- config -------------------------------------------------------------------
+cads_add_unit_test(test_config test_config.c)
+target_link_libraries(test_config PRIVATE cads_config)

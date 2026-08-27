@@ -27,6 +27,65 @@ else()
 endif()
 message(STATUS "CaDS Zero target: ${CADS_TARGET}")
 
+# --- build profile (feature selection file) ------------------------------
+#
+# A profile is a plain text file of `app.<name> = on|off` lines (see
+# profiles/*.profile) picking which of the CADS_APP_* options below build
+# into the image - the declarative alternative to a long `cmake -D...`
+# command line, meant for repeatable "this is what a minimal/full/whatever
+# image contains" builds. Deliberately a SEPARATE file from the runtime
+# /config.txt (modules/config): this one is read once, at CMake configure
+# time, by the build machine - it has nothing to do with the flash
+# filesystem or the board, and keeping the two apart keeps both simpler to
+# read and reason about, per the project's own request.
+#
+# Mechanism: each recognised profile line does a plain `set(... CACHE BOOL
+# ... )` (no FORCE) for the matching CADS_APP_* variable, BEFORE that
+# variable's own option() call below. CMake's cache set() only takes effect
+# if the variable is not already in the cache - so an explicit
+# `-DCADS_APP_X=...` on the same command line (which populates the cache
+# before this script runs at all) always wins over the profile, and the
+# option() calls below only supply their hardcoded default for whatever the
+# profile did not mention. Unknown lines/keys are reported and stop the
+# configure - a typo'd feature name silently building the wrong image is
+# worse than a hard error here. scripts/check_profile.py does the same
+# validation standalone (no CMake needed) plus dependency/RAM-fit checks,
+# for reviewing a profile before spending a build cycle on it.
+set(CADS_PROFILE "" CACHE FILEPATH "Path to a build profile (profiles/*.profile); empty = built-in defaults")
+if(CADS_PROFILE)
+    if(NOT EXISTS ${CADS_PROFILE})
+        message(FATAL_ERROR "CADS_PROFILE '${CADS_PROFILE}' does not exist")
+    endif()
+    message(STATUS "CaDS Zero profile: ${CADS_PROFILE}")
+    file(STRINGS ${CADS_PROFILE} CADS_PROFILE_LINES)
+    set(CADS_PROFILE_KNOWN_APPS
+        settings about gpio netinfo filebrowser game netiperf nettools active)
+    foreach(line ${CADS_PROFILE_LINES})
+        string(REGEX REPLACE "#.*" "" line "${line}")
+        string(STRIP "${line}" line)
+        if(line STREQUAL "")
+            continue()
+        endif()
+        if(NOT line MATCHES "^app\\.([a-z_]+)[ \t]*=[ \t]*(on|off|ON|OFF|1|0)$")
+            message(FATAL_ERROR "CADS_PROFILE: unrecognised line '${line}' (expected 'app.<name> = on|off')")
+        endif()
+        string(REGEX REPLACE "^app\\.([a-z_]+)[ \t]*=[ \t]*(on|off|ON|OFF|1|0)$" "\\1" CADS_PROFILE_APP "${line}")
+        string(REGEX REPLACE "^app\\.([a-z_]+)[ \t]*=[ \t]*(on|off|ON|OFF|1|0)$" "\\2" CADS_PROFILE_VALUE "${line}")
+        if(NOT CADS_PROFILE_APP IN_LIST CADS_PROFILE_KNOWN_APPS)
+            message(FATAL_ERROR "CADS_PROFILE: unknown app '${CADS_PROFILE_APP}' in '${line}' - known: ${CADS_PROFILE_KNOWN_APPS}")
+        endif()
+        string(TOUPPER "${CADS_PROFILE_APP}" CADS_PROFILE_APP_UPPER)
+        string(TOUPPER "${CADS_PROFILE_VALUE}" CADS_PROFILE_VALUE_UPPER)
+        if(CADS_PROFILE_VALUE_UPPER STREQUAL "1")
+            set(CADS_PROFILE_VALUE_UPPER "ON")
+        elseif(CADS_PROFILE_VALUE_UPPER STREQUAL "0")
+            set(CADS_PROFILE_VALUE_UPPER "OFF")
+        endif()
+        set(CADS_APP_${CADS_PROFILE_APP_UPPER} ${CADS_PROFILE_VALUE_UPPER} CACHE BOOL
+            "Set by profile ${CADS_PROFILE}")
+    endforeach()
+endif()
+
 # --- optional apps -------------------------------------------------------
 # Which GUI apps end up in apps/menu - and therefore in the firmware at
 # all - is a build-time choice, not baked in. A shipped image built for
@@ -37,7 +96,9 @@ message(STATUS "CaDS Zero target: ${CADS_TARGET}")
 # free. Desktop and the menu itself are not options here - they are the
 # shell every other app is reached through, not an app in their own
 # right. Every option defaults ON, so an unconfigured build stays
-# exactly what it always was.
+# exactly what it always was. A CADS_PROFILE (above) can pre-seed any of
+# these before this block runs; an explicit -D on the command line always
+# wins over both.
 option(CADS_APP_SETTINGS "Include the Settings app" ON)
 option(CADS_APP_ABOUT "Include the About app" ON)
 option(CADS_APP_GPIO "Include the GPIO app" ON)
@@ -127,6 +188,10 @@ add_subdirectory(modules/toolbox)
 # two implementations (src/cads_flash_stm32f4.c, src/cads_flash_host.c)
 # selected the same way this top-level file already picks CADS_TARGET.
 add_subdirectory(modules/storage)
+
+# Config: portable text config file over cads/storage (parse/serialize are
+# host-tested; load/save wrap littlefs). See modules/config.
+add_subdirectory(modules/config)
 
 # Net is target neutral in the same sense as storage: cads/net/net.h has two
 # implementations (src/cads_net_board.c, a real lwIP netif over hal_eth_mac.h;
@@ -324,6 +389,7 @@ if(CADS_APP_SETTINGS)
     # not just transitively-PRIVATE through cads_app_menu.
     target_link_libraries(cads_apps PUBLIC cads_app_settings)
 endif()
+target_link_libraries(cads_apps PUBLIC cads_config)
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli cads_diag)
 if(CADS_TARGET STREQUAL "itsboard")
@@ -366,6 +432,13 @@ if(CADS_TARGET STREQUAL "itsboard")
     )
 else()
     add_subdirectory(targets/sim)
+
+    # Host FS tool: get/put files inside a littlefs image dumped off the board,
+    # using the same cads/storage + littlefs code the firmware runs (so the
+    # on-disk format always matches). Backs scripts/cads_config.py.
+    add_executable(cads_fs tools/cads_fs.c)
+    target_link_libraries(cads_fs PRIVATE cads_storage)
+
     enable_testing()
     add_subdirectory(tests)
     # Needs cads-zero-sim to exist, and needs enable_testing() to have already
