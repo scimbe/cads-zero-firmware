@@ -20,7 +20,14 @@ Read them in roughly this order:
 5. **[Clean room, and what that means here](clean-room.md)** — what was borrowed,
    what was not, and the licensing consequence.
 
-Separately, on how the build itself is set up rather than how the firmware is
-shaped: **[The toolchain, and why it comes from vcpkg](toolchain.md)** — why the
-compiler is `arm-none-eabi-gcc`, where it is provisioned from and what that does
-and does not pin, and the one piece of the rationale that was never written down.
+Separately, on how the build and configuration are set up rather than how the
+firmware is shaped:
+
+- **[The toolchain, and why it comes from vcpkg](toolchain.md)** — why the
+  compiler is `arm-none-eabi-gcc`, where it is provisioned from and what that
+  does and does not pin, and the one piece of the rationale that was never
+  written down.
+- **[Configuration and build profiles](config-design.md)** — why runtime
+  settings and build-time feature selection are two separate files, why the
+  config is editable text rather than the binary store that already existed,
+  and how a 15 KB RAM reclamation changed which designs were affordable.

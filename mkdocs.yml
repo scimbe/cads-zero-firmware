@@ -87,6 +87,7 @@ nav:
       - Flash the board: how-to/flash.md
       - Run the hardware gate: how-to/board-test.md
       - Debug with GDB: how-to/debug.md
+      - Configure the firmware: how-to/configure.md
       - Port to different hardware: how-to/port-to-new-board.md
       - Work an issue as an agent: how-to/agent-workflow.md
   - Reference:
@@ -98,6 +99,7 @@ nav:
       - Datasheets and schematics: reference/datasheets/README.md
       - Canvas API: reference/canvas.md
       - HAL interface: reference/hal.md
+      - Configuration file and profiles: reference/config-file.md
       - Bring-up explorer console: reference/explorer-console.md
       - Measurements: reference/measurements.md
   - Explanation:
@@ -110,4 +112,5 @@ nav:
       - Why dirty rectangles are mandatory: explanation/dirty-rectangles.md
       - Clean room, and what that means here: explanation/clean-room.md
       - The toolchain, and why it comes from vcpkg: explanation/toolchain.md
+      - Configuration and build profiles: explanation/config-design.md
   - Roadmap: ROADMAP.md

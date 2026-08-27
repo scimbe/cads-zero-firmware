@@ -13,3 +13,5 @@ Information-oriented and deliberately dry. Look things up here.
   backends.
 - **[Measurements](measurements.md)** — numbers taken from the physical board,
   with the conditions they were taken under.
+- **[Configuration file and profiles](config-file.md)** — every `/config.txt`
+  key, the `*.profile` format, and the host tools.
