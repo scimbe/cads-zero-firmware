@@ -128,6 +128,7 @@ option(CADS_APP_GAME "Include the Reflex Test game" ON)
 option(CADS_APP_NETIPERF "Include the iperf server/client app" ON)
 option(CADS_APP_NETTOOLS "Include the network tools menu (ping/ARP/traceroute)" ON)
 option(CADS_APP_ACTIVE "Include the Active Net Tools (M9) offensive suite" ON)
+option(CADS_APP_MARAUDER "Include the ESP32Marauder co-processor CLI bridge" ON)
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -195,6 +196,9 @@ if(CADS_APP_NETTOOLS)
 endif()
 if(CADS_APP_ACTIVE)
     target_compile_definitions(cads_flags INTERFACE CADS_APP_ACTIVE_ENABLED)
+endif()
+if(CADS_APP_MARAUDER)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_MARAUDER_ENABLED)
 endif()
 
 # --- modules -----------------------------------------------------------------
@@ -340,6 +344,9 @@ endif()
 if(CADS_APP_ACTIVE)
     add_subdirectory(apps/active)
 endif()
+if(CADS_APP_MARAUDER)
+    add_subdirectory(apps/marauder)
+endif()
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -403,6 +410,9 @@ if(CADS_APP_NETTOOLS)
 endif()
 if(CADS_APP_ACTIVE)
     target_link_libraries(cads_apps PUBLIC cads_app_active)
+endif()
+if(CADS_APP_MARAUDER)
+    target_link_libraries(cads_apps PUBLIC cads_app_marauder)
 endif()
 if(CADS_APP_SETTINGS)
     # explorer_app_demo.c calls cads_touch_calib_tick() straight into

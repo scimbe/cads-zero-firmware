@@ -25,6 +25,9 @@
 #ifdef CADS_APP_ACTIVE_ENABLED
 #include "cads_active.h"
 #endif
+#ifdef CADS_APP_MARAUDER_ENABLED
+#include "cads_marauder.h"
+#endif
 #ifdef CADS_APP_SETTINGS_ENABLED
 #include "cads_settings.h"
 #include "cads_touch_calib.h"
@@ -83,8 +86,14 @@
  * inside the 256 B RAM margin, see apps/active/cads_active.h). Same guard:
  * tests/unit/test_app_tree.c's mirrored capacity and its find-asserts for
  * CADS_VIEW_ID_ACTIVE/_TOOL catch a silent drop on host before hardware.
+ *
+ * Bumped from 26 to 28 when apps/marauder (the ESP32Marauder co-processor
+ * CLI bridge) added its own selector + shared tool view (0x0C00/0x0C01) -
+ * same collapse-seven-tools-into-one-view reasoning as apps/active, same
+ * guard (tests/unit/test_app_tree.c mirrors this and asserts both new ids
+ * are findable).
  */
-#define CADS_APP_DEMO_VIEW_CAPACITY 26u
+#define CADS_APP_DEMO_VIEW_CAPACITY 28u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
@@ -199,6 +208,9 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_ACTIVE_ENABLED
         cads_active_tick(now);
+#endif
+#ifdef CADS_APP_MARAUDER_ENABLED
+        cads_marauder_tick(now);
 #endif
 #ifdef CADS_APP_SETTINGS_ENABLED
         cads_touch_calib_tick(now);

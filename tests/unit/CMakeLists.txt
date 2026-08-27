@@ -195,3 +195,14 @@ target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)
 # --- config -------------------------------------------------------------------
 cads_add_unit_test(test_config test_config.c)
 target_link_libraries(test_config PRIVATE cads_config)
+
+# --- marauder -------------------------------------------------------------
+# The line reader has zero HAL/GUI dependencies by design (see
+# apps/marauder/cads_marauder_reader.h) - compiled straight into the test,
+# not linked against cads_app_marauder, so this test never needs the GUI
+# stack the rest of that app pulls in.
+cads_add_unit_test(test_marauder_reader
+    test_marauder_reader.c
+    ${CADS_ROOT}/apps/marauder/cads_marauder_reader.c
+)
+target_include_directories(test_marauder_reader PRIVATE ${CADS_ROOT}/apps/marauder)

@@ -42,7 +42,7 @@
  * that file's own comment for exactly what the 24 counts (the M9 Active Net
  * Tools suite's selector + one shared tool view are the +2 over the 22 the
  * rest of the tree already filled). */
-#define VIEW_CAPACITY 26u
+#define VIEW_CAPACITY 28u
 #define STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[VIEW_CAPACITY];
