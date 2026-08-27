@@ -1,5 +1,6 @@
 #include "cads_list.h"
 
+
 static int16_t cads_list_content_width(const cads_list_t* list) {
     int16_t width = list->area.width;
     if(list->count > list->visible) width = (int16_t)(width - CADS_LIST_SCROLLBAR_WIDTH);
@@ -235,10 +236,16 @@ bool cads_list_input(cads_list_t* list, const cads_input_event_t* event) {
 
         int16_t delta = (int16_t)((int16_t)event->y - list->drag_origin_y);
         int16_t rows = (int16_t)(delta / list->row_height);
-        /* Half a row of slop before a press becomes a drag: a resistive panel
-         * wanders by a pixel or two under a firm press, and a tap that scrolled
-         * the list would make selection by touch impossible. */
-        if(delta > list->row_height / 2 || delta < -(list->row_height / 2)) list->drag_moved = true;
+        /* A press only becomes a drag once it has moved a WHOLE row - i.e. once
+         * the list actually scrolls. The earlier half-row threshold, combined
+         * with a resistive panel that wanders several pixels under a firm press
+         * (and the odd off-by-tens outlier the input layer now despikes),
+         * misclassified ordinary taps as drags: the release then scrolled by
+         * zero rows and selected nothing, which read on the panel as "touch
+         * does nothing". Tying drag_moved to real scrolling keeps a genuine
+         * drag (which always crosses at least one row) working while letting a
+         * jittery tap still select. */
+        if(rows != 0) list->drag_moved = true;
 
         if(rows != 0) {
             size_t origin = list->drag_origin_top;

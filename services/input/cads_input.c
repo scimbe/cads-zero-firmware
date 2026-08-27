@@ -50,6 +50,7 @@ static void* cads_callback_context;
 /* Touch, tracked so down/move/up can be synthesised from level samples. */
 static bool cads_touch_down;
 static uint16_t cads_touch_x, cads_touch_y;
+static uint8_t cads_touch_glitch_run; /* consecutive rejected outlier samples */
 
 static const char* const cads_key_names[CADS_BUTTON_COUNT] = {
     "Up", "Down", "Left", "Right", "OK", "Back", "F1", "F2"};
@@ -63,6 +64,7 @@ void cads_input_init(void) {
         cads_buttons[i].long_sent = false;
     }
     cads_touch_down = false;
+    cads_touch_glitch_run = 0u;
 }
 
 void cads_input_set_callback(cads_input_callback_t callback, void* context) {
@@ -164,6 +166,19 @@ static void cads_tick_buttons(uint32_t now) {
     }
 }
 
+/* A single touch sample can land wildly off - the XPT2046 read shares the SPI
+ * path with the display and, under redraw contention, one poll in a burst
+ * occasionally comes back tens of pixels from the finger's real position
+ * (measured on hardware: isolated jumps of 70-140 px between consecutive
+ * 100 Hz polls, physically impossible for a finger). Left in, such a spike
+ * scrolls a list it should have tapped and lands a tap on the neighbouring
+ * row. A finger cannot cross more than this many pixels in one 10 ms poll, so
+ * a larger jump is a bad read: drop it and keep the last good position. The
+ * run cap keeps a genuine fast flick or a real re-touch from being rejected
+ * forever if several plausible-but-large samples arrive in a row. */
+#define CADS_TOUCH_MAX_JUMP_PX 55
+#define CADS_TOUCH_MAX_GLITCH_RUN 3u
+
 static void cads_tick_touch(uint32_t now) {
     cads_touch_state_t touch;
     cads_hal_touch_read(&touch);
@@ -171,15 +186,25 @@ static void cads_tick_touch(uint32_t now) {
     if(touch.pressed) {
         if(!cads_touch_down) {
             cads_touch_down = true;
+            cads_touch_glitch_run = 0u;
             cads_touch_x = touch.x;
             cads_touch_y = touch.y;
             cads_emit_touch(CadsInputTouchDown, touch.x, touch.y, now);
         } else if(touch.x != cads_touch_x || touch.y != cads_touch_y) {
-            /* Resistive panels jitter by a pixel or two even under a steady
-             * finger. Only report movement that a user could have intended. */
             int32_t dx = (int32_t)touch.x - (int32_t)cads_touch_x;
             int32_t dy = (int32_t)touch.y - (int32_t)cads_touch_y;
-            if(dx * dx + dy * dy >= 9) {
+            int32_t dist2 = dx * dx + dy * dy;
+
+            if(dist2 > CADS_TOUCH_MAX_JUMP_PX * CADS_TOUCH_MAX_JUMP_PX &&
+               cads_touch_glitch_run < CADS_TOUCH_MAX_GLITCH_RUN) {
+                cads_touch_glitch_run++; /* outlier: skip, keep last good point */
+                return;
+            }
+            cads_touch_glitch_run = 0u;
+
+            /* Resistive panels jitter by a pixel or two even under a steady
+             * finger. Only report movement that a user could have intended. */
+            if(dist2 >= 9) {
                 cads_touch_x = touch.x;
                 cads_touch_y = touch.y;
                 cads_emit_touch(CadsInputTouchMove, touch.x, touch.y, now);
@@ -187,6 +212,7 @@ static void cads_tick_touch(uint32_t now) {
         }
     } else if(cads_touch_down) {
         cads_touch_down = false;
+        cads_touch_glitch_run = 0u;
         cads_emit_touch(CadsInputTouchUp, cads_touch_x, cads_touch_y, now);
     }
 }

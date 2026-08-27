@@ -39,20 +39,42 @@ void cads_hal_touch_get_calibration(
 #define CADS_CALIB_KEY_YMIN "tp.ymin"
 #define CADS_CALIB_KEY_YMAX "tp.ymax"
 
-typedef enum {
-    CADS_CALIB_STEP_TOP_LEFT = 0,
-    CADS_CALIB_STEP_BOTTOM_RIGHT,
-    CADS_CALIB_STEP_DONE,
-} cads_calib_step_t;
+/* Multi-point calibration: a grid of targets across the panel, sampled one at
+ * a time, then a least-squares line fit per axis. Two corners (the old flow)
+ * extrapolate the whole panel from two taps, so any error at either tap - or
+ * any panel non-linearity - scales up across the screen; the symptom on this
+ * hardware was selection drifting by up to a row near the top while the bottom
+ * (and the soft-key strip) stayed accurate. Sampling many rows, each at a left
+ * and a right column, and least-squares fitting averages the per-tap error out
+ * and pins the fit across the full height. */
+#define CADS_CALIB_ROWS 5
+#define CADS_CALIB_COLS 2
+#define CADS_CALIB_POINTS (CADS_CALIB_ROWS * CADS_CALIB_COLS)
 
 static struct {
     cads_view_t view;
     bool active; /* set between enter and exit, gates the tick */
     bool was_pressed;
-    cads_calib_step_t step;
-    uint16_t raw_x_tl, raw_y_tl;
+    int point; /* 0..CADS_CALIB_POINTS; == CADS_CALIB_POINTS means done */
+    int16_t tx[CADS_CALIB_POINTS], ty[CADS_CALIB_POINTS]; /* target display coords */
+    uint16_t rx[CADS_CALIB_POINTS], ry[CADS_CALIB_POINTS]; /* raw readings at each */
     bool saved;
 } s_calib;
+
+/* Target crosshair for point i, in the view's display coordinates. Columns run
+ * left->right, rows top->bottom, so the order is (L,row0),(R,row0),(L,row1)...
+ * exactly "each row, left then right". Board-only: the host draw shows a
+ * "needs a real panel" message and never places targets. */
+#ifdef CADS_TARGET_ITSBOARD
+static void cads_calib_target(int i, cads_rect_t area, int* cx, int* cy) {
+    int row = i / CADS_CALIB_COLS;
+    int col = i % CADS_CALIB_COLS;
+    int spanx = area.width - 1 - 2 * CADS_CALIB_INSET;
+    int spany = area.height - 1 - 2 * CADS_CALIB_INSET;
+    *cx = area.x + CADS_CALIB_INSET + (CADS_CALIB_COLS > 1 ? col * spanx / (CADS_CALIB_COLS - 1) : 0);
+    *cy = area.y + CADS_CALIB_INSET + (CADS_CALIB_ROWS > 1 ? row * spany / (CADS_CALIB_ROWS - 1) : 0);
+}
+#endif /* CADS_TARGET_ITSBOARD */
 
 /* Settings live in one kv file, shared with whatever else this firmware
  * eventually persists (brightness, SPI clock...). This module is the first
@@ -91,38 +113,57 @@ void cads_touch_calib_load(void) {
 }
 
 #ifdef CADS_TARGET_ITSBOARD
-/* Turn the two corner raw readings into a full-panel min/max calibration by
- * extrapolating the line through them out to display coordinates 0 and the
- * full span - see hal_touch.c's cads_touch_scale()/cads_hal_touch_read()
- * for the exact mapping this inverts (display X comes from the controller's
- * raw Y; display Y from raw X, mirrored). */
-static void cads_touch_calib_apply(uint16_t raw_x_br, uint16_t raw_y_br) {
+/* Least-squares line fit y = a*x + b over n points, fixed-point: returns a
+ * scaled by 1000 (aq1000) and b directly, using int64 accumulators. */
+static void cads_calib_fit(const int* xs, const int* ys, int n, int* aq1000, int* b) {
+    long long sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for(int i = 0; i < n; i++) {
+        sx += xs[i]; sy += ys[i];
+        sxx += (long long)xs[i] * xs[i];
+        sxy += (long long)xs[i] * ys[i];
+    }
+    long long denom = (long long)n * sxx - sx * sx;
+    if(denom == 0) { *aq1000 = 0; *b = (int)(sy / (n ? n : 1)); return; }
+    long long num = (long long)n * sxy - sx * sy;
+    *aq1000 = (int)((num * 1000) / denom);
+    *b = (int)((sy - (long long)(*aq1000) * sx / 1000) / n);
+}
+
+/* Turn the collected (target display coord, raw reading) pairs into the
+ * driver's min/max calibration. The driver maps display_x from raw_y over
+ * [y_min,y_max] and display_y from raw_x over [x_min,x_max], mirrored
+ * (see hal_touch.c cads_hal_touch_read). So:
+ *   raw_y = y_min + display_x * (y_max - y_min) / W  -> fit raw_y vs display_x
+ *   raw_x = x_min + (H-1-display_y) * (x_max - x_min) / H -> fit raw_x vs u
+ */
+static void cads_touch_calib_apply_grid(void) {
     const int W = CADS_DISPLAY_WIDTH;
     const int H = CADS_DISPLAY_HEIGHT;
+    int dx[CADS_CALIB_POINTS], rawy[CADS_CALIB_POINTS];
+    int u[CADS_CALIB_POINTS], rawx[CADS_CALIB_POINTS];
+    for(int i = 0; i < CADS_CALIB_POINTS; i++) {
+        dx[i] = s_calib.tx[i];
+        rawy[i] = s_calib.ry[i];
+        u[i] = (H - 1) - s_calib.ty[i];
+        rawx[i] = s_calib.rx[i];
+    }
 
-    /* X axis (controller raw_y): TL target at display x=INSET, BR at
-     * x=W-1-INSET. rpp = raw_y counts per display-x pixel. */
-    int span_x = (W - 1 - 2 * CADS_CALIB_INSET);
-    if(span_x == 0) span_x = 1;
-    int rpp_x = ((int)raw_y_br - (int)s_calib.raw_y_tl) * 1000 / span_x; /* x1000 fixed point */
-    int y_min = (int)s_calib.raw_y_tl - CADS_CALIB_INSET * rpp_x / 1000;
-    int y_max = (int)s_calib.raw_y_tl + (W - CADS_CALIB_INSET) * rpp_x / 1000;
+    int a_y, b_y, a_x, b_x; /* slopes x1000, intercepts */
+    cads_calib_fit(dx, rawy, CADS_CALIB_POINTS, &a_y, &b_y);
+    cads_calib_fit(u, rawx, CADS_CALIB_POINTS, &a_x, &b_x);
 
-    /* Y axis (controller raw_x, mirrored): TL target at display y=INSET, BR
-     * at y=H-1-INSET. raw_x decreases as display_y increases. */
-    int span_y = (H - 1 - 2 * CADS_CALIB_INSET);
-    if(span_y == 0) span_y = 1;
-    int rpp_y = ((int)s_calib.raw_x_tl - (int)raw_x_br) * 1000 / span_y;
-    int x_min = (int)raw_x_br - CADS_CALIB_INSET * rpp_y / 1000;
-    int x_max = (int)raw_x_br + (H - CADS_CALIB_INSET) * rpp_y / 1000;
+    int y_min = b_y;
+    int y_max = b_y + a_y * (W - 1) / 1000;
+    int x_min = b_x;
+    int x_max = b_x + a_x * (H - 1) / 1000;
 
-    /* Clamp into the ADC's 12-bit range and reject a degenerate result
-     * (axes swapped or barely-separated taps) by leaving calibration
-     * untouched - better a slightly-off default than an unusable panel. */
     if(x_min < 0) x_min = 0;
     if(y_min < 0) y_min = 0;
     if(x_max > 4095) x_max = 4095;
     if(y_max > 4095) y_max = 4095;
+
+    /* Reject a degenerate fit (finger never moved, axes swapped) rather than
+     * install an unusable map. */
     if(x_max - x_min < 500 || y_max - y_min < 500) {
         s_calib.saved = false;
         return;
@@ -131,12 +172,8 @@ static void cads_touch_calib_apply(uint16_t raw_x_br, uint16_t raw_y_br) {
     cads_hal_touch_set_calibration(
         (uint16_t)x_min, (uint16_t)x_max, (uint16_t)y_min, (uint16_t)y_max);
 
-    /* Apply always succeeds (it is just the live driver range); persistence
-     * is best-effort on top. `saved` reflects the live apply so the UI does
-     * not falsely claim failure when only the flash write could not complete
-     * (no card, full filesystem) - the calibration still works this session,
-     * it just will not survive a reboot, which the done screen's wording
-     * ("Saved") is honest enough about for a diagnostic tool. */
+    /* Persist. Live apply above is what matters for the session; the save is
+     * best-effort on top. */
     s_calib.saved = true;
     if(cads_settings_kv_ready() && cads_kv_set_i32(CADS_CALIB_KEY_XMIN, x_min) == CADS_STORAGE_OK &&
        cads_kv_set_i32(CADS_CALIB_KEY_XMAX, x_max) == CADS_STORAGE_OK &&
@@ -145,10 +182,10 @@ static void cads_touch_calib_apply(uint16_t raw_x_br, uint16_t raw_y_br) {
         (void)cads_kv_save();
     }
 }
-#endif
+#endif /* CADS_TARGET_ITSBOARD */
 
 static void cads_touch_calib_reset(void) {
-    s_calib.step = CADS_CALIB_STEP_TOP_LEFT;
+    s_calib.point = 0;
     s_calib.was_pressed = false;
     s_calib.saved = false;
 }
@@ -156,7 +193,7 @@ static void cads_touch_calib_reset(void) {
 void cads_touch_calib_tick(uint32_t now_ms) {
     (void)now_ms;
 #ifdef CADS_TARGET_ITSBOARD
-    if(!s_calib.active || s_calib.step == CADS_CALIB_STEP_DONE) return;
+    if(!s_calib.active || s_calib.point >= CADS_CALIB_POINTS) return;
 
     bool pressed = cads_hal_touch_irq_raw();
     bool rising = pressed && !s_calib.was_pressed;
@@ -172,24 +209,32 @@ void cads_touch_calib_tick(uint32_t now_ms) {
         return;
     }
 
-    if(s_calib.step == CADS_CALIB_STEP_TOP_LEFT) {
-        s_calib.raw_x_tl = raw_x;
-        s_calib.raw_y_tl = raw_y;
-        s_calib.step = CADS_CALIB_STEP_BOTTOM_RIGHT;
-    } else {
-        cads_touch_calib_apply(raw_x, raw_y);
-        s_calib.step = CADS_CALIB_STEP_DONE;
+    /* Record the target we were showing and the raw reading for it, then
+     * advance. The last tap triggers the least-squares fit + save. */
+    cads_rect_t area = cads_view_area(&s_calib.view);
+    int cx = 0, cy = 0;
+    cads_calib_target(s_calib.point, area, &cx, &cy);
+    s_calib.tx[s_calib.point] = (int16_t)cx;
+    s_calib.ty[s_calib.point] = (int16_t)cy;
+    s_calib.rx[s_calib.point] = raw_x;
+    s_calib.ry[s_calib.point] = raw_y;
+    s_calib.point++;
+
+    if(s_calib.point >= CADS_CALIB_POINTS) {
+        cads_touch_calib_apply_grid();
     }
     cads_view_dirty_rect(&s_calib.view, cads_view_area(&s_calib.view));
 #endif
 }
 
+#ifdef CADS_TARGET_ITSBOARD
 static void cads_touch_calib_draw_cross(int cx, int cy, cads_color_t color) {
     cads_canvas_fill_rect(
         (int16_t)(cx - CADS_CALIB_CROSS), (int16_t)cy, (int16_t)(2 * CADS_CALIB_CROSS), 2, color);
     cads_canvas_fill_rect(
         (int16_t)cx, (int16_t)(cy - CADS_CALIB_CROSS), 2, (int16_t)(2 * CADS_CALIB_CROSS), color);
 }
+#endif /* CADS_TARGET_ITSBOARD */
 
 static void cads_touch_calib_draw(cads_rect_t area, void* context) {
     (void)context;
@@ -202,33 +247,36 @@ static void cads_touch_calib_draw(cads_rect_t area, void* context) {
         CadsColorGray);
     return;
 #else
-    const char* prompt = "";
-    int cx = 0, cy = 0;
-    bool show_cross = true;
+    if(s_calib.point >= CADS_CALIB_POINTS) {
+        const char* prompt = s_calib.saved ? "Saved. Back to exit, OK to redo"
+                                           : "Bad fit - OK to retry";
+        cads_rect_t prompt_box = {area.x, (int16_t)(area.y + area.height / 2 - 8), area.width, 20};
+        cads_canvas_draw_text_aligned(
+            prompt_box, CadsAlignCenter, &cads_font12, prompt, CadsColorBrandLight);
+    } else {
+        int cx = 0, cy = 0;
+        cads_calib_target(s_calib.point, area, &cx, &cy);
+        cads_touch_calib_draw_cross(cx, cy, CadsColorAccent);
 
-    switch(s_calib.step) {
-        case CADS_CALIB_STEP_TOP_LEFT:
-            prompt = "Tap the top-left crosshair";
-            cx = area.x + CADS_CALIB_INSET;
-            cy = area.y + CADS_CALIB_INSET;
-            break;
-        case CADS_CALIB_STEP_BOTTOM_RIGHT:
-            prompt = "Now tap the bottom-right crosshair";
-            cx = area.x + area.width - 1 - CADS_CALIB_INSET;
-            cy = area.y + area.height - 1 - CADS_CALIB_INSET;
-            break;
-        case CADS_CALIB_STEP_DONE:
-            prompt = s_calib.saved ? "Saved. Back to exit, OK to redo"
-                                   : "Taps too close - OK to retry";
-            show_cross = false;
-            break;
+        /* Progress "N/10" plus a hint. Built without libc: point+1 and the
+         * total are both <= 10, so a couple of digits by hand. */
+        char label[40];
+        char* w = label;
+        const char* head = "Tap the crosshair  ";
+        for(const char* h = head; *h; h++) *w++ = *h;
+        int cur = s_calib.point + 1;
+        if(cur >= 10) *w++ = (char)('0' + cur / 10);
+        *w++ = (char)('0' + cur % 10);
+        *w++ = '/';
+        int tot = CADS_CALIB_POINTS;
+        if(tot >= 10) *w++ = (char)('0' + tot / 10);
+        *w++ = (char)('0' + tot % 10);
+        *w = '\0';
+
+        cads_rect_t prompt_box = {area.x, (int16_t)(area.y + area.height - 26), area.width, 20};
+        cads_canvas_draw_text_aligned(
+            prompt_box, CadsAlignCenter, &cads_font12, label, CadsColorBrandLight);
     }
-
-    if(show_cross) cads_touch_calib_draw_cross(cx, cy, CadsColorAccent);
-
-    cads_rect_t prompt_box = {area.x, (int16_t)(area.y + area.height / 2 - 8), area.width, 20};
-    cads_canvas_draw_text_aligned(
-        prompt_box, CadsAlignCenter, &cads_font12, prompt, CadsColorBrandLight);
 #endif
 }
 
