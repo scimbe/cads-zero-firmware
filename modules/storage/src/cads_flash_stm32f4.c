@@ -132,12 +132,27 @@ static void cads_flash_reset_data_cache(void) {
  * flight. Caller has already unlocked the controller and validated the
  * sector twice. Runs from flash - see the file header for why not RAM.
  */
+/* RM0090's own worst-case figure for this part's largest (128 KB) sector at
+ * VDD 2.7-3.6V is under 2 s; 4 s is generous slack, not a tuned bound. A bare
+ * `while(BSY){}` here is the exact unbounded-hardware-flag-wait class already
+ * fixed for SPI (issue #66) - found live while debugging a silent hang: the
+ * first-ever real erase from a normal (non-explicit-test) boot path hung
+ * with no CPU fault and therefore no forensic record, recovered only by the
+ * watchdog. cads_hal_ticks_ms() is a plain SysTick-driven counter read, safe
+ * to call from this flash-resident routine (see this file's own header on
+ * why the routine itself must stay in flash - that reliability requirement
+ * does not extend to reading an unrelated peripheral's tick count). */
+#define CADS_FLASH_ERASE_TIMEOUT_MS 4000u
+#define CADS_FLASH_PROGRAM_TIMEOUT_MS 50u
+
 static uint32_t cads_flash_erase_sector(uint32_t snb) {
     FLASH->SR = CADS_FLASH_SR_ERRORS;
     FLASH->CR = (FLASH->CR & ~(FLASH_CR_PSIZE | FLASH_CR_SNB)) | FLASH_CR_PSIZE_1 | FLASH_CR_SER |
                 (snb << FLASH_CR_SNB_Pos);
     FLASH->CR |= FLASH_CR_STRT;
+    uint32_t deadline = cads_hal_ticks_ms() + CADS_FLASH_ERASE_TIMEOUT_MS;
     while(FLASH->SR & FLASH_SR_BSY) {
+        if((int32_t)(cads_hal_ticks_ms() - deadline) >= 0) cads_hal_panic("flash erase BSY timeout");
     }
     uint32_t sr = FLASH->SR;
     FLASH->CR &= ~(FLASH_CR_SER | FLASH_CR_SNB);
@@ -155,7 +170,9 @@ static uint32_t cads_flash_program_word(uint32_t addr, uint32_t word) {
     FLASH->CR = (FLASH->CR & ~FLASH_CR_PSIZE) | FLASH_CR_PSIZE_1;
     FLASH->CR |= FLASH_CR_PG;
     *(volatile uint32_t*)addr = word;
+    uint32_t deadline = cads_hal_ticks_ms() + CADS_FLASH_PROGRAM_TIMEOUT_MS;
     while(FLASH->SR & FLASH_SR_BSY) {
+        if((int32_t)(cads_hal_ticks_ms() - deadline) >= 0) cads_hal_panic("flash program BSY timeout");
     }
     FLASH->CR &= ~FLASH_CR_PG;
     return FLASH->SR;
