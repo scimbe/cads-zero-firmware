@@ -2063,6 +2063,58 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (review pass 2) — **Second adversarial review swarm, aimed at
+  this session's own fresh config/tools/profile/flash code; 34 findings
+  confirmed (of 39), 28 fixed.** A focused 6-dimension swarm (config parse,
+  storage lifecycle, the flash fix, the host FS tool, the build-profile
+  mechanism, and a re-look at the open first-review findings) with one
+  adversarial refuter per finding. It found real defects the first pass could
+  not have - the code did not exist then - most of them in code written hours
+  earlier, which is the point of a second independent pass.
+  **The two high-severity roots, both fixed:**
+  - **Reload/reset did littlefs work on the input task.** Menu activations run
+    synchronously on the high-priority input task; cads/storage is explicitly
+    not thread-safe, so a "Reload config" concurrent with the console task's
+    calibration `kv_save` could corrupt the volume (#3), and its two 512 B
+    stack buffers would overflow the 1 KB input-task stack, deterministically
+    if the file was absent and load nested save (#4). Fix: the menu row only
+    sets a request flag; `cads_settings_service_config()` on the app-tree loop
+    (the console task - the single storage owner, 2 KB stack) does the work.
+    Factory reset routed the same way, and now resets to the *config* defaults
+    and rewrites `/config.txt` so it survives a reboot (#18, #19); apply only
+    pokes a subsystem whose value changed (#7).
+  - **Build profiles stuck in the CMake cache.** A plain `set(CACHE)` only
+    applies to an uncached variable, so switching/editing a profile in an
+    existing build dir was silently ignored (#1, #2), and the profile file was
+    not a configure dependency (#6). Fix: FORCE (profile is authoritative) +
+    `CMAKE_CONFIGURE_DEPENDS`. The precedence change (a `-D` no longer beats an
+    active profile) is documented.
+  Also fixed: `check_profile.py` computed for the wrong image (omitted apps
+  default ON in CMake, not OFF - #14) and its view-count table had no drift
+  guard (#15) - now it counts the real `cads_view_dispatcher_add()` sites and
+  defaults omitted apps ON, grammar tightened to match CMake (#30, #31); the
+  `cads_fs` tool and host image I/O treated I/O errors as EOF, ignored close
+  results, and mangled binary stdout on Windows (#12, #16, #17, #27, #32, #33,
+  #34); the config parser truncated large files mid-line (#9-11), accepted
+  malformed IPs and booleans (#20, #22, #24), and did not self-heal an empty
+  file (#26); the flash-timeout comment misnamed the clock (DWT, not SysTick -
+  which is the *stronger* guarantee, #29); and `cads_config.py` gained a
+  whole-volume-RMW quiescing caveat (#13).
+  **Deferred or mitigated, with reason:** #5 (flash controller has no
+  cross-task lock) is mitigated by the single-storage-owner discipline the #3
+  fix establishes - no two tasks call the driver concurrently - and the
+  DWT-based timeout turns any residual race into a named panic, not a silent
+  hang; a driver-level mutex remains a belt-and-suspenders option. #8 is the
+  pre-existing canvas-flush race already tracked as issue #63, not introduced
+  here. #28 (bank-2 read stalling during an in-flight erase) is the RWW
+  hardware limitation, not reachable across tasks given single-owner storage,
+  and needs board time to characterise. #21/#23/#25 are defensive or
+  by-design (fixed-size buffers that cannot truncate in practice; whitespace
+  is trimmed by convention). All fixes: host 32/32, board builds clean, RAM
+  margin 9,632 B. NOT hardware-verified this session - the ST-Link USB wedge
+  (issue #57) never recovered; the reload-on-console-task path and the flash
+  timeout both still want a board test once it does.
+
 - 2026-08-27 (config + profiles) — **Persistent flash config file, host
   editing tools, and build-time feature profiles - all landed; the config
   feature's hardware verification is BLOCKED on the recurring ST-Link USB
