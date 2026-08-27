@@ -2063,6 +2063,64 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (config + profiles) — **Persistent flash config file, host
+  editing tools, and build-time feature profiles - all landed; the config
+  feature's hardware verification is BLOCKED on the recurring ST-Link USB
+  wedge (issue #57), not yet complete.** User-requested: a config file in
+  flash, base version on first boot, editable from the Mac via the "mounted"
+  filesystem, reloadable from a menu entry - plus (separately) a build-time
+  profile file to select which apps/features compile in, with dependency and
+  usability checks; both scoped with the still-in-progress ESP32 WiFi
+  dev-board hardware in mind.
+  **modules/config**: `/config.txt`, flat `key = value` text, in the littlefs
+  volume. Pure parse/serialize (host-tested, test_config.c) + storage-backed
+  load/save. `cads_config_load()` writes the built-in defaults if the file is
+  missing, so there is always something to edit. Settings gained "Reload
+  config" (re-reads and re-applies brightness/SPI-clock/network live, no
+  reboot). Carries `wifi.enabled/ssid/password/uart` now, unused until the
+  ESP32 UART driver lands - the file will already be ready that day.
+  **Host tools** (tools/cads_fs.c + scripts/cads_config.py): the board has no
+  USB-MSC, only SWD, so "mount the filesystem" means: dump the littlefs
+  region with `st-flash read`, edit one file inside the image using the
+  *same* littlefs code the firmware runs (cads_fs, built via CMake on the
+  host), write the image back. `cads_config.py pull/push/edit` wraps that
+  into the actual workflow. Pure C11/stdio, no platform-specific calls -
+  should build on Windows/Linux/macOS via any host toolchain CMake finds,
+  though only macOS was actually exercised this session.
+  **Build profiles** (profiles/*.profile + CMakeLists.txt's new
+  `CADS_PROFILE` + scripts/check_profile.py): declarative `app.<name> =
+  on|off` files pre-seed the existing `CADS_APP_*` cache options before their
+  `option()` calls run - an explicit `-D` on the command line still always
+  wins (verified). `check_profile.py` catches a typo'd feature name before a
+  build, and computes the view count a profile's enabled apps would register
+  against `CADS_APP_DEMO_VIEW_CAPACITY` - the fixed-size registry that has
+  **silently dropped views past capacity twice already in this project's own
+  history** - so a profile that would repeat that mistake fails validation
+  instead of shipping a dead menu row. `--build` does a real configure+build
+  and checks RAM. Verified end to end: `profiles/full.profile` (24/26 views)
+  and `profiles/minimal.profile` (6/26 views, real build: **16,544 B** RAM
+  margin vs the full profile's ~9,760 B - proof the mechanism removes code,
+  not just menu entries).
+  **A real bug found and fixed en route, NOT YET hardware-verified**: adding
+  the config file meant a normal boot now performs the first genuine flash
+  erase+program from a fresh board (creating `/config.txt`) - a path the
+  existing storage tests never exercised from this exact context - and the
+  board hung completely, silently, with no CPU fault (recovered only by the
+  IWDG, no diagnostic trail). Root cause: `cads_flash_erase_sector()` /
+  `cads_flash_program_word()` (modules/storage) had bare
+  `while(FLASH->SR & FLASH_SR_BSY) {}` loops - the exact unbounded-hardware-
+  flag-wait class already fixed for SPI (issue #66) - just never hit by any
+  test until this feature's first-write-ever-from-boot path. Bounded both
+  (RM0090's own worst case for the 128 KB sector is under 2s; 4s slack) with
+  `cads_hal_panic()` on expiry, so a genuine stall becomes a named forensic
+  record instead of a silent freeze. Builds clean, host 32/32, RAM unaffected
+  - but an unrelated ST-Link USB wedge hit partway through hardware testing
+  and never recovered this session (needs the user's physical replug, the
+  established recovery for this class per issue #57). **Next session: verify
+  on real hardware before trusting this fix** - does `/config.txt` actually
+  get created on a fresh board now, and if the underlying hang persists, does
+  it correctly surface as a named panic instead of a silent freeze.
+
 - 2026-08-27 (review + soak) — **Professional embedded code-review swarm +
   long-term usage emulation; 8 findings fixed, all hardware-verified.** A
   6-dimension review swarm (concurrency/ISR, RAM/DMA, register sequences,
