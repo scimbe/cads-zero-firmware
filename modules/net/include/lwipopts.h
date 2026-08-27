@@ -44,7 +44,7 @@
  * double-buffer removal freed 15 KB and the margin now sits at ~8.6 KB, so
  * the tightest cuts are walked back first. 3072 gives TCP's send path and
  * an lwiperf session real slack instead of ~400 B. */
-#define MEM_SIZE                    (3 * 1024)
+#define MEM_SIZE                    (4 * 1024)
 
 /* Was 16; trimmed to 12 for the same reason as the pools below it - still
  * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data
@@ -86,6 +86,21 @@
  * restore note) - segment starvation shows up as mysterious TCP stalls,
  * the worst kind of bench bug to chase. */
 #define MEMP_NUM_TCP_SEG            16
+
+/* Receive window. Default is 2 x TCP_MSS (1072 B here) - far too small for the
+ * link's RTT. Sized to 8 MSS, comfortably inside the 10-buffer RX pool above
+ * with a couple of buffers of headroom for the copy path. Raises Mac -> board
+ * throughput without touching TCP_MSS (1460 would fit the wire better but each
+ * pool buffer would balloon to ~1.5 KB, ~9 KB the RAM budget cannot spare). */
+#define TCP_WND                     (8 * TCP_MSS)
+
+/* Send buffer / queue length. Default 2 x TCP_MSS (1072 B) throttled the
+ * board -> Mac direction to ~15.7 Mbit/s once the poll delay was gone; 4 x MSS
+ * lets more data sit unacked in flight. The queued send data is copied into
+ * PBUF_RAM from MEM_SIZE (bumped to 4 KB above to keep headroom for the DHCP
+ * client and one lwiperf session alongside it). */
+#define TCP_SND_BUF                 (4 * TCP_MSS)
+#define TCP_SND_QUEUELEN            ((4 * TCP_SND_BUF) / TCP_MSS)
 /* cads_net_ping() (modules/net/src/cads_net_board.c) creates one raw pcb
  * per call and removes it before returning - never more than one in use
  * at a time, so lwIP's default of 4 is RAM this firmware does not have to
@@ -114,7 +129,13 @@
  * bursts the old cut argued never happen; 4 slots meant burst replies
  * could drop and hosts silently vanish from the scan. Not back to 8: 6
  * covers the RX ring's own depth and the margin stays >5 KB. */
-#define PBUF_POOL_SIZE              6
+/* 2026-08-27: 6 -> 10 to back a larger TCP receive window (below). The
+ * receive direction (Mac -> board) was stuck at ~3.3 Mbit/s because the board
+ * advertised only lwIP's default TCP_WND (2 x 536-byte MSS = 1072 B): at ~2 ms
+ * RTT that caps the sender at window/RTT regardless of how fast we poll. A
+ * bigger window needs pool buffers to hold the in-flight bytes before the app
+ * reads them, so the pool grows with it. +4 x ~608 B .bss. */
+#define PBUF_POOL_SIZE              10
 
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
