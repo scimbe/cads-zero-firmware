@@ -41,14 +41,14 @@ static bool cads_netiperf_input(const cads_input_event_t* event, void* context) 
 }
 
 static const cads_softkey_t cads_netiperf_server_keys[] = {
-    {CadsKeyOk, "Start/Stop"},
+    {CadsKeyOk, "Run/Stop"},
     {CadsKeyBack, "Back"},
 };
 
 static const cads_softkey_t cads_netiperf_client_keys[] = {
     {CadsKeyUp, "IP+"},
     {CadsKeyDown, "IP-"},
-    {CadsKeyOk, "Start/Stop"},
+    {CadsKeyOk, "Run/Stop"},
     {CadsKeyBack, "Back"},
 };
 

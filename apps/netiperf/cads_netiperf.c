@@ -193,7 +193,7 @@ static void cads_netiperf_server_exit(void* context) {
 }
 
 static const cads_softkey_t cads_netiperf_server_keys[] = {
-    {CadsKeyOk, "Start/Stop"},
+    {CadsKeyOk, "Run/Stop"},
     {CadsKeyBack, "Back"},
 };
 
@@ -291,7 +291,7 @@ static void cads_netiperf_client_exit(void* context) {
 static const cads_softkey_t cads_netiperf_client_keys[] = {
     {CadsKeyUp, "IP+"},
     {CadsKeyDown, "IP-"},
-    {CadsKeyOk, "Start/Stop"},
+    {CadsKeyOk, "Run/Stop"},
     {CadsKeyBack, "Back"},
 };
 

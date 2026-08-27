@@ -84,8 +84,14 @@ void cads_explorer_iperf_demo(uint32_t seconds) {
 
     uint32_t start = cads_hal_ticks_ms();
     while(cads_hal_ticks_ms() - start < seconds * 1000u) {
+        /* Busy-poll: this is a dedicated throughput benchmark, not the GUI
+         * loop, so there is nothing else to yield to on this task. A 10 ms
+         * delay here capped TCP at one ~2.9 KB window per poll (~2.3 Mbit/s
+         * measured); polling flat-out lets lwIP refill the window as fast as
+         * the link and the RX ring allow. A tiny yield keeps higher-priority
+         * tasks (display, input) responsive without throttling the transfer. */
         cads_net_poll();
-        cads_hal_delay_ms(10u);
+        cads_hal_delay_us(50u);
     }
 
     if(session) lwiperf_abort(session);
@@ -117,8 +123,14 @@ void cads_explorer_iperf_client_demo(uint32_t target, uint32_t seconds) {
 
     uint32_t start = cads_hal_ticks_ms();
     while((cads_hal_ticks_ms() - start) < seconds * 1000u) {
+        /* Busy-poll: this is a dedicated throughput benchmark, not the GUI
+         * loop, so there is nothing else to yield to on this task. A 10 ms
+         * delay here capped TCP at one ~2.9 KB window per poll (~2.3 Mbit/s
+         * measured); polling flat-out lets lwIP refill the window as fast as
+         * the link and the RX ring allow. A tiny yield keeps higher-priority
+         * tasks (display, input) responsive without throttling the transfer. */
         cads_net_poll();
-        cads_hal_delay_ms(10u);
+        cads_hal_delay_us(50u);
     }
 
     lwiperf_abort(session);
