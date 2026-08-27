@@ -39,7 +39,12 @@
  * running-total arithmetic above still holds: ~150 B DHCP + ~1072 B one
  * connection's send window + one ~100 B lwiperf session leaves ~400 B of
  * slack even at the worst simultaneous case this firmware can produce. */
-#define MEM_SIZE                    (2 * 1024)
+/* 2026-08-27: partially restored 2048 -> 3072. Every trim above was a
+ * headroom offset against the then-256 B RAM margin; the canvas
+ * double-buffer removal freed 15 KB and the margin now sits at ~8.6 KB, so
+ * the tightest cuts are walked back first. 3072 gives TCP's send path and
+ * an lwiperf session real slack instead of ~400 B. */
+#define MEM_SIZE                    (3 * 1024)
 
 /* Was 16; trimmed to 12 for the same reason as the pools below it - still
  * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data
@@ -58,7 +63,8 @@
  * trim in this file). 3 concurrent TCP connections is still one more than
  * anything this firmware has ever had live at once: one CLI/HTTP/screencast
  * client plus one iperf session is the realistic ceiling. */
-#define MEMP_NUM_TCP_PCB            3
+/* 2026-08-27: restored 3 -> 4 (see MEM_SIZE's restore note). */
+#define MEMP_NUM_TCP_PCB            4
 /* Was 4; trimmed to 2 to offset apps/netiperf's static state against the
  * load-bearing `ASSERT(__cads_heap_size >= 48K)` guard, the same lever
  * MEMP_NUM_TCP_SEG used below for the net-config feature. This firmware
@@ -76,7 +82,10 @@
  * later for apps/nettools. Still generous for this bench: TCP_SND_BUF is at
  * lwIP's default (~2 MSS), so no single connection queues anywhere near 12,
  * and the HTTP/screen/iperf servers here are never many-connection. */
-#define MEMP_NUM_TCP_SEG            12
+/* 2026-08-27: restored 12 -> 16, the lwIP default (see MEM_SIZE's
+ * restore note) - segment starvation shows up as mysterious TCP stalls,
+ * the worst kind of bench bug to chase. */
+#define MEMP_NUM_TCP_SEG            16
 /* cads_net_ping() (modules/net/src/cads_net_board.c) creates one raw pcb
  * per call and removes it before returning - never more than one in use
  * at a time, so lwIP's default of 4 is RAM this firmware does not have to
@@ -100,7 +109,12 @@
  * entirely during their own capture windows (see explorer_sniff_demo.c's
  * file header) - so this cut is pure headroom recovery, not a
  * capture-path change, for either of them. */
-#define PBUF_POOL_SIZE              4
+/* 2026-08-27: restored 4 -> 6 (see MEM_SIZE's restore note). The ARP
+ * scan sweeping .1-.254 (apps/nettools) provokes exactly the RX reply
+ * bursts the old cut argued never happen; 4 slots meant burst replies
+ * could drop and hosts silently vanish from the scan. Not back to 8: 6
+ * covers the RX ring's own depth and the margin stays >5 KB. */
+#define PBUF_POOL_SIZE              6
 
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
