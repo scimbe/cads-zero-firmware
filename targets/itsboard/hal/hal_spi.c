@@ -334,8 +334,22 @@ bool cads_hal_spi_busy(void) {
 }
 
 void cads_hal_spi_wait(void) {
-    while(cads_spi_dma_active) {
+    /* PRIMASK-gated WFI, not a bare check-then-WFI: the DMA-complete ISR that
+     * clears cads_spi_dma_active can fire in the window between the flag test
+     * and the __WFI(), and a bare __WFI() would then sleep until the *next*
+     * unrelated interrupt - on the pre-scheduler boot flush, where SysTick may
+     * be the only other source, that is a multi-ms stall or a hang. Disabling
+     * interrupts around the test closes the window: __WFI() still wakes on a
+     * pending enabled interrupt even with PRIMASK set, it just does not enter
+     * the handler until interrupts are re-enabled (issue #65). */
+    for(;;) {
+        __disable_irq();
+        if(!cads_spi_dma_active) {
+            __enable_irq();
+            break;
+        }
         __WFI();
+        __enable_irq(); /* let the just-woken ISR run, then re-test */
     }
     while(CADS_LCD_SPI->SR & SPI_SR_BSY) {
     }

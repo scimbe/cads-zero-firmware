@@ -96,6 +96,7 @@ typedef struct {
     uint32_t next_tick_ms;
     uint32_t frames_sent;
     uint32_t frames_seen;    /**< RX tools: replies/observed frames          */
+    bool capture_active;     /**< true only while a capture engine really owns RX */
     char status[24];         /**< short run-mode line, e.g. "tx 12"          */
 } cads_active_session_t;
 
@@ -315,14 +316,18 @@ static void cads_active_engine_start(void) {
 
     cads_str_copy(s_session.status, sizeof(s_session.status), "starting");
     if(cads_active_is_capture_tool(s_session.selected_tool)) {
-        if(cads_netx_capture_begin()) cads_net_set_poll_suppressed(true);
+        if(cads_netx_capture_begin()) {
+            cads_net_set_poll_suppressed(true);
+            s_session.capture_active = true;
+        }
     }
 }
 
 static void cads_active_engine_stop(void) {
-    if(cads_active_is_capture_tool(s_session.selected_tool) && s_session.mode == CADS_ACTIVE_MODE_RUN) {
+    if(s_session.capture_active) {
         cads_netx_capture_end(); /* restores promiscuous off + poll resumed */
         cads_net_set_poll_suppressed(false);
+        s_session.capture_active = false;
     }
     s_session.mode = CADS_ACTIVE_MODE_CONFIG;
     cads_str_copy(s_session.status, sizeof(s_session.status), "idle");
@@ -612,7 +617,12 @@ void cads_active_tick(uint32_t now_ms) {
 }
 
 bool cads_active_owns_rx(void) {
-    return s_session.mode == CADS_ACTIVE_MODE_RUN && cads_active_is_capture_tool(s_session.selected_tool);
+    /* Only when a capture engine has actually begun and owns the RX ring -
+     * NOT merely because a capture tool is selected in RUN mode. If
+     * cads_netx_capture_begin() failed or the tool is an unimplemented
+     * placeholder, poll was never suppressed, so claiming ownership here
+     * would freeze lwIP RX with nothing draining the ring (issue #61). */
+    return s_session.capture_active;
 }
 
 void cads_active_init(cads_view_dispatcher_t* dispatcher) {

@@ -230,6 +230,8 @@ void cads_nettools_tick(uint32_t now_ms) {
     if(now_ms < s_arp.next_tick_ms) return;
     s_arp.next_tick_ms = now_ms + CADS_NETTOOLS_ARP_TICK_MS;
 
+    uint16_t found_before = s_arp.found; /* snapshot before this tick's harvest */
+
     /* Each octet is harvested exactly once, on the tick where it is exactly
      * WINDOW requests behind the sweep head - late enough for any LAN reply
      * to have landed, early enough that lwIP's bounded ARP table has not
@@ -251,8 +253,20 @@ void cads_nettools_tick(uint32_t now_ms) {
     if(s_arp.next_octet > (uint16_t)(s_arp.last_octet + CADS_NETTOOLS_ARP_WINDOW)) {
         s_arp.running = false;
     }
+
+    /* Dirty only the lines that actually change, not the whole view every
+     * 30 ms - the range/hint lines are static for the sweep, and blitting the
+     * full content area each tick saturates the 97%-loaded display bus for the
+     * entire scan (issue #62). The result line updates every tick (live
+     * probe octet); the found line only when a host was just recorded. */
+    cads_rect_t area = cads_view_area(&s_arp.view);
     cads_nettools_arp_progress_text();
-    cads_view_dirty_rect(&s_arp.view, cads_view_area(&s_arp.view));
+    cads_rect_t result_box = {area.x, (int16_t)(area.y + 60), area.width, 20};
+    cads_view_dirty_rect(&s_arp.view, result_box);
+    if(s_arp.found != found_before) {
+        cads_rect_t found_box = {area.x, (int16_t)(area.y + 82), area.width, 20};
+        cads_view_dirty_rect(&s_arp.view, found_box);
+    }
 }
 
 static void cads_nettools_arp_draw(cads_rect_t area, void* context) {
