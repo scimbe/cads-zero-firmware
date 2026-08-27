@@ -2063,6 +2063,48 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (review + soak) — **Professional embedded code-review swarm +
+  long-term usage emulation; 8 findings fixed, all hardware-verified.** A
+  6-dimension review swarm (concurrency/ISR, RAM/DMA, register sequences,
+  robustness, performance, freshly-landed code) produced 29 raw findings;
+  adversarial verification (one refuter per unique finding, default-refute)
+  rejected 10 and confirmed 18. Filed as GitHub issues #58-68 (dedup against
+  the existing backlog, existing label convention). In parallel a long-term
+  soak drove ~440 varied serial commands across two runs (standard + a stress
+  mix: pktgen 2000/5000 pps, display-under-contention, promiscuous capture,
+  net churn) - **zero faults, zero hangs, forensic ring clean throughout**;
+  the firmware is robust under sustained interaction.
+  **Fixed this cycle (issue -> what):**
+  - #59 HIGH: gui/canvas.c double-buffered staging banks never overlapped
+    (blit is synchronous), so the second 15,360 B bank was dead weight.
+    Dropped it - **RAM margin 640 B -> 16,000 B**, the single biggest change
+    in this project's memory posture. Display renders byte-identically.
+  - #58 HIGH: cads_hal_spi_set_speed() rewrote CR1 (SPE/baud) with no bus
+    mutex - the exact race the recursive mutex was added to stop, left
+    uncovered on the 'F' command and Settings fast-clock. Took the recursive
+    mutex inside set_speed(). 6-cycle fast-clock-under-load soak: 0 hangs.
+  - #60 HIGH: netx DHCP builder wrote the BOOTP magic cookie at offset 240,
+    not 236 (fixed header is 236 B) - malformed, 4 bytes over. Fixed to
+    236/274 + a golden regression test (the netx suite had no DHCP coverage).
+  - #61 MED: apps/active owns_rx() claimed the RX ring for any capture tool
+    in RUN mode even when capture never began - froze lwIP RX. Now gated on a
+    capture_active flag set only on a real cads_netx_capture_begin().
+  - #62 MED: the ARP scan dirtied the whole view every 30 ms; now dirties only
+    the 20 px result line (and the found line on a hit). ~10x less blit/tick.
+  - #65 MED: cads_hal_spi_wait()'s check-then-WFI could lose the DMA-complete
+    wakeup; replaced with the PRIMASK-gated idiom.
+  - #66 MED: unbounded TXE/RXNE/BSY spins in cads_hal_spi_transfer() -> a
+    wedged peripheral hung silently past the tick-fed IWDG. Guard-bounded
+    (cheap counter, hot path unaffected) + cads_hal_panic() on expiry.
+  - #68 PERF: RX ring 4 -> 8 (the soak measured ~1431 drops at 5000 pps
+    capture; now 0). Affordable on #59's freed RAM. Margin 9,792 B.
+  **Still open from the review:** #63 (canvas flush damage-box race, medium
+  concurrency), #64 (RX pump double-copy -> zero-copy, enhancement), #67 (six
+  low-severity items, grouped). All non-urgent. Net effect: the firmware is
+  measurably more robust and efficient, and RAM went from a chronic 256 B
+  fight to ~10 KB of genuine headroom - room the deferred feature backlog can
+  finally use.
+
 - 2026-08-27 (integration) — **M9 "Active Net Tools" (modules/netx + apps/active)
   integrated and the held GUI/calibration work landed, as one runnable image.**
   A second developer built the M9 offensive-tooling suite in parallel; at the
