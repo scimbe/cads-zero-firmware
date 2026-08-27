@@ -259,13 +259,19 @@
  * connector; a real conflict if something is - do not use the onboard RS232
  * port while an ESP32 co-processor is wired to CN8 pins 8/9.
  *
- * AF8 carries USART6 on PC6/PC7, unlike USART3's AF7 above. High baud
- * because PPP framing (HDLC byte-stuffing) inflates the wire bytes per IP
- * byte; 460800 keeps the link itself well clear of being the throughput
- * bottleneck relative to the WiFi hop behind it - Marauder's plain-text CLI
- * has no framing overhead and would be fine at this baud or lower. */
+ * AF8 carries USART6 on PC6/PC7, unlike USART3's AF7 above. 115200 to match
+ * ESP32Marauder's own Serial.begin(115200) in esp32_marauder.ino - that call
+ * is hardcoded upstream, not a negotiated or configurable rate, so this side
+ * must match it exactly. (The PPPoS co-processor path this header briefly
+ * carried instead wanted 460800 for its HDLC framing overhead; that path is
+ * deferred - see docs/reference/wifi-coprocessor.md - and 115200 is right
+ * for the Marauder CLI actually wired here now. Hardware-confirmed
+ * 2026-08-28: 460800 produced garbled bytes back from a real ESP32 running
+ * Marauder, exactly the symptom of a baud mismatch - the earlier loopback
+ * test never caught this because a self-bridged TX-to-RX jumper doesn't
+ * care what baud both ends agree on, only that they match each other.) */
 #define CADS_WIFI_UART           USART6
-#define CADS_WIFI_BAUD           460800u
+#define CADS_WIFI_BAUD           115200u
 #define CADS_PIN_WIFI_TX_PORT    GPIOC
 #define CADS_PIN_WIFI_TX         6u
 #define CADS_PIN_WIFI_RX_PORT    GPIOC

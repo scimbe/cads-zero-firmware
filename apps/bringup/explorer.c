@@ -820,10 +820,18 @@ void cads_explorer_run(void) {
                  * instead), 0 bytes back is simply "nothing echoed it",
                  * which is expected until real ESP32 firmware exists. */
                 uint32_t seconds = cads_parse_uint(argument);
-                if(!seconds) seconds = 5u;
+                if(!seconds) seconds = 8u;
                 cads_hal_wifi_uart_init();
 
-                static const char test_pattern[] = "CADS-WIFI-LOOPBACK-TEST\r\n";
+                /* TEMP 2026-08-28: real end-to-end verification against the
+                 * actual ESP32Marauder CLI (not a self-loopback jumper) -
+                 * "scanall" is a real Marauder command, so any recognisable
+                 * reply (its own echo, scan results, the "> " prompt) proves
+                 * the CN8 wiring reaches Marauder's Serial (UART0/TX0-RX0)
+                 * and back. Revert to the plain loopback pattern, or remove
+                 * this command entirely, once modules/wifi's real Marauder
+                 * bridge supersedes it. */
+                static const char test_pattern[] = "scanall\r\n";
                 uint32_t sent = (uint32_t)(sizeof(test_pattern) - 1u);
                 cads_hal_wifi_uart_write(test_pattern, sent);
 
