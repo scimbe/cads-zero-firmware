@@ -102,3 +102,41 @@ int cads_flash_sync(void) {
     if(!cads_flash_ready) return CADS_FLASH_ERR_STATE;
     return CADS_FLASH_OK;
 }
+
+/* --- host image I/O (for scripts/cads_config.py's FS tool, not the sim) -----
+ *
+ * Load/save the whole 896 KB backing array from/to a file, so a host tool can
+ * work on an FS image dumped off the board (st-flash read 0x08120000) with the
+ * exact same littlefs code the board runs, then write it back. Unused by the
+ * simulator; present only in this host-only translation unit. */
+#include <stdio.h>
+
+int cads_flash_host_load_image(const char* path) {
+    /* init first so the geometry struct is set up (block_size/count etc.);
+     * it also blanks the array to 0xFF and sets ready - then overwrite the
+     * blank with the dumped image. Without the init, cads_flash_geometry()
+     * would hand littlefs a zeroed config and the mount would fail. */
+    (void)cads_flash_init();
+    FILE* f = fopen(path, "rb");
+    if(!f) return -1;
+    size_t n = fread(cads_flash_ram, 1u, sizeof(cads_flash_ram), f);
+    /* Reject a wrong-sized image outright rather than truncating or
+     * zero-padding: an image that is not exactly the volume size is not a
+     * dump of this volume, and silently proceeding would mount garbage or
+     * lose the tail. A trailing byte beyond the expected size is also a
+     * mismatch. */
+    int too_big = (fgetc(f) != EOF);
+    fclose(f);
+    if(n != sizeof(cads_flash_ram) || too_big) return -2;
+    return 0;
+}
+
+int cads_flash_host_save_image(const char* path) {
+    FILE* f = fopen(path, "wb");
+    if(!f) return -1;
+    size_t n = fwrite(cads_flash_ram, 1u, sizeof(cads_flash_ram), f);
+    /* A failed close can mean buffered data never reached disk - report it,
+     * or the caller would write a truncated image back to the board. */
+    int closed = fclose(f);
+    return (n == sizeof(cads_flash_ram) && closed == 0) ? 0 : -2;
+}
