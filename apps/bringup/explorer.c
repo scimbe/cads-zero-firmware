@@ -434,7 +434,8 @@ static void cads_help(void) {
         "#   v <sec>    file browser live on the panel, default 30s\r\n"
         "#   y          raw flash driver diagnostic, no littlefs (debug 'u' failures)\r\n"
         "#   z FAULT    trip UsageFault deliberately - HALTS FOR GOOD, needs a reflash\r\n"
-        "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n");
+        "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n"
+        "#   ~ <sec>    WiFi/Marauder co-processor link bring-up test (raw USART6, no PPP), default 5s\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -805,6 +806,69 @@ void cads_explorer_run(void) {
             case 'v': cads_explorer_filebrowser_demo(cads_parse_uint(argument) ?: 30u); break;
             case 'y': cads_explorer_flash_raw_test(); break;
             case 'z': cads_explorer_fault_test(argument); break;
+#ifdef CADS_TARGET_ITSBOARD
+            case '~': {
+                /* Bring-up diagnostic for the WiFi/Marauder co-processor
+                 * link (CN8 pins 8/9, USART6) - talks to the raw HAL
+                 * directly, bypassing modules/wifi's PPP bootstrap state
+                 * machine entirely, the same "raw hardware, no protocol"
+                 * pattern the 'Q' touch diagnostic already uses. With
+                 * TIM8-1 (PC6/TX) bridged to TIM8-2 (PC7/RX) by a jumper at
+                 * CN8, this proves the USART6 driver itself works -
+                 * independent of whatever is or is not on the far end of
+                 * the ESP32 wiring. Without the jumper (ESP32 attached
+                 * instead), 0 bytes back is simply "nothing echoed it",
+                 * which is expected until real ESP32 firmware exists. */
+                uint32_t seconds = cads_parse_uint(argument);
+                if(!seconds) seconds = 5u;
+                cads_hal_wifi_uart_init();
+
+                static const char test_pattern[] = "CADS-WIFI-LOOPBACK-TEST\r\n";
+                uint32_t sent = (uint32_t)(sizeof(test_pattern) - 1u);
+                cads_hal_wifi_uart_write(test_pattern, sent);
+
+                cads_probe_puts("# wifi-uart: sent ");
+                cads_probe_put_uint(sent);
+                cads_probe_puts(" bytes, listening for ");
+                cads_probe_put_uint(seconds);
+                cads_probe_puts("s\r\n");
+
+                char received[64];
+                uint32_t received_len = 0u;
+                uint32_t start_ms = cads_hal_ticks_ms();
+                while((cads_hal_ticks_ms() - start_ms) < seconds * 1000u) {
+                    uint8_t byte;
+                    while(cads_hal_wifi_uart_read(&byte)) {
+                        if(received_len + 1u < sizeof(received)) {
+                            received[received_len++] = (char)byte;
+                        }
+                    }
+                }
+
+                cads_probe_puts("# wifi-uart: received ");
+                cads_probe_put_uint(received_len);
+                cads_probe_puts(" bytes");
+                if(received_len > 0u) {
+                    received[received_len] = '\0';
+                    cads_probe_puts(": \"");
+                    cads_probe_puts(received);
+                    cads_probe_puts("\"");
+                }
+                cads_probe_puts("\r\n");
+
+                bool matched = received_len == sent &&
+                               memcmp(received, test_pattern, sent) == 0;
+                cads_probe_puts(matched ? "# wifi-uart: LOOPBACK OK\r\n"
+                                         : "# wifi-uart: no clean loopback (see bytes above)\r\n");
+
+                cads_probe_puts("# wifi-uart: dropped=");
+                cads_probe_put_uint(cads_hal_wifi_uart_dropped());
+                cads_probe_puts(" overruns=");
+                cads_probe_put_uint(cads_hal_wifi_uart_overruns());
+                cads_probe_puts("\r\n");
+                break;
+            }
+#endif /* CADS_TARGET_ITSBOARD */
             default:
                 cads_probe_puts("# unknown, '?' for help\r\n");
                 break;
