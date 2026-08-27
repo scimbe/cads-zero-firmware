@@ -2063,6 +2063,28 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (v0.0.1 - touch works, iperf 5.7x) — **First tagged release.**
+  Touch selection in the GUI, long the standing "enable touch" priority, now
+  works end to end - diagnosed live on the panel across three layered bugs and
+  the user's own suggested fix:
+  (1) the XPT2046 read occasionally returns a wild sample under redraw
+  contention (measured 70-140 px jumps between 100 Hz polls); an input-layer
+  despike drops any >55 px jump. (2) A press became a "drag" at half a row so
+  taps selected nothing; drag now means actual row scrolling. (3) The two-corner
+  calibration extrapolated the whole panel from two taps, drifting up to a row
+  near the top (fine at the bottom, so the soft-keys always worked) - replaced
+  with a **5x2 multi-point grid + least-squares fit** (each row, left then
+  right), the user's idea. Result confirmed "viel besser".
+  Also: **iperf 2.73 -> 15.7 Mbit/s** (5.7x, measured against Mac iperf2) by
+  busy-polling the stack instead of a 10 ms delay per poll; next ceiling is
+  TCP_MSS 536->1460 (a ~5.4 KB RAM decision, deferred). Soft-key label
+  "Start/Stop" clipped its 60 px cell -> "Run/Stop". Boot banner now carries
+  `CADS_VERSION` ("0.0.1"). Known cosmetic issues carried into v0.0.1: the
+  status/soft-key bars show black gaps on the board (framebuffer is clean, so
+  it is a flush/SPI-contention artifact, not a draw bug - still open); the
+  post-flash ST-Link reset is flaky and sometimes leaves the board hung in
+  early clock init until a clean `st-flash reset`.
+
 - 2026-08-27 (autostart + ST-Link post-mortem) — **The board now boots into
   the menu.** New config key `boot.autostart` (default on): after the self
   test the explorer hands the panel to the app tree indefinitely; any console

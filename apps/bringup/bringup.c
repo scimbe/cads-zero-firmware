@@ -22,6 +22,7 @@
 
 #include "cads/toolbox/log.h"
 #include "cads_hal.h"
+#include "cads_version.h"
 #include "canvas.h"
 #include "cads_splash.h"
 #include "explorer.h"
@@ -256,7 +257,7 @@ void cads_bringup_run(void) {
 
     cads_probe_puts("\r\n");
     cads_probe_puts("========================================\r\n");
-    cads_probe_puts(" CaDS Zero - milestone 0 bring-up\r\n");
+    cads_probe_puts(" CaDS Zero v" CADS_VERSION "\r\n");
     cads_probe_puts(" build " __DATE__ " " __TIME__ "\r\n");
     cads_probe_puts("========================================\r\n");
 
