@@ -50,7 +50,15 @@ Then, with the board connected over SWD:
 Apply the change without a reboot:
 
 1. On the board, open **Settings → Reload config**.
-2. It reports `Loaded /config.txt and applied it.`
+2. It reports `Re-reading /config.txt and applying it.`, and the change takes effect on the console task a moment later.
+
+!!! warning "Keep the board idle during an edit"
+    `push`/`edit` read the whole filesystem, change one file, and write the
+    whole thing back. If the board writes its own storage in between (a
+    calibration save, a config write from the panel), that change is in the
+    board's live volume but not in your dumped image, and the write-back
+    overwrites it. Edit when the board is idle — the safest moment is right
+    after a reset, before touching the panel.
 
 !!! note "Why not a USB drive"
     The board has no USB mass-storage interface; its filesystem is only

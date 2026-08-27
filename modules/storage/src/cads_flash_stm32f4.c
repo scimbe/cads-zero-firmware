@@ -138,10 +138,14 @@ static void cads_flash_reset_data_cache(void) {
  * fixed for SPI (issue #66) - found live while debugging a silent hang: the
  * first-ever real erase from a normal (non-explicit-test) boot path hung
  * with no CPU fault and therefore no forensic record, recovered only by the
- * watchdog. cads_hal_ticks_ms() is a plain SysTick-driven counter read, safe
- * to call from this flash-resident routine (see this file's own header on
- * why the routine itself must stay in flash - that reliability requirement
- * does not extend to reading an unrelated peripheral's tick count). */
+ * watchdog. cads_hal_ticks_ms() reads the DWT cycle counter (hal_time.c), not
+ * SysTick - which makes it the right clock here: DWT advances with no
+ * interrupt, so this bound keeps counting even if the flash write ever runs
+ * inside a critical section or with interrupts masked, where a
+ * SysTick-interrupt-driven counter would freeze and the timeout would never
+ * fire. Safe to call from this flash-resident routine (the file header
+ * explains why the routine itself stays in flash; that does not extend to
+ * reading an unrelated core counter). */
 #define CADS_FLASH_ERASE_TIMEOUT_MS 4000u
 #define CADS_FLASH_PROGRAM_TIMEOUT_MS 50u
 

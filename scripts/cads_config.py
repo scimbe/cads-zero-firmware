@@ -55,6 +55,16 @@ def dump_fs(image_path):
 
 
 def write_fs(image_path):
+    # A push is a whole-volume read-modify-write: the image was dumped a moment
+    # ago, edited, and is now written back in full. Any change the board itself
+    # made to its filesystem in between (a calibration save, a config write from
+    # the panel) is in the FRESH board volume but NOT in this stale image, and
+    # writing the image back would overwrite it. The board should be idle - not
+    # mid-write - during an edit; the safest moment is right after a reset,
+    # before touching the panel.
+    sys.stderr.write(
+        "note: writing the whole filesystem back - make sure the board has not "
+        "written its own storage since the pull (see docs).\n")
     subprocess.run(
         ["st-flash", "--serial", stlink_serial(), "write", str(image_path), FS_BASE],
         check=True,
