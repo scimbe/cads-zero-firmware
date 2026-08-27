@@ -356,6 +356,7 @@ add_library(cads_apps STATIC
     apps/bringup/explorer_capture_buffer.c
     apps/bringup/explorer_gui_demo.c
     apps/bringup/explorer_app_demo.c
+    apps/bringup/cads_lightorgan.c
     apps/bringup/explorer_storage_test.c
     apps/bringup/explorer_filebrowser_demo.c
     apps/bringup/explorer_cli_demo.c

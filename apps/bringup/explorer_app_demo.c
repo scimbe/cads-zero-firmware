@@ -26,6 +26,7 @@
 #include "cads_active.h"
 #endif
 #ifdef CADS_APP_MARAUDER_ENABLED
+#include "cads_lightorgan.h"
 #include "cads_marauder.h"
 #endif
 #ifdef CADS_APP_SETTINGS_ENABLED
@@ -211,6 +212,7 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_MARAUDER_ENABLED
         cads_marauder_tick(now);
+        cads_lightorgan_tick(now);
 #endif
 #ifdef CADS_APP_SETTINGS_ENABLED
         cads_touch_calib_tick(now);
