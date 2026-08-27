@@ -19,6 +19,7 @@ parsed", never a garbage state.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
+| `boot.autostart` | bool | `1` | Boot straight into the menu (the panel is usable standalone). Any console key drops back to the explorer prompt; that key is not lost — it becomes the first character of the next command. `0` boots to the console prompt, the pre-autostart behavior. |
 | `display.brightness` | 0–100 | `80` | Backlight percent. Values above 100 clamp to 100. |
 | `display.fast_clock` | bool | `0` | Display SPI divider: `1` = fast (/8), `0` = safe (/16). |
 | `net.dhcp` | bool | `0` | `1` requests a DHCP lease; `0` uses the static fields below. |
@@ -39,6 +40,9 @@ and the key keeps its previous value.
 ```ini
 # CaDS Zero configuration
 # Edit and save, then reload from Settings -> Reload config.
+
+# boot
+boot.autostart = 1
 
 # display
 display.brightness = 80

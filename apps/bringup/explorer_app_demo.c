@@ -118,7 +118,7 @@ static const char* cads_net_indicator_text(void) {
     return net.speed_mbit >= 100u ? "100M" : "10M";
 }
 
-void cads_explorer_app_demo(uint32_t seconds) {
+uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
 
     cads_view_dispatcher_init(
@@ -132,7 +132,7 @@ void cads_explorer_app_demo(uint32_t seconds) {
 
     if(!cads_view_dispatcher_switch_to(&s_dispatcher, CADS_VIEW_ID_DESKTOP)) {
         cads_probe_puts("# app demo: failed to switch to the desktop\r\n");
-        return;
+        return 0u;
     }
 
     cads_statusbar_init(&s_statusbar);
@@ -142,18 +142,39 @@ void cads_explorer_app_demo(uint32_t seconds) {
 
     uint32_t start_generation = cads_view_dispatcher_generation(&s_dispatcher);
 
-    cads_probe_puts("# app demo: desktop -> menu -> app live on the panel for ");
-    cads_probe_put_uint(seconds);
-    cads_probe_puts(
-        "s - OK opens the menu, F1 pets Leo, "
-        "every action here is reachable by touch too\r\n");
+    if(seconds == 0u) {
+        cads_probe_puts(
+            "# app demo: desktop -> menu -> app live on the panel until a "
+            "console key arrives - OK opens the menu, F1 pets Leo, "
+            "every action here is reachable by touch too\r\n");
+    } else {
+        cads_probe_puts("# app demo: desktop -> menu -> app live on the panel for ");
+        cads_probe_put_uint(seconds);
+        cads_probe_puts(
+            "s - OK opens the menu, F1 pets Leo, "
+            "every action here is reachable by touch too\r\n");
+    }
 
     uint32_t start = cads_hal_ticks_ms();
     uint32_t total_pixels = 0u;
     uint32_t frames = 0u;
 
-    while(cads_hal_ticks_ms() - start < seconds * 1000u) {
+    /* seconds == 0: interactive session - run until a console byte arrives
+     * (the byte is consumed; any key drops back to the explorer prompt).
+     * This is what boot.autostart uses to hand the panel to the menu at
+     * power-on while keeping the console reachable. */
+    uint8_t wake_byte = 0u;
+    for(;;) {
         uint32_t now = cads_hal_ticks_ms();
+        if(seconds == 0u) {
+            uint8_t byte;
+            if(cads_hal_console_read(&byte)) {
+                wake_byte = byte;
+                break;
+            }
+        } else if(now - start >= seconds * 1000u) {
+            break;
+        }
         /* A promiscuous-capture M9 tool (802.1X sniff, TCP RST daemon) owns
          * the RX ring for its duration and has suppressed lwIP's own poll via
          * cads_net_set_poll_suppressed(true) - so this loop must not also
@@ -203,4 +224,5 @@ void cads_explorer_app_demo(uint32_t seconds) {
     cads_probe_puts(" navigation transitions, ended on view id ");
     cads_probe_put_uint(cads_view_dispatcher_current_id(&s_dispatcher));
     cads_probe_puts("\r\n");
+    return wake_byte;
 }

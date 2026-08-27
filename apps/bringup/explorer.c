@@ -39,6 +39,7 @@
 #include "cads/toolbox/record.h"
 #include "cads/toolbox/str.h"
 #include "explorer_app_demo.h"
+#include "cads/config/config.h"
 #include "explorer_arp_demo.h"
 #include "explorer_arpwatch_demo.h"
 #include "explorer_cli_demo.h"
@@ -442,6 +443,30 @@ void cads_explorer_run(void) {
 
     char line[32];
     uint32_t length = 0u;
+
+#ifdef CADS_APP_SETTINGS_ENABLED
+    /* boot.autostart (default on): hand the panel straight to the menu so the
+     * board is usable standalone - no console needed. Any console key drops
+     * back to this prompt. Runs on the console task, the storage owner, and
+     * before the command loop, so the config read has no concurrent storage
+     * user. */
+    {
+        cads_config_t boot_cfg;
+        (void)cads_config_load(&boot_cfg);
+        if(boot_cfg.boot_autostart) {
+            cads_probe_puts("# boot.autostart=1: entering the menu, any console key returns here\r\n");
+            uint8_t wake = cads_explorer_app_demo(0u);
+            cads_probe_puts("# back at the explorer prompt, '?' for help\r\n");
+            /* The wake byte is the first character of whatever was typed or
+             * scripted - seed the command line with it so a one-shot command
+             * sent to a booted board is not swallowed by the wake-up. */
+            if(wake != 0u && wake != '\r' && wake != '\n') {
+                line[0] = (char)wake;
+                length = 1u;
+            }
+        }
+    }
+#endif
 
     for(;;) {
         uint8_t byte;

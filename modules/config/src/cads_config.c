@@ -11,6 +11,7 @@
 
 void cads_config_defaults(cads_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
+    cfg->boot_autostart = true;
     cfg->brightness = 80u;
     cfg->fast_clock = false;
     cfg->net_dhcp = false;
@@ -124,7 +125,9 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                 while(kend > s && (kend[-1] == ' ' || kend[-1] == '\t')) kend--;
                 const char* v = skip_ws(eq + 1, line_end);
 
-                if(key_is(s, kend, "display.brightness")) {
+                if(key_is(s, kend, "boot.autostart")) {
+                    cfg->boot_autostart = parse_bool(v, line_end); applied++;
+                } else if(key_is(s, kend, "display.brightness")) {
                     uint32_t val = 0u;
                     if(parse_uint_full(v, line_end, 0xFFFFu, &val)) {
                         cfg->brightness = (uint8_t)(val > 100u ? 100u : val); applied++;
@@ -187,6 +190,10 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     cads_str_copy(out, size,
         "# CaDS Zero configuration\n"
         "# Edit and save, then reload from Settings -> Reload config.\n\n"
+        "# boot\n");
+    append_kv_uint(out, size, "boot.autostart", cfg->boot_autostart ? 1u : 0u);
+    cads_str_append(out, size,
+        "\n"
         "# display\n");
     append_kv_uint(out, size, "display.brightness", cfg->brightness);
     append_kv_uint(out, size, "display.fast_clock", cfg->fast_clock ? 1u : 0u);

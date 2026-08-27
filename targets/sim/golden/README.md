@@ -16,7 +16,7 @@ Two scenes today:
 | File | What it shows | How it is reached |
 |---|---|---|
 | `splash.png` | The boot splash: the CaDS mark, the lion, the "Z E R O" wordmark. | Default `--screenshot`, no console input. The splash is drawn and flushed, then held for a fixed 1.5 s (`apps/bringup/bringup.c`) before the self test starts drawing over it - comfortably longer than the screenshot's default 250 ms idle window, so quiescence fires during that hold. |
-| `bringup_pattern.png` | The bring-up self test's own on-screen test pattern: 16 palette swatches, the four corner markers, the diagonal cross, and the fast-SPI-clock qualification band (`cads_draw_test_pattern()` / `cads_check_fast_clock()` in `apps/bringup/bringup.c`) - this is the closest thing in this codebase to what M7's roadmap entry calls a "colour-bar test pattern". | `--screenshot-idle 2000`, no console input. See "Why is it shaped this way?" below for why 2000 and not the default. |
+| `boot_desktop.png` | Where a booted board actually lands: the desktop (Leo, statusbar, Menu/Pet softkeys), because `boot.autostart` (default on, `/config.txt`) drops the explorer straight into the menu. Replaced `bringup_pattern.png` when autostart landed - the 16-swatch self-test pattern is still drawn during boot but no longer *stays* on screen; it is reachable interactively via Settings -> Test pattern. | `--screenshot-idle 2000`, no console input. See "Why is it shaped this way?" below for why 2000 and not the default. |
 
 ## Why is it shaped this way?
 
@@ -39,7 +39,7 @@ Once that lands on this branch (by merge or by rebase), add
 from the menu, what to feed on stdin) lands the panel on screen, capture it
 with `update_golden`, and add one `cads_add_golden_test(...)` line.
 
-**`bringup_pattern.png` is not reached through explorer.c's `p` command.**
+**History - the scene this one replaced (`bringup_pattern.png`) was not reached through explorer.c's `p` command.** (Kept because the timing analysis below still explains the 2000 ms idle; today the frame that stays on screen after that idle is the autostart desktop, not the self-test pattern.)
 The roadmap entry this directory implements guesses it might be
 (`docs/ROADMAP.md`, M7); `apps/bringup/explorer.c`'s `p <n>` only reaches
 `cads_pattern()`'s six scenes (black / blue / green / quadrants / stripes /

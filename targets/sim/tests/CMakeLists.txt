@@ -34,7 +34,7 @@ endfunction()
 # Reachable with no console input at all - see targets/sim/golden/README.md
 # for exactly how each scene is timed into view.
 cads_add_golden_test(splash 250)
-cads_add_golden_test(bringup_pattern 2000)
+cads_add_golden_test(boot_desktop 2000)
 
 # `cmake --build <build-dir> --target update_golden` (or `ninja update_golden`)
 # regenerates every golden PNG from the current build - the review step for an
@@ -49,8 +49,8 @@ add_custom_target(update_golden
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/golden_check.py update
         --sim $<TARGET_FILE:cads-zero-sim>
-        --golden ${CADS_ROOT}/targets/sim/golden/bringup_pattern.png
-        --name bringup_pattern --idle 2000
+        --golden ${CADS_ROOT}/targets/sim/golden/boot_desktop.png
+        --name boot_desktop --idle 2000
     DEPENDS cads-zero-sim
     COMMENT "Regenerating targets/sim/golden/*.png from the current build"
     VERBATIM

@@ -22,6 +22,10 @@
  * menu, and reached a leaf app *by touch specifically* - see docs/ROADMAP.md
  * M3 for why that stays an open item until someone looks at the panel.
  */
-void cads_explorer_app_demo(uint32_t seconds);
+/* seconds == 0: run until a console byte arrives; that byte is returned so
+ * the caller can treat it as the first character of the next command
+ * (scripted one-shot commands would otherwise lose their command letter to
+ * the wake-up). Returns 0 when the run ended by timeout. */
+uint8_t cads_explorer_app_demo(uint32_t seconds);
 
 #endif /* CADS_EXPLORER_APP_DEMO_H */

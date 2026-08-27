@@ -38,6 +38,7 @@ extern "C" {
 #define CADS_CONFIG_TEXT_MAX    512u
 
 typedef struct {
+    bool boot_autostart;  /**< boot straight into the menu (console key exits) */
     uint8_t brightness;   /**< display backlight percent, 0..100            */
     bool fast_clock;      /**< display SPI fast divider                     */
 
