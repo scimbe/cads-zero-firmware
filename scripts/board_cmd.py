@@ -33,12 +33,26 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("letter", help="explorer command letter, e.g. q, d, k")
     parser.add_argument("argument", nargs="?", default="", help="optional numeric argument")
-    parser.add_argument("--port", default="/dev/cu.usbmodem11303")
+    parser.add_argument("--port", default=None,
+                        help="serial device; default: $CADS_CONSOLE_PORT or the "
+                             "first numeric /dev/cu.usbmodem* (the ST-Link VCP's "
+                             "name shifts with the USB port, e.g. 11303 vs 1303)")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout", type=float, default=60.0, help="hard wall-clock deadline")
     args = parser.parse_args()
 
-    fd = open_console(args.port, args.baud)
+    port = args.port or os.environ.get("CADS_CONSOLE_PORT")
+    if port is None:
+        import glob
+        # the ST-Link VCP enumerates with a purely numeric suffix; other CDC
+        # devices (an LG monitor's control interface, say) carry letters
+        candidates = [c for c in sorted(glob.glob("/dev/cu.usbmodem*"))
+                      if c.rsplit("usbmodem", 1)[1].isdigit()]
+        if not candidates:
+            sys.exit("no ST-Link VCP found (no numeric /dev/cu.usbmodem*) - "
+                     "pass --port or set CADS_CONSOLE_PORT")
+        port = candidates[0]
+    fd = open_console(port, args.baud)
     try:
         command = f"{args.letter} {args.argument}".strip() + "\r\n"
         os.write(fd, command.encode())

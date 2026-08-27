@@ -2063,6 +2063,33 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (autostart + ST-Link post-mortem) — **The board now boots into
+  the menu.** New config key `boot.autostart` (default on): after the self
+  test the explorer hands the panel to the app tree indefinitely; any console
+  byte returns to the prompt, and that byte seeds the next command so
+  scripted one-shots (`board_cmd.py E`) work against a booted board -
+  hardware-verified end to end, including a live `P` ping executed straight
+  out of the menu. The sim inherits it, so the no-input golden scene is now
+  the desktop (`boot_desktop.png`, replaces `bringup_pattern.png`).
+  Also landed: the #63 damage-box race fixed with a new portable
+  `cads_hal_irq_save()/restore()` pair (PRIMASK; the taskENTER_CRITICAL
+  pre-scheduler trap documented in CLAUDE.md is why); the tightest lwIP pool
+  trims walked back (margin 8608->6144 B) - MEM_SIZE 3K, TCP_SEG 16,
+  PBUF_POOL 6, TCP_PCB 4 - because the .1-.254 ARP sweep provokes exactly
+  the RX bursts the old cuts assumed away; `board_cmd.py` auto-detects the
+  VCP (its name shifts with the USB port). **ST-Link post-mortem closed
+  (issue #57):** the recurring wedge + one real flash corruption (single
+  cleared bit in the vector table's initial-SP word, board hung in
+  Reset_Handler, repaired by reflash) trace to macOS auto-mounting the
+  Nucleo's MBED drive and writing metadata (now: fstab noauto + unmount
+  rule), SWD clients killed mid-transfer (now: generous timeouts, never
+  kill), and overlapping SWD clients (now: everything serializes through
+  `scripts/swd_lock.py`). Watch item: one unreproduced BusFault->IWDG
+  reboot ~21 s into the first autostart idle (issue #69) - 150 s + 12 min
+  soaks since were clean; forensics preserved in the issue. Config crash
+  fix (static text buffers, review-2 #4) hardware-verified earlier today;
+  the full Mac config round-trip (pull/edit/push/re-pull) works.
+
 - 2026-08-27 (review pass 2) — **Second adversarial review swarm, aimed at
   this session's own fresh config/tools/profile/flash code; 34 findings
   confirmed (of 39), 28 fixed.** A focused 6-dimension swarm (config parse,
