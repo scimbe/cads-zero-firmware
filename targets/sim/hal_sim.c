@@ -608,6 +608,14 @@ void cads_hal_display_backlight(uint8_t percent) {
     cads_sim.needs_present = true;
 }
 
+uint32_t cads_hal_irq_save(void) {
+    return 0u; /* single-threaded sim: nothing to mask */
+}
+
+void cads_hal_irq_restore(uint32_t state) {
+    (void)state;
+}
+
 void cads_hal_display_set_fast_clock(bool fast) {
     /* No bus, no divider. Anything that measures the difference is measuring
      * the host, which is why the bring-up's throughput ratio check cannot pass

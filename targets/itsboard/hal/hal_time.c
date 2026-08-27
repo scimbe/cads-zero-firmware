@@ -28,6 +28,16 @@ void cads_hal_time_init(void) {
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
+uint32_t cads_hal_irq_save(void) {
+    uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    return primask;
+}
+
+void cads_hal_irq_restore(uint32_t state) {
+    if(!state) __enable_irq();
+}
+
 uint32_t cads_hal_ticks_ms(void) {
     return (uint32_t)(cads_hal_ticks_us() / 1000u);
 }

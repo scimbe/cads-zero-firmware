@@ -334,3 +334,11 @@ void cads_hal_panic(const char* reason) {
     fprintf(stderr, "fake_hal: unexpected panic: %s\n", reason ? reason : "(null)");
     abort();
 }
+
+uint32_t cads_hal_irq_save(void) {
+    return 0u; /* single-threaded tests: nothing to mask */
+}
+
+void cads_hal_irq_restore(uint32_t state) {
+    (void)state;
+}

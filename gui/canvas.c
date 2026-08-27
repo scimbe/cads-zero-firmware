@@ -136,18 +136,23 @@ void cads_canvas_damage(int16_t x, int16_t y, int16_t width, int16_t height) {
     if(y1 > CADS_CANVAS_HEIGHT) y1 = CADS_CANVAS_HEIGHT;
     if(x >= x1 || y >= y1) return;
 
+    /* Atomic against the flusher's snapshot+clear and against a drawer on
+     * another task: this is a multi-field read-modify-write, and losing the
+     * race means damage that never reaches the panel (issue #63). */
+    uint32_t irq = cads_hal_irq_save();
     if(!cads_damage_box.valid) {
         cads_damage_box.x0 = x;
         cads_damage_box.y0 = y;
         cads_damage_box.x1 = x1;
         cads_damage_box.y1 = y1;
         cads_damage_box.valid = true;
-        return;
+    } else {
+        if(x < cads_damage_box.x0) cads_damage_box.x0 = x;
+        if(y < cads_damage_box.y0) cads_damage_box.y0 = y;
+        if(x1 > cads_damage_box.x1) cads_damage_box.x1 = x1;
+        if(y1 > cads_damage_box.y1) cads_damage_box.y1 = y1;
     }
-    if(x < cads_damage_box.x0) cads_damage_box.x0 = x;
-    if(y < cads_damage_box.y0) cads_damage_box.y0 = y;
-    if(x1 > cads_damage_box.x1) cads_damage_box.x1 = x1;
-    if(y1 > cads_damage_box.y1) cads_damage_box.y1 = y1;
+    cads_hal_irq_restore(irq);
 }
 
 bool cads_canvas_is_dirty(void) {
@@ -440,13 +445,21 @@ static void cads_expand_band(
 }
 
 uint32_t cads_canvas_flush(void) {
-    if(!cads_damage_box.valid) return 0u;
-
+    /* Snapshot and clear the damage box atomically: a draw slipping in
+     * between the reads and the clear would be wiped without ever being
+     * flushed (issue #63). Draws during the flush itself are fine - they
+     * re-set valid and the next flush picks them up. */
+    uint32_t irq = cads_hal_irq_save();
+    if(!cads_damage_box.valid) {
+        cads_hal_irq_restore(irq);
+        return 0u;
+    }
     int16_t x0 = cads_damage_box.x0;
     int16_t y0 = cads_damage_box.y0;
     int16_t width = (int16_t)(cads_damage_box.x1 - x0);
     int16_t height = (int16_t)(cads_damage_box.y1 - y0);
     cads_damage_box.valid = false;
+    cads_hal_irq_restore(irq);
 
     if(width <= 0 || height <= 0) return 0u;
 

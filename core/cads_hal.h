@@ -155,6 +155,19 @@ void cads_hal_display_backlight(uint8_t percent);
  */
 void cads_hal_display_set_fast_clock(bool fast);
 
+/*
+ * Mask/unmask interrupts, returning the previous state. On the board this is
+ * PRIMASK save/disable/restore - safe both before and after the scheduler
+ * starts (unlike taskENTER_CRITICAL, whose nesting counter holds the CM4F
+ * port's poison value pre-scheduler; see the SPI-mutex boot-crash lesson).
+ * On a single core, masking interrupts also stops task preemption, so a
+ * few-instruction window bounded by these calls is atomic between tasks.
+ * The host/sim implementation is a no-op (single-threaded).
+ * Keep the window to a handful of instructions.
+ */
+uint32_t cads_hal_irq_save(void);
+void cads_hal_irq_restore(uint32_t state);
+
 /**
  * Push a rectangle of RGB565 pixels to the panel.
  *
