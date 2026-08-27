@@ -24,6 +24,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from swd_lock import swd_lock  # noqa: E402  # serialize SWD clients - see issue #57
+
 CADS_ROOT = Path(__file__).resolve().parent.parent
 FS_BASE = "0x08120000"
 FS_SIZE = 0xE0000  # 896 KiB - see targets/itsboard/board.h CADS_FS_BLOCK_SIZE * CADS_FS_SECTOR_COUNT
@@ -48,10 +51,11 @@ def cads_fs_bin():
 
 
 def dump_fs(image_path):
-    subprocess.run(
-        ["st-flash", "--serial", stlink_serial(), "read", str(image_path), FS_BASE, hex(FS_SIZE)],
-        check=True,
-    )
+    with swd_lock():
+        subprocess.run(
+            ["st-flash", "--serial", stlink_serial(), "read", str(image_path), FS_BASE, hex(FS_SIZE)],
+            check=True,
+        )
 
 
 def write_fs(image_path):
@@ -65,10 +69,11 @@ def write_fs(image_path):
     sys.stderr.write(
         "note: writing the whole filesystem back - make sure the board has not "
         "written its own storage since the pull (see docs).\n")
-    subprocess.run(
-        ["st-flash", "--serial", stlink_serial(), "write", str(image_path), FS_BASE],
-        check=True,
-    )
+    with swd_lock():
+        subprocess.run(
+            ["st-flash", "--serial", stlink_serial(), "write", str(image_path), FS_BASE],
+            check=True,
+        )
 
 
 def cmd_pull(args):
