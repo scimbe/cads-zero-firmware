@@ -16,4 +16,11 @@
 /** Register both settings views with the dispatcher. */
 void cads_settings_init(cads_view_dispatcher_t* dispatcher);
 
+/**
+ * Service a pending "Reload config" request. MUST be called only from the
+ * app-tree loop (the console task) - it does the littlefs load the menu row
+ * deliberately does NOT do on the input task. A no-op when nothing is pending.
+ */
+void cads_settings_service_config(void);
+
 #endif /* CADS_SETTINGS_H */

@@ -108,58 +108,101 @@ static void cads_settings_refresh_info(void) {
         s_shadow.fast_clock ? "11.5 ms (/8)" : "22.5 ms (/16, safe)");
 }
 
-static void cads_settings_apply_defaults(void) {
-    s_shadow.brightness_percent = 100u;
-    s_shadow.fast_clock = false;
-    cads_hal_display_backlight(s_shadow.brightness_percent);
-    cads_hal_display_set_fast_clock(s_shadow.fast_clock);
-    cads_settings_refresh_details();
-    cads_settings_refresh_info();
-}
-
 static void cads_settings_open_confirm(
     cads_settings_confirm_kind_t kind, const char* title, const char* message,
     const cads_dialog_answer_t* answers, size_t answer_count);
 
+/* Tracks the config last applied, so a reload only pokes a subsystem whose
+ * value actually changed - re-issuing cads_net_set_config() on every reload
+ * needlessly drops and re-adds the netif (finding #7). */
+static cads_config_t s_applied_config;
+static bool s_have_applied_config = false;
+
+/* Set by the "Reload config" menu row (which runs on the INPUT task) and
+ * serviced by cads_settings_service_config() from the app-tree loop (the
+ * CONSOLE task). cads/storage is explicitly not thread-safe - doing the
+ * littlefs load on the input task while the console task is mid-write (the
+ * calibration kv_save, say) corrupts the volume, and its 512 B stack buffers
+ * would overflow the 1 KB input-task stack. Both are avoided by making the
+ * console task - the one task that already does every other storage access -
+ * the single storage owner (findings #3, #4). */
+static volatile bool s_config_reload_requested = false;
+/* Factory reset also does storage work (rewrite /config.txt to defaults), so
+ * it goes through the same console-task service rather than writing from the
+ * input task - and it resets to the CONFIG defaults, not a second hardcoded
+ * set that would diverge from the file and be undone on the next boot
+ * (findings #18, #19). */
+static volatile bool s_config_reset_requested = false;
+
 /* Push a loaded config into the live subsystems and the settings shadow, so
- * the panel and the Brightness/SPI rows reflect the file. WiFi fields persist
- * in the file but have no driver yet, so they are not applied here. */
+ * the panel and the Brightness/SPI rows reflect the file. Only re-applies a
+ * subsystem whose value changed since the last apply. WiFi fields persist in
+ * the file but have no driver yet, so they are not applied here. MUST run on
+ * the console task (the storage owner) - see s_config_reload_requested. */
 static void cads_settings_apply_config(const cads_config_t* cfg) {
+    bool first = !s_have_applied_config;
+
+    if(first || cfg->brightness != s_applied_config.brightness) {
+        cads_hal_display_backlight(cfg->brightness);
+    }
+    if(first || cfg->fast_clock != s_applied_config.fast_clock) {
+        cads_hal_display_set_fast_clock(cfg->fast_clock);
+    }
     s_shadow.brightness_percent = cfg->brightness;
     s_shadow.fast_clock = cfg->fast_clock;
-    cads_hal_display_backlight(cfg->brightness);
-    cads_hal_display_set_fast_clock(cfg->fast_clock);
 
-    cads_net_config_t net = {
-        .use_dhcp = cfg->net_dhcp,
-        .ip = cfg->net_ip,
-        .netmask = cfg->net_netmask,
-        .gateway = cfg->net_gateway,
-    };
-    cads_net_set_config(&net);
+    if(first || cfg->net_dhcp != s_applied_config.net_dhcp ||
+       cfg->net_ip != s_applied_config.net_ip ||
+       cfg->net_netmask != s_applied_config.net_netmask ||
+       cfg->net_gateway != s_applied_config.net_gateway) {
+        cads_net_config_t net = {
+            .use_dhcp = cfg->net_dhcp, .ip = cfg->net_ip,
+            .netmask = cfg->net_netmask, .gateway = cfg->net_gateway};
+        cads_net_set_config(&net);
+    }
 
+    s_applied_config = *cfg;
+    s_have_applied_config = true;
     cads_settings_refresh_details();
     cads_settings_refresh_info();
 }
 
-/* Re-read /config.txt and apply it, then report what happened in a dialog.
- * The file always exists after first boot (cads_config_load writes the base
- * version when absent), so the common outcome is "reloaded". */
-static void cads_settings_config_reload(void) {
+/* Load + apply the config on the console task. Called at settings_init (before
+ * the input task is attached, so already on the console task) and by
+ * cads_settings_service_config() when a reload was requested. */
+static void cads_settings_load_and_apply(void) {
     cads_config_t cfg;
-    int rc = cads_config_load(&cfg);
-    static const cads_dialog_answer_t answers[] = {{CadsKeyOk, "OK"}};
-    if(rc == CADS_STORAGE_OK) {
+    if(cads_config_load(&cfg) == CADS_STORAGE_OK) {
         cads_settings_apply_config(&cfg);
         cads_menu_invalidate(&s_main.menu);
-        cads_settings_open_confirm(
-            CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
-            "Loaded /config.txt and applied it.", answers, 1u);
-    } else {
-        cads_settings_open_confirm(
-            CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
-            "Storage not available - config unchanged.", answers, 1u);
     }
+}
+
+void cads_settings_service_config(void) {
+    if(s_config_reset_requested) {
+        s_config_reset_requested = false;
+        cads_config_t defaults;
+        cads_config_defaults(&defaults);
+        (void)cads_config_save(&defaults); /* persist, so the reset survives a reboot */
+        cads_settings_apply_config(&defaults);
+        cads_menu_invalidate(&s_main.menu);
+    }
+    if(s_config_reload_requested) {
+        s_config_reload_requested = false;
+        cads_settings_load_and_apply();
+    }
+}
+
+/* The menu row handler: only REQUEST a reload. The actual storage work happens
+ * on the console task in cads_settings_service_config(); the confirm dialog is
+ * informational (the change is visible on the Settings rows next time they
+ * draw). */
+static void cads_settings_config_reload(void) {
+    s_config_reload_requested = true;
+    static const cads_dialog_answer_t answers[] = {{CadsKeyOk, "OK"}};
+    cads_settings_open_confirm(
+        CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
+        "Re-reading /config.txt and applying it.", answers, 1u);
 }
 
 static uint8_t cads_settings_next_brightness(uint8_t current) {
@@ -185,7 +228,7 @@ static uint8_t cads_settings_next_brightness(uint8_t current) {
 
 static void cads_settings_confirm_finish(int result) {
     if(s_confirm.kind == CADS_SETTINGS_CONFIRM_RESET && result == 0) {
-        cads_settings_apply_defaults();
+        s_config_reset_requested = true; /* serviced on the console task */
     }
     s_confirm.kind = CADS_SETTINGS_CONFIRM_NONE;
     cads_view_dispatcher_pop(s_confirm.dispatcher);
@@ -376,10 +419,7 @@ void cads_settings_init(cads_view_dispatcher_t* dispatcher) {
     /* Load and apply the persistent config file at startup (writes the base
      * version if none exists). Same app-tree-init timing as touch calibration;
      * a Settings -> Reload config re-reads it without a reboot. */
-    {
-        cads_config_t cfg;
-        if(cads_config_load(&cfg) == CADS_STORAGE_OK) cads_settings_apply_config(&cfg);
-    }
+    cads_settings_load_and_apply();
 
     /* No input handler: the dispatcher's own Back handling pops the view, and
      * the pattern is static, so there is nothing else to do here. */

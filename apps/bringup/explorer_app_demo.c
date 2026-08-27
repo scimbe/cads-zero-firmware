@@ -26,6 +26,7 @@
 #include "cads_active.h"
 #endif
 #ifdef CADS_APP_SETTINGS_ENABLED
+#include "cads_settings.h"
 #include "cads_touch_calib.h"
 #endif
 #include "cads_gui.h"
@@ -180,6 +181,7 @@ void cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_SETTINGS_ENABLED
         cads_touch_calib_tick(now);
+        cads_settings_service_config(); /* console-task storage owner services reload requests */
 #endif
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {
