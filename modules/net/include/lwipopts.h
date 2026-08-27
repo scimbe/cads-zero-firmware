@@ -39,7 +39,7 @@
  * running-total arithmetic above still holds: ~150 B DHCP + ~1072 B one
  * connection's send window + one ~100 B lwiperf session leaves ~400 B of
  * slack even at the worst simultaneous case this firmware can produce. */
-#define MEM_SIZE                    1792
+#define MEM_SIZE                    (2 * 1024)
 
 /* Was 16; trimmed to 12 for the same reason as the pools below it - still
  * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data

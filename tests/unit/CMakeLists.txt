@@ -53,6 +53,15 @@ target_link_libraries(test_ssdpwatch PRIVATE cads_toolbox)
 cads_add_unit_test(test_trafficstats test_trafficstats.c)
 target_link_libraries(test_trafficstats PRIVATE cads_toolbox)
 
+# --- netx (M9 active tooling) --------------------------------------------------
+#
+# Pure frame builders, no HAL/lwIP deps - the same golden-byte discipline as
+# the toolbox detectors above. See test_netx_frame.c's header for the exact
+# vs. checksum-validity assertion split.
+
+cads_add_unit_test(test_netx_frame test_netx_frame.c)
+target_link_libraries(test_netx_frame PRIVATE cads_netx)
+
 cads_add_unit_test(test_snake test_snake.c)
 target_link_libraries(test_snake PRIVATE cads_toolbox)
 
@@ -149,6 +158,7 @@ target_link_libraries(test_app_tree PRIVATE
     cads_app_netinfo
     cads_app_filebrowser
     cads_app_game
+    cads_app_active
 )
 
 # --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------

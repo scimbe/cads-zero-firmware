@@ -11,6 +11,7 @@
 /** A confirm/info dialog pushed as its own view - see cads_settings.c for why
  *  it is a separate view rather than a dialog nested inside the list. */
 #define CADS_VIEW_ID_SETTINGS_CONFIRM 0x0301u
+#define CADS_VIEW_ID_TEST_PATTERN     0x0303u  /* Settings -> Test pattern */
 
 /** Register both settings views with the dispatcher. */
 void cads_settings_init(cads_view_dispatcher_t* dispatcher);

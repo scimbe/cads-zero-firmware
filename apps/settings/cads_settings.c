@@ -1,4 +1,6 @@
 #include "cads_settings.h"
+#include "cads_touch_calib.h"
+#include "cads_splash.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -34,6 +36,7 @@ typedef enum {
     CADS_SETTINGS_ROW_BRIGHTNESS = 0,
     CADS_SETTINGS_ROW_SPI_CLOCK,
     CADS_SETTINGS_ROW_CALIBRATION,
+    CADS_SETTINGS_ROW_TEST_PATTERN,
     CADS_SETTINGS_ROW_RESET,
 } cads_settings_row_t;
 
@@ -50,6 +53,7 @@ static cads_menu_item_t s_items[] = {
     {"Brightness", s_brightness_detail, CADS_SETTINGS_ROW_BRIGHTNESS},
     {"SPI clock", s_spi_detail, CADS_SETTINGS_ROW_SPI_CLOCK},
     {"Touch calibration", NULL, CADS_SETTINGS_ROW_CALIBRATION},
+    {"Test pattern", NULL, CADS_SETTINGS_ROW_TEST_PATTERN},
     {"Factory reset", NULL, CADS_SETTINGS_ROW_RESET},
 };
 
@@ -207,15 +211,13 @@ static void cads_settings_activate(const cads_menu_item_t* item, size_t index, v
             cads_view_dirty_rect(&s_main.view, s_main.info_rect);
             break;
 
-        case CADS_SETTINGS_ROW_CALIBRATION: {
-            static const cads_dialog_answer_t answers[] = {{CadsKeyOk, "OK"}};
-            cads_settings_open_confirm(
-                CADS_SETTINGS_CONFIRM_CALIBRATION, "Touch calibration",
-                "Not implemented yet. This entry will start the calibration "
-                "flow once the touch driver exposes one.",
-                answers, 1u);
+        case CADS_SETTINGS_ROW_CALIBRATION:
+            (void)cads_view_dispatcher_push(s_main.dispatcher, CADS_VIEW_ID_TOUCH_CALIB);
             break;
-        }
+
+        case CADS_SETTINGS_ROW_TEST_PATTERN:
+            (void)cads_view_dispatcher_push(s_main.dispatcher, CADS_VIEW_ID_TEST_PATTERN);
+            break;
 
         case CADS_SETTINGS_ROW_RESET: {
             static const cads_dialog_answer_t answers[] = {
@@ -271,6 +273,26 @@ static const cads_softkey_t cads_settings_keys[] = {
     {CadsKeyBack, "Back"},
 };
 
+/* --- test pattern view ------------------------------------------------------ */
+
+/* A thin view over gui/cads_splash.c's cads_test_pattern_draw() - the palette
+ * swatches / corner markers / diagonals that used to run on every boot, now
+ * on demand. Draws the full-screen pattern; the compositor clips it to the
+ * content area, which loses only the corner markers under the status/soft-key
+ * bars - the hue and byte-order checks the pattern exists for are all in the
+ * middle band. No state of its own beyond the view. */
+static cads_view_t s_test_pattern_view;
+
+static void cads_settings_test_pattern_draw(cads_rect_t area, void* context) {
+    (void)area;
+    (void)context;
+    cads_test_pattern_draw();
+}
+
+static const cads_softkey_t cads_test_pattern_keys[] = {
+    {CadsKeyBack, "Back"},
+};
+
 void cads_settings_init(cads_view_dispatcher_t* dispatcher) {
     if(dispatcher == NULL) return;
 
@@ -292,4 +314,15 @@ void cads_settings_init(cads_view_dispatcher_t* dispatcher) {
     cads_view_init(&s_confirm.view, cads_settings_confirm_draw, cads_settings_confirm_input, NULL);
     cads_view_set_lifecycle(&s_confirm.view, cads_settings_confirm_enter, NULL);
     (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_SETTINGS_CONFIRM, &s_confirm.view);
+
+    cads_touch_calib_init(dispatcher);
+
+    /* No input handler: the dispatcher's own Back handling pops the view, and
+     * the pattern is static, so there is nothing else to do here. */
+    cads_view_init(&s_test_pattern_view, cads_settings_test_pattern_draw, NULL, NULL);
+    cads_view_set_title(&s_test_pattern_view, "Test pattern");
+    cads_view_set_softkeys(
+        &s_test_pattern_view, cads_test_pattern_keys,
+        sizeof(cads_test_pattern_keys) / sizeof(cads_test_pattern_keys[0]));
+    (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_TEST_PATTERN, &s_test_pattern_view);
 }

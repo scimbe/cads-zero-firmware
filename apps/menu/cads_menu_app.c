@@ -35,6 +35,9 @@
 #ifdef CADS_APP_NETTOOLS_ENABLED
 #include "../nettools/cads_nettools.h"
 #endif
+#ifdef CADS_APP_ACTIVE_ENABLED
+#include "../active/cads_active.h"
+#endif
 
 typedef struct {
     cads_view_t view;
@@ -69,6 +72,12 @@ static const cads_menu_item_t cads_menu_app_items[] = {
     {"iperf Server", NULL, CADS_VIEW_ID_IPERF_SERVER},
     {"iperf Client", NULL, CADS_VIEW_ID_IPERF_CLIENT},
 #endif
+#endif
+#ifdef CADS_APP_ACTIVE_ENABLED
+    /* Top-level, not under the Network submenu: this is an offensive/attack
+     * suite, a peer of "Network" in the launcher, not a child of it - so it
+     * is visually distinct from the passive nettools (netinfo/iperf). */
+    {"Active Net Tools", "M9", CADS_VIEW_ID_ACTIVE},
 #endif
 #ifdef CADS_APP_FILEBROWSER_ENABLED
     {"Files", NULL, CADS_VIEW_ID_FILEBROWSER},
@@ -139,6 +148,9 @@ void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
 #endif
 #ifdef CADS_APP_NETTOOLS_ENABLED
     cads_nettools_init(dispatcher);
+#endif
+#ifdef CADS_APP_ACTIVE_ENABLED
+    cads_active_init(dispatcher);
 #endif
 
     s_menu_app.dispatcher = dispatcher;

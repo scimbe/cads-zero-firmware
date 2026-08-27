@@ -248,3 +248,14 @@ void cads_hal_touch_set_calibration(
     cads_touch_calibration.y_min = y_min;
     cads_touch_calibration.y_max = y_max;
 }
+
+void cads_hal_touch_get_calibration(
+    uint16_t* x_min,
+    uint16_t* x_max,
+    uint16_t* y_min,
+    uint16_t* y_max) {
+    if(x_min) *x_min = cads_touch_calibration.x_min;
+    if(x_max) *x_max = cads_touch_calibration.x_max;
+    if(y_min) *y_min = cads_touch_calibration.y_min;
+    if(y_max) *y_max = cads_touch_calibration.y_max;
+}

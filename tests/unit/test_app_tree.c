@@ -23,6 +23,7 @@
 #include "unity.h"
 
 #include "cads_about.h"
+#include "cads_active.h"
 #include "cads_desktop.h"
 #include "cads_filebrowser.h"
 #include "cads_game.h"
@@ -35,11 +36,13 @@
 #include "input/cads_input.h"
 
 /* Mirrors apps/bringup/explorer_app_demo.c's own CADS_APP_DEMO_VIEW_CAPACITY
- * (16) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
+ * (24) and CADS_APP_DEMO_STACK_DEPTH (4) - kept as separate literals rather
  * than a shared header because the two are otherwise unrelated translation
  * units and a shared constant would be the only reason to couple them; see
- * that file's own comment for exactly what the 16 counts. */
-#define VIEW_CAPACITY 20u
+ * that file's own comment for exactly what the 24 counts (the M9 Active Net
+ * Tools suite's selector + one shared tool view are the +2 over the 22 the
+ * rest of the tree already filled). */
+#define VIEW_CAPACITY 26u
 #define STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[VIEW_CAPACITY];
@@ -89,6 +92,8 @@ static void test_every_app_tree_view_registers(void) {
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_SNAKE));
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_BREAKOUT));
     TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_GAME_DODGER));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_ACTIVE));
+    TEST_ASSERT_NOT_NULL(cads_view_dispatcher_find(&s_dispatcher, CADS_VIEW_ID_ACTIVE_TOOL));
 }
 
 static void test_menu_is_reachable_from_desktop(void) {

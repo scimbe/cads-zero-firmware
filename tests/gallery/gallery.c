@@ -25,6 +25,7 @@
 #include "cads_netinfo.h"
 #include "cads_filebrowser.h"
 #include "cads_game.h"
+#include "cads_active.h"
 
 #include "cads/net/net.h"
 #include "cads/storage/storage.h"
@@ -83,6 +84,7 @@ static void shoot(const char* out_dir, uint32_t view_id, const char* name) {
         cads_desktop_tick(s_now);
         cads_gpio_tick(s_now);
         cads_game_tick(s_now);
+        cads_active_tick(s_now);
         cads_gui_tick(&s_gui, s_now);
     }
     dump_ppm(out_dir, name);
@@ -125,6 +127,8 @@ int main(int argc, char** argv) {
     shoot(out_dir, CADS_VIEW_ID_GAME_SNAKE, "10_snake");
     shoot(out_dir, CADS_VIEW_ID_GAME_BREAKOUT, "11_breakout");
     shoot(out_dir, CADS_VIEW_ID_GAME_DODGER, "12_dodger");
+    shoot(out_dir, CADS_VIEW_ID_ACTIVE, "13_active");
+    shoot(out_dir, CADS_VIEW_ID_ACTIVE_TOOL, "14_active_tool");
 
     return 0;
 }

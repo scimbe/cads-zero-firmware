@@ -22,6 +22,12 @@
 #ifdef CADS_APP_NETTOOLS_ENABLED
 #include "cads_nettools.h"
 #endif
+#ifdef CADS_APP_ACTIVE_ENABLED
+#include "cads_active.h"
+#endif
+#ifdef CADS_APP_SETTINGS_ENABLED
+#include "cads_touch_calib.h"
+#endif
 #include "cads_gui.h"
 #include "cads_hal.h"
 #include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo, filebrowser, game */
@@ -69,8 +75,15 @@
  * client) - the fully-saturated-at-14 count meant those two were exactly
  * the ones silently dropped this time (test_app_tree.c caught it on host
  * before it ever reached hardware, same regression guard as above).
+ *
+ * Bumped from 22 to 24 when apps/active (M9 Active Net Tools) added its
+ * two views (the 0x0B00 selector + the one 0x0B01 shared tool view - the
+ * suite deliberately collapses seven tools into one shared view to stay
+ * inside the 256 B RAM margin, see apps/active/cads_active.h). Same guard:
+ * tests/unit/test_app_tree.c's mirrored capacity and its find-asserts for
+ * CADS_VIEW_ID_ACTIVE/_TOOL catch a silent drop on host before hardware.
  */
-#define CADS_APP_DEMO_VIEW_CAPACITY 20u
+#define CADS_APP_DEMO_VIEW_CAPACITY 26u
 #define CADS_APP_DEMO_STACK_DEPTH   4u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
@@ -140,7 +153,17 @@ void cads_explorer_app_demo(uint32_t seconds) {
 
     while(cads_hal_ticks_ms() - start < seconds * 1000u) {
         uint32_t now = cads_hal_ticks_ms();
-        cads_net_poll();
+        /* A promiscuous-capture M9 tool (802.1X sniff, TCP RST daemon) owns
+         * the RX ring for its duration and has suppressed lwIP's own poll via
+         * cads_net_set_poll_suppressed(true) - so this loop must not also
+         * drive cads_net_poll() while that session is active, or the two
+         * would fight over the same RX descriptors. cads_active_owns_rx()
+         * reports exactly that state; the TX-only and lwIP-RX tools never
+         * claim the ring, so for them this is unchanged. */
+#ifdef CADS_APP_ACTIVE_ENABLED
+        if(!cads_active_owns_rx())
+#endif
+            cads_net_poll();
         cads_statusbar_set_indicator(&s_statusbar, CADS_NET_STATUSBAR_SLOT, cads_net_indicator_text());
         cads_desktop_tick(now);
 #ifdef CADS_APP_GPIO_ENABLED
@@ -151,6 +174,12 @@ void cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_NETTOOLS_ENABLED
         cads_nettools_tick(now);
+#endif
+#ifdef CADS_APP_ACTIVE_ENABLED
+        cads_active_tick(now);
+#endif
+#ifdef CADS_APP_SETTINGS_ENABLED
+        cads_touch_calib_tick(now);
 #endif
         uint32_t pixels = cads_gui_tick(&s_gui, now);
         if(pixels) {

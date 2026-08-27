@@ -54,7 +54,17 @@
 #include "hal_gpio.h"
 
 #define CADS_ETH_RX_COUNT 4u
-#define CADS_ETH_TX_COUNT 4u
+/* 2, not 4: cads_hal_eth_mac_transmit() copies one frame into the next TX
+ * buffer and hands it to the DMA, which drains a 1522-byte frame in ~123us
+ * at 100Mbit - far faster than this software-checksummed, single-loop TX
+ * path can refill it, so two in-flight descriptors already never block a
+ * realistic sender (even the TIM6 packet generator at 2000pps leaves ~500us
+ * between frames). Halving this frees 2x1536B of static RAM (see
+ * docs/ROADMAP.md's running 48K-heap-floor fight) that lwIP's own working
+ * memory and the GUI need more than a deeper TX queue this bench never
+ * fills. RX stays 4: incoming bursts are not paced by us and a deeper
+ * receive ring is the difference between catching and dropping them. */
+#define CADS_ETH_TX_COUNT 2u
 #define CADS_ETH_BUF_SIZE 1536u /* > 1518 (max untagged frame incl. CRC), multiple of 4 */
 
 /* Normal (non-enhanced) descriptor: four 32-bit words, RM0090 Figures 379/382. */

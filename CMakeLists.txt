@@ -46,6 +46,7 @@ option(CADS_APP_FILEBROWSER "Include the file browser app" ON)
 option(CADS_APP_GAME "Include the Reflex Test game" ON)
 option(CADS_APP_NETIPERF "Include the iperf server/client app" ON)
 option(CADS_APP_NETTOOLS "Include the network tools menu (ping/ARP/traceroute)" ON)
+option(CADS_APP_ACTIVE "Include the Active Net Tools (M9) offensive suite" ON)
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -111,6 +112,9 @@ endif()
 if(CADS_APP_NETTOOLS)
     target_compile_definitions(cads_flags INTERFACE CADS_APP_NETTOOLS_ENABLED)
 endif()
+if(CADS_APP_ACTIVE)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_ACTIVE_ENABLED)
+endif()
 
 # --- modules -----------------------------------------------------------------
 # The toolbox is target neutral: the same sources link into the firmware and
@@ -129,6 +133,12 @@ add_subdirectory(modules/storage)
 # src/cads_net_sim.c, an honest "no link" stub - see that file's own header
 # for why the simulator does not pretend to have RMII hardware).
 add_subdirectory(modules/net)
+
+# netx is the active-tooling counterpart to net/net: net owns the honest lwIP
+# netif, netx owns the forged-frame builders (portable, host unit-tested) and
+# the raw L2 TX / promiscuous-capture surface (board/sim split). Only the M9
+# suite links it; it has no other callers.
+add_subdirectory(modules/netx)
 
 # cads_cli.c (the shared command table) is portable; its TCP transport has
 # the same board/host split as cads/net/net.h and for the same reason.
@@ -241,6 +251,9 @@ endif()
 if(CADS_APP_NETTOOLS)
     add_subdirectory(apps/nettools)
 endif()
+if(CADS_APP_ACTIVE)
+    add_subdirectory(apps/active)
+endif()
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -301,6 +314,15 @@ if(CADS_APP_GAME)
 endif()
 if(CADS_APP_NETTOOLS)
     target_link_libraries(cads_apps PUBLIC cads_app_nettools)
+endif()
+if(CADS_APP_ACTIVE)
+    target_link_libraries(cads_apps PUBLIC cads_app_active)
+endif()
+if(CADS_APP_SETTINGS)
+    # explorer_app_demo.c calls cads_touch_calib_tick() straight into
+    # apps/settings, so cads_apps needs its include path and library directly,
+    # not just transitively-PRIVATE through cads_app_menu.
+    target_link_libraries(cads_apps PUBLIC cads_app_settings)
 endif()
 target_include_directories(cads_apps PUBLIC ${CADS_ROOT}/apps)
 target_link_libraries(cads_apps PUBLIC cads_services cads_gui cads_flags cads_storage cads_net cads_cli cads_diag)

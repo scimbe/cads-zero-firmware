@@ -19,6 +19,13 @@ void cads_net_init(const uint8_t mac_address[6]) {
     memcpy(cads_net_sim_mac, mac_address, sizeof(cads_net_sim_mac));
 }
 
+void cads_net_set_poll_suppressed(bool suppressed) {
+    /* No RX ring to own on the simulator; recorded for API parity so the
+     * suite app builds and runs its UI on host without caring which side
+     * it is on. See cads_net_board.c for the real implementation. */
+    (void)suppressed;
+}
+
 void cads_net_poll(void) {
 }
 
