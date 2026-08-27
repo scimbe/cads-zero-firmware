@@ -2063,6 +2063,34 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-27 (integration) — **M9 "Active Net Tools" (modules/netx + apps/active)
+  integrated and the held GUI/calibration work landed, as one runnable image.**
+  A second developer built the M9 offensive-tooling suite in parallel; at the
+  project lead's 4-hour deadline (external.done never appeared) the directive
+  was to integrate it as-is and make it build/run, together with the
+  maintainer-side work that had been deliberately held because it shares the
+  build/menu files (a clean split was impossible - CMakeLists.txt, apps/menu,
+  and explorer_app_demo.c carry hunks from both). Landed in commit 782487f.
+  **Their code, unchanged except one fix:** netx's frame.h used `bool` without
+  `#include <stdbool.h>`, which broke the shared build; added the include, no
+  other change to their sources. Their portable frame builders pass their own
+  398-line host golden-byte suite (test_netx_frame), and net's new
+  poll-suppress hook (so a capture tool can own the RX ring) was already in.
+  **The one real bug the integration surfaced:** the app-tree view registry
+  was still sized 22 while the combined tree now registers 24 views (the M9
+  suite adds 2) - so two views were being *silently dropped at registration*,
+  the exact `cads_view_dispatcher_add` returns-false-and-is-`(void)`d failure
+  this file's own explorer_app_demo.c header documents twice. Bumped to 26
+  (mirrored in test_app_tree.c, the host guard that catches this class).
+  **Verified end to end:** board + host build clean, 640 B RAM margin (the
+  ETH-TX-buffer lever from the earlier entry, not an lwIP trim, is what keeps
+  this affordable), host suite 31/31, boot self-test 10/10 on hardware, and
+  the app-tree init - which now registers all 24 views including the two M9
+  ones - runs fault-free with a clean forensic ring. Not yet exercised (needs
+  a person at the panel, does not block the image): the touch-calibration
+  2-corner tap-test, and a visual pass over Settings -> Test pattern and the
+  Active Net Tools views' actual on-panel behaviour.
+
 - 2026-08-27 (UI pass) — Boot visuals reworked and a real dispatcher-capacity
   bug caught. Committed cleanly (not tangled with the parallel M9 work):
   **the boot no longer leaves the display test pattern on the panel** - it
