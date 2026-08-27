@@ -209,7 +209,14 @@ int cads_config_save(const cads_config_t* cfg) {
     int mrc = cads_storage_mount();
     if(mrc != CADS_STORAGE_OK) return mrc;
 
-    char text[CADS_CONFIG_TEXT_MAX];
+    /* Static, not on the stack: on a fresh board the first config write nests
+     * cads_config_save() inside cads_config_load() and both used to carry a
+     * 512 B stack buffer, which - plus littlefs's own erase/commit call depth -
+     * overflowed the task stack below its CCM allocation (a BusFault seen live,
+     * review-2 #4). Both accessors run only on the console task (the single
+     * storage owner), so one static buffer per function is safe without a
+     * lock. Costs 512 B of .bss each; RAM margin covers it. */
+    static char text[CADS_CONFIG_TEXT_MAX];
     size_t n = cads_config_serialize(cfg, text, sizeof(text));
     if(n == 0u) return CADS_STORAGE_ERR_INVAL;
 
@@ -239,7 +246,7 @@ int cads_config_load(cads_config_t* cfg) {
     }
     if(rc != CADS_STORAGE_OK) return rc;
 
-    char text[CADS_CONFIG_TEXT_MAX];
+    static char text[CADS_CONFIG_TEXT_MAX]; /* static: see cads_config_save (review-2 #4) */
     int32_t n = cads_storage_read(file, text, sizeof(text) - 1u);
     (void)cads_storage_close(file);
     if(n < 0) return (int)n;
