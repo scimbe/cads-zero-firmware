@@ -2063,6 +2063,40 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (Marauder co-processor: wired, flashed, verified) — **The WiFi
+  co-processor is real hardware now, not a design doc.** An ESP32-WROOM-32
+  DevKit is wired to CN8 pins 8/9 (PC6/PC7, USART6) - confirmed against the
+  project's own schematic (`docs/reference/datasheets/ITSBRD-schematic-...
+  .pdf`) after a photo-based wiring check nearly put a wire on the SWD
+  header by mistake (routing slack made it *look* misplaced in a wide shot;
+  a close macro photo showed it was actually on CN8's own GND pin - lesson:
+  trust the close photo, not the wide one, when a wire's destination is
+  ambiguous). `modules/wifi`'s hal_uart_wifi.c driver is hardware-verified
+  via a new `~` explorer command (raw USART6 loopback, bypassing the PPP
+  bootstrap entirely) - 25/25 bytes, 0 drops, 0 overruns, with TIM8-1/
+  TIM8-2 jumpered.
+  Bigger: **ESP32Marauder itself is now built, flashed, and confirmed doing
+  real WiFi work** - `scanall` returned live APs/stations/associations from
+  the actual RF environment. `GENERIC_ESP32` has no prebuilt release binary
+  upstream and needed real archaeology to build (missing `HAS_IDF_3`, a
+  link-time bug in `EvilPortal.h`, two mbedtls renames, an intentional
+  `libnet80211.a` symbol override needing `--allow-multiple-definition`) -
+  all captured in `tools/marauder-build/build_and_flash.sh` +
+  `docs/reference/marauder-coprocessor.md` so it's a single command next
+  time, not a rediscovery. Bluetooth is off in this build (NimBLE 1.x/2.x
+  API mismatch - real porting work, deferred, tracked as a known
+  limitation) but every WiFi capability works. The flash step itself needed
+  its own diagnosis - three different esptool error messages across
+  identical retries turned out to be a loose breadboard seat, not a flag to
+  tune.
+  **Authorization context on file** (memory, `user_expertise_domain.md`):
+  the user is a professor at HAW Hamburg; active WiFi attack capability
+  (deauth/evil-twin/handshake capture) is being built with an on-device
+  confirmation gate before any transmit-based action, matching the
+  confirmation-UX pattern M9's Ethernet-side spoofing tools already call
+  for. The STM32-side Marauder CLI bridge (menu app driving the verified
+  USART6 link) is the next real step - not started yet.
+
 - 2026-08-27 (v0.0.1 - touch works, iperf 5.7x) — **First tagged release.**
   Touch selection in the GUI, long the standing "enable touch" priority, now
   works end to end - diagnosed live on the panel across three layered bugs and
