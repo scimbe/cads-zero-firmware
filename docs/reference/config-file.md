@@ -81,11 +81,16 @@ silent skip — a typo must not quietly build the wrong image.
 
 ### Precedence
 
-`CADS_PROFILE` pre-seeds the `CADS_APP_*` cache variables before their own
-`option()` defaults run. An explicit `-DCADS_APP_X=...` on the command line
-populates the cache first and therefore always wins over the profile. Order,
-strongest to weakest: **command-line `-D`** → **profile** → **built-in `ON`
-default**.
+With a profile active, **the profile is authoritative** for the apps it names.
+It sets those `CADS_APP_*` values with `FORCE`, so switching or editing a
+profile in an existing build directory takes effect on the next configure (the
+profile file is a configure dependency — editing it re-runs CMake). To override
+one app, edit the profile; a `-DCADS_APP_X=` on the command line does **not**
+beat an active profile.
+
+Without a profile (`CADS_PROFILE` empty), a `-DCADS_APP_X=` overrides the
+built-in `ON` default as usual. Order: **profile (if set)** → **command-line
+`-D`** → **built-in `ON` default**.
 
 ### Shipped profiles
 

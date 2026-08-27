@@ -14,10 +14,11 @@ Two checks, in order:
      wrong does not fail a build - cads_view_dispatcher_add() returns false
      and every caller discards it with `(void)`, so the overflow views
      silently never exist (this exact bug shipped twice this project's own
-     history - see docs/ROADMAP.md's 2026-08 log). This script computes the
-     view count a profile would need from a fixed per-app table and compares
-     it against the constant read straight out of the source, so a profile
-     that would silently drop a view fails HERE instead of on a real board.
+     history - see docs/ROADMAP.md's 2026-08 log). This script counts the
+     real cads_view_dispatcher_add() call sites in the enabled apps' sources
+     (no hand-maintained table to drift) and compares the total against the
+     CADS_APP_DEMO_VIEW_CAPACITY constant read straight out of the source, so
+     a profile that would silently drop a view fails HERE, not on a board.
 
 `--build` additionally does a real configure+build in a scratch directory and
 runs check_ram_budget.py against the result - the full-usability check (does
@@ -36,32 +37,48 @@ from pathlib import Path
 
 CADS_ROOT = Path(__file__).resolve().parent.parent
 
-# Kept in sync BY HAND with CMakeLists.txt's CADS_PROFILE_KNOWN_APPS and
-# apps/bringup/explorer_app_demo.c's actual cads_view_dispatcher_add() call
-# sites (desktop + menu are unconditional, not profile-controlled apps, so
-# they are added separately below rather than listed here). A CI job
-# (test_app_tree's own capacity assertion, host-side) is the real backstop
-# if this table ever drifts from the source; this script is the fast,
-# pre-build check, not the last line of defense.
-KNOWN_APPS = {
-    "settings": 4,      # main + confirm + touch-calib + test-pattern
-    "about": 1,
-    "gpio": 1,
-    "netinfo": 1,
-    "filebrowser": 2,
-    "game": 5,
-    "netiperf": 2,
-    "nettools": 4,
-    "active": 2,
-}
-UNCONDITIONAL_VIEWS = 2  # desktop + the menu itself
+# The apps a profile can toggle, matching CMakeLists.txt's
+# CADS_PROFILE_KNOWN_APPS, mapped to the directory whose sources register views.
+# View COUNTS are not hand-maintained: count_app_views() below counts the real
+# cads_view_dispatcher_add() call sites in each app's board sources, so this
+# script can never drift from the code the way a hardcoded table would (the
+# earlier version of this file kept exactly such a table - removed). `desktop`
+# and the menu shell are always built and register one view each.
+KNOWN_APPS = [
+    "settings", "about", "gpio", "netinfo", "filebrowser",
+    "game", "netiperf", "nettools", "active",
+]
+UNCONDITIONAL_DIRS = ["desktop", "menu"]
+
+# CMake defaults an app ON unless the profile turns it off; a profile that
+# omits an app leaves it ON. The checker must model the SAME image CMake will
+# build, so omitted apps default to ON here too - not OFF (that would compute
+# the capacity/RAM verdict for the wrong, smaller image).
+DEFAULT_ON = True
+
+
+def count_app_views(app):
+    """Count cads_view_dispatcher_add() call sites across an app's board
+    sources (excluding *_sim.c, which the itsboard build never links)."""
+    app_dir = CADS_ROOT / "apps" / app
+    if not app_dir.is_dir():
+        sys.exit(f"internal: no apps/{app} directory")
+    n = 0
+    for c in app_dir.glob("*.c"):
+        if c.name.endswith("_sim.c"):
+            continue
+        n += c.read_text().count("cads_view_dispatcher_add")
+    return n
 
 
 def parse_profile(path):
-    """Return {app_name: bool}. Raises SystemExit with a clear message on
-    any syntax/unknown-key problem, matching CMakeLists.txt's own rules."""
-    values = {}
-    line_re = re.compile(r"^app\.([a-z_]+)\s*=\s*(on|off|1|0)$", re.IGNORECASE)
+    """Return {app_name: bool} for every known app, with omitted apps at the
+    CMake default (ON). Raises SystemExit on any syntax/unknown-key problem,
+    matching CMakeLists.txt's grammar exactly (case-sensitive on|off|ON|OFF|1|0,
+    lowercase app names) so this checker never passes a profile CMake rejects."""
+    values = {a: DEFAULT_ON for a in KNOWN_APPS}
+    seen = set()
+    line_re = re.compile(r"^app\.([a-z_]+)[ \t]*=[ \t]*(on|off|ON|OFF|1|0)$")
     for lineno, raw in enumerate(path.read_text().splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
@@ -69,14 +86,15 @@ def parse_profile(path):
         m = line_re.match(line)
         if not m:
             sys.exit(f"{path}:{lineno}: unrecognised line {raw!r} "
-                     f"(expected 'app.<name> = on|off')")
-        name, val = m.group(1).lower(), m.group(2).lower()
+                     f"(expected 'app.<name> = on|off', lowercase name)")
+        name, val = m.group(1), m.group(2)
         if name not in KNOWN_APPS:
             sys.exit(f"{path}:{lineno}: unknown app '{name}' - known: "
-                     f"{', '.join(sorted(KNOWN_APPS))}")
-        if name in values:
+                     f"{', '.join(KNOWN_APPS)}")
+        if name in seen:
             sys.exit(f"{path}:{lineno}: '{name}' set twice in this profile")
-        values[name] = val in ("on", "1")
+        seen.add(name)
+        values[name] = val in ("on", "ON", "1")
     return values
 
 
@@ -90,7 +108,8 @@ def read_capacity():
 
 def check_capacity(enabled):
     capacity = read_capacity()
-    needed = UNCONDITIONAL_VIEWS + sum(KNOWN_APPS[a] for a in enabled if enabled[a])
+    needed = sum(count_app_views(d) for d in UNCONDITIONAL_DIRS)
+    needed += sum(count_app_views(a) for a in KNOWN_APPS if enabled[a])
     print(f"view registry: {needed} view(s) needed for this profile, "
           f"capacity is {capacity}")
     if needed > capacity:

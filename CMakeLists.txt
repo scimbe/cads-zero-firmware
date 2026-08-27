@@ -39,24 +39,29 @@ message(STATUS "CaDS Zero target: ${CADS_TARGET}")
 # filesystem or the board, and keeping the two apart keeps both simpler to
 # read and reason about, per the project's own request.
 #
-# Mechanism: each recognised profile line does a plain `set(... CACHE BOOL
-# ... )` (no FORCE) for the matching CADS_APP_* variable, BEFORE that
-# variable's own option() call below. CMake's cache set() only takes effect
-# if the variable is not already in the cache - so an explicit
-# `-DCADS_APP_X=...` on the same command line (which populates the cache
-# before this script runs at all) always wins over the profile, and the
-# option() calls below only supply their hardcoded default for whatever the
-# profile did not mention. Unknown lines/keys are reported and stop the
-# configure - a typo'd feature name silently building the wrong image is
-# worse than a hard error here. scripts/check_profile.py does the same
-# validation standalone (no CMake needed) plus dependency/RAM-fit checks,
-# for reviewing a profile before spending a build cycle on it.
+# Mechanism: each recognised profile line FORCE-sets the matching CADS_APP_*
+# cache variable, BEFORE that variable's own option() call below, and marks
+# the profile file a configure dependency so editing it re-runs CMake. FORCE
+# (rather than a plain cache set) is what makes switching or editing a profile
+# in an existing build dir actually take effect - a plain set only applies to
+# an uncached variable, so the first configure's value would stick. The
+# consequence: with a profile active it is authoritative, and a -DCADS_APP_X
+# on the command line does NOT override it (edit the profile instead); without
+# a profile, -D and the ON defaults behave normally. Unknown lines/keys stop
+# the configure with an error - a typo silently building the wrong image is
+# worse. scripts/check_profile.py runs the same validation standalone (no
+# CMake) plus dependency/RAM-fit checks, for reviewing a profile before a
+# build cycle.
 set(CADS_PROFILE "" CACHE FILEPATH "Path to a build profile (profiles/*.profile); empty = built-in defaults")
 if(CADS_PROFILE)
     if(NOT EXISTS ${CADS_PROFILE})
         message(FATAL_ERROR "CADS_PROFILE '${CADS_PROFILE}' does not exist")
     endif()
     message(STATUS "CaDS Zero profile: ${CADS_PROFILE}")
+    # Re-run configure whenever the profile file changes, so editing it (or
+    # pointing CADS_PROFILE at a different file) actually takes effect on the
+    # next `cmake --build` rather than being silently ignored.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CADS_PROFILE})
     file(STRINGS ${CADS_PROFILE} CADS_PROFILE_LINES)
     set(CADS_PROFILE_KNOWN_APPS
         settings about gpio netinfo filebrowser game netiperf nettools active)
@@ -66,6 +71,10 @@ if(CADS_PROFILE)
         if(line STREQUAL "")
             continue()
         endif()
+        # Grammar kept deliberately in lockstep with scripts/check_profile.py's
+        # line_re: whitespace only around '=', values on|off|ON|OFF|1|0. Any
+        # other line is a hard error, not a silent skip - a typo must not build
+        # the wrong image.
         if(NOT line MATCHES "^app\\.([a-z_]+)[ \t]*=[ \t]*(on|off|ON|OFF|1|0)$")
             message(FATAL_ERROR "CADS_PROFILE: unrecognised line '${line}' (expected 'app.<name> = on|off')")
         endif()
@@ -81,8 +90,18 @@ if(CADS_PROFILE)
         elseif(CADS_PROFILE_VALUE_UPPER STREQUAL "0")
             set(CADS_PROFILE_VALUE_UPPER "OFF")
         endif()
+        # FORCE, not a plain cache set: the profile is authoritative for the
+        # apps it names. A plain `set(... CACHE)` only applies when the variable
+        # is not already cached, which meant switching or editing a profile in
+        # an EXISTING build dir was silently ignored (the value cached by the
+        # first configure won). FORCE makes a profile change take effect on
+        # reconfigure. The consequence, documented in the config reference: with
+        # a profile active, a `-DCADS_APP_X=` on the command line does NOT
+        # override it - to override one app, edit the profile. Without a profile
+        # (CADS_PROFILE empty) the `-D` and the ON defaults behave as before.
         set(CADS_APP_${CADS_PROFILE_APP_UPPER} ${CADS_PROFILE_VALUE_UPPER} CACHE BOOL
-            "Set by profile ${CADS_PROFILE}")
+            "Set by profile ${CADS_PROFILE}" FORCE)
+        message(STATUS "  profile: CADS_APP_${CADS_PROFILE_APP_UPPER} = ${CADS_PROFILE_VALUE_UPPER}")
     endforeach()
 endif()
 
@@ -95,10 +114,11 @@ endif()
 # by a single new explorer command) that "just build everything" is not
 # free. Desktop and the menu itself are not options here - they are the
 # shell every other app is reached through, not an app in their own
-# right. Every option defaults ON, so an unconfigured build stays
-# exactly what it always was. A CADS_PROFILE (above) can pre-seed any of
-# these before this block runs; an explicit -D on the command line always
-# wins over both.
+# right. Every option defaults ON, so an unconfigured build stays exactly
+# what it always was. With a CADS_PROFILE active (above), the profile is
+# authoritative for the apps it names and these option() calls only supply
+# the default for apps the profile did not mention; without a profile, a
+# -DCADS_APP_X on the command line overrides the ON default as usual.
 option(CADS_APP_SETTINGS "Include the Settings app" ON)
 option(CADS_APP_ABOUT "Include the About app" ON)
 option(CADS_APP_GPIO "Include the GPIO app" ON)
