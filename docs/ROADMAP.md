@@ -2059,6 +2059,53 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (Board<->Mac secure link, primitive layer - cross-session
+  design and build) — Sparked by a user question about extending the
+  ESP32Marauder use case further: could an embedded `ct-agent`/`ct-client`
+  (the user's separate tunnel-agent project, run by another Claude session,
+  "Maintainer Tunnel ct-agent") run on this board? Real cross-session
+  collaboration, not solved alone - the other session read its own actual
+  crate (`~3.6k`-`17.7k` lines, `tokio`/`quinn`/`rustls`, all
+  heap-allocating) and gave a precise, evidence-based "no": TLS 1.3 itself
+  needs low-to-mid kilobytes of handshake state, inherent to the protocol,
+  not an artifact of any one implementation - nowhere close to this
+  firmware's ~670 B margin, even for a from-scratch reimplementation.
+  Landed on a cleaner shape instead: this Mac (already running the ST-Link/
+  tester/board_key.py all session) is the "companion device", speaking
+  real QUIC/TLS out to `ct-agent`'s tunnel, while the board<->Mac leg over
+  the existing local LAN either stays plaintext or gets a much cheaper
+  encryption layer - fixed pre-shared key, no TLS handshake at all.
+  ct-agent's session reviewed that specific design (a second dedicated
+  question) and found it structurally sound (same shape as WireGuard's or
+  IPsec-ESP's static-SA mode) with one real, non-optional gap: a counter
+  nonce resets to 0 on reboot and reuses under a fixed key on the very
+  first post-boot message, which is catastrophic (recoverable auth key),
+  not merely weak. Fix: this board's confirmed hardware RNG (checked
+  against the project's own vendored SVD) generates a genuinely random
+  24-byte XChaCha20-Poly1305 nonce per message instead, sidestepping
+  cross-reboot counter persistence entirely.
+  Built the primitive layer this same session, hardware-verified, not
+  just designed: vendored Monocypher (hash-verified byte-for-byte against
+  an independent re-fetch before committing - this is crypto source, a
+  transcription error would be a security bug, not a build break),
+  `modules/security`'s `cads_secure_link_seal/open()` wrapper (found and
+  fixed a real gap while writing it: Monocypher's own `crypto_aead_unlock`
+  leaves its output buffer completely untouched, not wiped, on an auth
+  failure - verified by reading the actual implementation, not the header
+  comment - so the wrapper now wipes it explicitly), a host-testable test
+  suite including a known-answer vector cross-checked against an
+  independent reference (PyNaCl/libsodium), and a real STM32F429 hardware
+  RNG driver (`cads_hal_rng_bytes()`, RM0090 ch. 24's full documented
+  procedure - continuous-RNG self-test on every word, live SECS/CECS error
+  checking) exercised live on real silicon via a new `J <n>` explorer
+  command - two runs, different high-entropy output each time, confirmed
+  via `board_cmd.py`. Not yet wired into any actual wire protocol; see
+  `docs/reference/secure-link.md` for exactly what exists today versus
+  what's still open. Companion piece: the host-side bridge (talks to a
+  litellm-proxied LLM demo, "Maintainer labor") is being packaged as an
+  installable manifest by that same collaborating session, a separate,
+  parallel thread from this one.
+
 - 2026-08-28 (Select Target - Deauth was silently a no-op this whole
   project's history) — Found reading Marauder's own `CommandLine.cpp`
   directly, prompted by the user asking whether the ESP32's real

@@ -107,6 +107,7 @@ nav:
       - WiFi co-processor wiring: reference/wifi-coprocessor.md
       - ESP32Marauder co-processor: reference/marauder-coprocessor.md
       - Marauder PCAP-over-TZSP stream: reference/marauder-pcap-stream.md
+      - Board-Mac secure link: reference/secure-link.md
   - Explanation:
       - explanation/index.md
       - What ports from a Flipper, and what cannot: explanation/what-ports.md
