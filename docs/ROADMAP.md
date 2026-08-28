@@ -2059,6 +2059,29 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (Select Target - Deauth was silently a no-op this whole
+  project's history) — Found reading Marauder's own `CommandLine.cpp`
+  directly, prompted by the user asking whether the ESP32's real
+  capability was actually being made usable: `attack -t deauth` (and the
+  AP-list Beacon Spam / Probe Flood variants) refuse to start at all -
+  `"You don't have any targets selected. Use select"` - unless
+  `wifi_scan_obj.filterActive()` is true, which only ever becomes true
+  after a `select -a <index>` marks something in Marauder's own scanned
+  `access_points` list. Nothing in this project has ever sent `select`.
+  **Every active WiFi tool this project has ever built was consequently a
+  silent no-op on real hardware, discoverable only by reading Marauder's
+  own source, not from the UI** (the confirm dialog runs fine, Marauder
+  just quietly declines to transmit anything afterward - no error shown).
+  Fixed with a new "Select Target" tool - a third interaction shape beyond
+  the existing passive/active ones, a numeric field (Up/Down adjusts, Ok
+  sends `select -a <N>`) rather than a scrollable target-picker list (which
+  would need its own parsed-AP array this firmware's RAM margin, ~670 B,
+  does not afford). Hardware-verified end to end via the same day's
+  headless key-injection tooling: navigated to it, dialed in index 3,
+  confirmed via webcam that Marauder replied `1 selected, 0 unselected` -
+  the real `showCounts()` success reply. See
+  `docs/reference/marauder-coprocessor.md`'s own section on this.
+
 - 2026-08-28 (Bluetooth in the touchscreen menu, headless key injection, and
   a night-long "touch stopped working" mystery finally explained) — Long,
   eventful continuation of the same day's Marauder work. In rough order:

@@ -177,6 +177,35 @@ turning the run-on burst into one device per row - confirmed via webcam,
 before (mid-MAC-address wrapping) and after (clean rows, one showing a
 readable device name like `Galaxy Watch6 (SEEP)`).
 
+## Select Target - fixes Deauth, which was silently broken
+
+Found reading Marauder's own `CommandLine.cpp` directly, not assumed:
+`attack -t deauth` (and the AP-list Beacon Spam / Probe Flood variants)
+refuse to start at all - `"You don't have any targets selected. Use
+select"` - unless `wifi_scan_obj.filterActive()` is true, which only ever
+becomes true after a `select -a <index>` marks something in Marauder's own
+scanned `access_points` list as selected. There was no way to do that
+anywhere in the touchscreen UI until now - **every active WiFi tool this
+project has ever sent was consequently a silent no-op on real hardware**,
+this whole project's history, and nobody could have known from the UI
+alone (no error is shown; the confirm dialog still runs, Marauder just
+quietly declines to actually transmit anything).
+
+"Select Target" (new tool, `apps/marauder/cads_marauder.c`) is a third
+interaction shape alongside the existing passive (send-and-show) and
+active (warn-then-go) ones: a numeric field, Up/Down adjusts, Ok sends
+`select -a <N>`. Deliberately not a scrollable target-picker list - that
+needs its own array of parsed AP entries, and this firmware's RAM margin
+(currently ~670 B) does not forgive that. The workflow: run "List APs"
+first, read the index off its output, then dial that same number into
+"Select Target".
+
+Hardware-verified end to end via headless key injection
+(`scripts/board_key.py`, see `docs/reference/explorer-console.md`):
+navigated Marauder → Select Target → dialed index 3 → Ok, confirmed via
+webcam - Marauder replied `#select -a 3` / `1 selected, 0 unselected`, the
+same real `showCounts()` reply its own CLI produces on success.
+
 ## The CLI itself
 
 Marauder's serial CLI (what apps/marauder's CLI bridge on the STM32 side
