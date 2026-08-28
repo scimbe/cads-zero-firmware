@@ -105,7 +105,7 @@ channel, AP-to-station associations) from the real RF environment, and
 `stopscan` halts cleanly. WiFi capture/injection is genuinely working, not
 just booting.
 
-## Bluetooth (2026-08-28: fixed, build-verified, not yet flashed)
+## Bluetooth (2026-08-28: fixed, flashed, hardware-verified - no touchscreen menu yet)
 
 Bluetooth was disabled in earlier builds after enabling `HAS_BT` threw
 roughly 15 NimBLE compile errors, on the assumption that Marauder's BLE
@@ -127,10 +127,26 @@ gone. No manual call-site porting was needed - confirmed by an actual
 zero errors, first attempt, byte-identical output size across two
 independent runs of the updated script from a pristine checkout.
 
-**Not yet flashed to real hardware or CLI-verified** (`sniffbt`, `blespam`,
-etc.) - no ESP32 was connected to this Mac during this pass. Every WiFi
-capability (scanning, deauth, evil portal, packet sniffing, the full CLI)
-remains unaffected either way.
+**Flashed to real hardware and CLI-verified same day**, once the ESP32 was
+physically connected via its own USB port (needed for the upload itself -
+CN8's UART wiring alone isn't enough to flash new firmware) and someone was
+at the board to hold BOOT during the upload (this DevKit clone has no
+auto-reset circuit). `sniffbt` (bare, no `-t` filter - passive BLE scan)
+returned real nearby devices over the raw serial link
+(`board_cmd.py ~ <sec>`, temporarily pointed at `sniffbt` for this one
+verification pass, then reverted - see that command's own comment in
+`apps/bringup/explorer.c`) - MAC addresses, RSSI, and at least one
+recognisable device name (`TUYA_...`) came back, proving the BLE stack
+itself, not just the build, actually works.
+
+**Not yet in `apps/marauder`'s touchscreen menu.** `apps/marauder/cads_marauder.c`'s
+tool table (`cads_marauder_tools[]`) only has WiFi entries today - Scan
+APs, Stop Scan, List APs, Deauth, Evil Portal, Beacon Spam, Probe Flood,
+Sniff (PCAP). Adding Bluetooth tools (`sniffbt` as a passive entry;
+`blespam` would need to go in as an ACTIVE one, behind the same mandatory
+confirm dialog every other transmit-based tool already uses) is a real,
+separate follow-up - not started, tracked as open work, not something this
+verification pass silently included.
 
 ## The CLI itself
 
