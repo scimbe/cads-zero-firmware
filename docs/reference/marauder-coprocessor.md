@@ -105,18 +105,32 @@ channel, AP-to-station associations) from the real RF environment, and
 `stopscan` halts cleanly. WiFi capture/injection is genuinely working, not
 just booting.
 
-## Known limitation: Bluetooth is off
+## Bluetooth (2026-08-28: fixed, build-verified, not yet flashed)
 
-`GENERIC_ESP32`'s Bluetooth path (`HAS_BT`) is disabled in this build. The
-vendored source's BLE code calls NimBLE 1.x-era methods (`getPayload()`
-returning `uint8_t*`, `setAdvertisedDeviceCallbacks`, `getNative()`,
-`setMinPreferred`/`setMaxPreferred`) against NimBLE-Arduino 2.3.8, which
-renamed or removed all of them (`getPayload()` now returns
-`std::vector<uint8_t>`, `setAdvertisedDeviceCallbacks` ->
-`setScanCallbacks`, etc.). This is a real porting job, not a version pin -
-tracked as a follow-up for when Bluetooth support is needed. Every WiFi
-capability (scanning, deauth, evil portal, packet sniffing, the full CLI) is
-unaffected and builds/flashes today.
+Bluetooth was disabled in earlier builds after enabling `HAS_BT` threw
+roughly 15 NimBLE compile errors, on the assumption that Marauder's BLE
+code called NimBLE 1.x-era methods (`getPayload()` returning `uint8_t*`,
+`setAdvertisedDeviceCallbacks`, `setMinPreferred`/`setMaxPreferred`)
+incompatible with the NimBLE-Arduino 2.3.8 this build pins. That diagnosis
+was wrong about *why*: WiFiScan.cpp/.h already carry two complete,
+independently correct implementations of every BLE call site, gated on a
+`HAS_NIMBLE_2` macro every other real board target already defines
+(`#ifndef HAS_NIMBLE_2` selects the 1.x-era calls above; `#else` selects
+2.x's `NimBLEScanCallbacks`/`setScanCallbacks`/`getPayload()` returning
+`std::vector<uint8_t>&`). `GENERIC_ESP32`'s own board block in `configs.h`
+ships with `HAS_BT` on by default but `HAS_NIMBLE_2` off - an internally
+inconsistent default once NimBLE-Arduino is pinned to 2.3.8, not a real
+API mismatch needing porting work. `tools/marauder-build/build_and_flash.sh`
+now defines both together; the previous "disable HAS_BT" workaround is
+gone. No manual call-site porting was needed - confirmed by an actual
+`arduino-cli compile` (not by reading the diff and assuming): clean build,
+zero errors, first attempt, byte-identical output size across two
+independent runs of the updated script from a pristine checkout.
+
+**Not yet flashed to real hardware or CLI-verified** (`sniffbt`, `blespam`,
+etc.) - no ESP32 was connected to this Mac during this pass. Every WiFi
+capability (scanning, deauth, evil portal, packet sniffing, the full CLI)
+remains unaffected either way.
 
 ## The CLI itself
 

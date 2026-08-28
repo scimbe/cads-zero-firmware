@@ -90,31 +90,39 @@ clone_lib https://github.com/plerup/espsoftwareserial.git SoftwareSerial 6.17.1
 echo "== NimBLE-Arduino version =="
 # Pinned to match the CI recipe used for boards on this same core version
 # (idf_ver 3.3.4 -> nimble_ver 2.3.8 in .github/workflows/nightly_build.yml's
-# matrix). NOT currently exercised: HAS_BT is off for GENERIC_ESP32 below,
-# because the vendored source's Bluetooth code (WiFiScan.cpp's BLE spam/scan
-# paths) calls NimBLE 1.x-era methods (getPayload() returning uint8_t*,
-# setAdvertisedDeviceCallbacks, getNative(), setMinPreferred/MaxPreferred)
-# that don't exist on NimBLE 2.x. Re-enabling Bluetooth needs actually
-# porting those call sites to the 2.x API (getPayload() now returns
-# std::vector<uint8_t>, setAdvertisedDeviceCallbacks -> setScanCallbacks,
-# etc.) - real work, not a version pin. Tracked as a follow-up; see the repo
-# CLAUDE.md.
+# matrix).
 (cd esp32_marauder/libraries/NimBLE-Arduino && git fetch --tags && git checkout 2.3.8 2>&1 | tail -2)
 
 echo "== source patches (against the pinned commit above) =="
 cd esp32_marauder
 
-# 1. GENERIC_ESP32 board target: select it, and disable Bluetooth (see the
-#    NimBLE note above - this is the one deliberate feature reduction).
+# 1. GENERIC_ESP32 board target: select it.
 sed -i '' 's|//#define GENERIC_ESP32|#define GENERIC_ESP32|' configs.h
 
-# 2. GENERIC_ESP32's own board block is missing HAS_IDF_3, which every
-#    other board target in this file defines - without it, WiFiScan.cpp
-#    falls back to legacy ESP-IDF v3-era APIs (tcpip_adapter_get_netif,
-#    esp_base_mac_addr_set, ESP_MAC_WIFI_STA, esp_read_mac,
-#    esp_event_send_internal, g_wifi_feature_caps, esp_spiram_init) that
-#    plain don't exist in the IDF 5.x arduino-esp32 3.x ships. Upstream gap,
-#    not a version issue - every real board target already has this line.
+# 2. GENERIC_ESP32's own board block is missing two things every OTHER
+#    board target's block already has:
+#
+#    HAS_IDF_3 - without it, WiFiScan.cpp falls back to legacy ESP-IDF
+#    v3-era APIs (tcpip_adapter_get_netif, esp_base_mac_addr_set,
+#    ESP_MAC_WIFI_STA, esp_read_mac, esp_event_send_internal,
+#    g_wifi_feature_caps, esp_spiram_init) that plain don't exist in the
+#    IDF 5.x arduino-esp32 3.x ships.
+#
+#    HAS_NIMBLE_2 - 2026-08-28 finding: this build's first attempt at
+#    Bluetooth (HAS_BT is already on by default for this board target)
+#    threw ~15 NimBLE compile errors and was worked around by disabling
+#    HAS_BT entirely. That workaround diagnosed the wrong layer: Marauder's
+#    own WiFiScan.cpp/.h ALREADY carry two complete, working
+#    implementations of every BLE call site gated on this exact macro
+#    (`#ifndef HAS_NIMBLE_2` selects 1.x-era NimBLEAdvertisedDeviceCallbacks/
+#    setAdvertisedDeviceCallbacks/getPayload()->uint8_t*; `#else` selects
+#    2.x's NimBLEScanCallbacks/setScanCallbacks/getPayload()->
+#    std::vector<uint8_t>&) - every other real board target already turns
+#    this on. GENERIC_ESP32 just shipped upstream with HAS_BT on but this
+#    left off, an internally inconsistent default given NimBLE-Arduino is
+#    pinned to 2.3.8 above. No manual API porting needed at all: defining
+#    both together compiled clean on the first real `arduino-cli compile`
+#    (confirmed 2026-08-28, see docs/reference/marauder-coprocessor.md).
 if ! grep -q 'ifdef GENERIC_ESP32$' configs.h; then
   echo "FATAL: configs.h layout changed, GENERIC_ESP32 block not found - re-check this script's patches" >&2
   exit 1
@@ -123,14 +131,24 @@ python3 - "$PWD/configs.h" << 'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-old = "#ifdef GENERIC_ESP32\n    //#define FLIPPER_ZERO_HAT\n    //#define HAS_BATTERY\n    #define HAS_BT\n"
-new = "#ifdef GENERIC_ESP32\n    #define HAS_IDF_3\n    //#define FLIPPER_ZERO_HAT\n    //#define HAS_BATTERY\n    //#define HAS_BT\n"
-if old in s:
-    open(p, "w").write(s.replace(old, new))
-elif "#define HAS_IDF_3" in s.split("#ifdef GENERIC_ESP32")[1].split("#endif")[0]:
-    pass  # already patched (idempotent re-run)
-else:
-    sys.exit("configs.h GENERIC_ESP32 block text changed upstream - patch 2 needs updating by hand")
+
+old_idf3 = "#ifdef GENERIC_ESP32\n    //#define FLIPPER_ZERO_HAT\n    //#define HAS_BATTERY\n    #define HAS_BT\n"
+new_idf3 = "#ifdef GENERIC_ESP32\n    #define HAS_IDF_3\n    //#define FLIPPER_ZERO_HAT\n    //#define HAS_BATTERY\n    #define HAS_BT\n"
+if old_idf3 in s:
+    s = s.replace(old_idf3, new_idf3)
+elif "#define HAS_IDF_3" not in s.split("#ifdef GENERIC_ESP32")[1].split("#endif")[0]:
+    sys.exit("configs.h GENERIC_ESP32 block text changed upstream - HAS_IDF_3 patch needs updating by hand")
+# else: already patched (idempotent re-run)
+
+old_nimble2 = "    //#define HAS_GPS\n    //#define HAS_NIMBLE_2\n  #endif"
+new_nimble2 = "    //#define HAS_GPS\n    #define HAS_NIMBLE_2\n  #endif"
+if old_nimble2 in s:
+    s = s.replace(old_nimble2, new_nimble2)
+elif "#define HAS_NIMBLE_2" not in s.split("#ifdef GENERIC_ESP32")[1].split("#endif")[0]:
+    sys.exit("configs.h GENERIC_ESP32 block text changed upstream - HAS_NIMBLE_2 patch needs updating by hand")
+# else: already patched (idempotent re-run)
+
+open(p, "w").write(s)
 PYEOF
 
 # 3. EvilPortal.h defines (not declares) `char index_html[MAX_HTML_SIZE]` for
@@ -183,7 +201,7 @@ arduino-cli compile \
   --build-property "compiler.c.elf.extra_flags=-Wl,--allow-multiple-definition" \
   --warnings none \
   --output-dir "$BUILD_DIR" \
-  esp32_marauder
+  .
 
 echo "== build complete: $BUILD_DIR =="
 if [ "$BUILD_ONLY" = "1" ]; then
@@ -198,6 +216,6 @@ arduino-cli upload \
   --fqbn "$FQBN" \
   --port "$PORT" \
   --input-dir "$BUILD_DIR" \
-  esp32_marauder
+  .
 
 echo "== done =="

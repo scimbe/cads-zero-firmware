@@ -2109,7 +2109,33 @@ _None outstanding._
   active" language corrected (it's been active since the join work), both
   Marauder docs added to `reference/index.md` (neither was linked from
   there before, an earlier-iteration gap).
-  **3) Bluetooth porting — not started this iteration.**
+  **3) Bluetooth — fixed, build-verified, not yet flashed.** The user's
+  scope assumed real NimBLE 1.x→2.x API porting was needed (WiFiScan.cpp's
+  BLE call sites); actually running `arduino-cli compile` instead of just
+  reading the diff found the real cause in minutes: WiFiScan.cpp/.h already
+  carry two COMPLETE, correct implementations of every BLE call site,
+  gated on `HAS_NIMBLE_2` (every other real board target already defines
+  it). `GENERIC_ESP32`'s own `configs.h` block ships `HAS_BT` on by default
+  but `HAS_NIMBLE_2` off — internally inconsistent once NimBLE-Arduino is
+  pinned to 2.3.8 (which this build already does), not a version mismatch
+  needing porting. The earlier session's "~15 compile errors → disable
+  HAS_BT" workaround had mis-diagnosed the actual layer. Fix: define both
+  macros together in `build_and_flash.sh`'s patch step — zero manual
+  call-site changes. Verified with two independent clean `arduino-cli
+  compile` runs from a pristine checkout (byte-identical output size both
+  times), not by inspection alone. **Bonus finding from actually running
+  the script end to end** (not just editing it): `build_and_flash.sh`'s
+  compile/upload steps had a latent bug since the script's original
+  commit — `cd esp32_marauder` runs, then the sketch path argument was
+  still the string `esp32_marauder` (doubling to a directory that doesn't
+  exist); fixed to `.`. This means the earlier "verified working" WiFi
+  flash was very likely done through a manually-run command sequence
+  during that session rather than this literal committed script — worth
+  remembering if a "the script did X" claim and an actual script content
+  ever seem to diverge again. **Not yet flashed to real hardware or
+  CLI-verified** (`sniffbt`, `blespam`, ...) — no ESP32 was connected this
+  iteration; `docs/reference/marauder-coprocessor.md`'s Bluetooth section
+  now reflects this precisely.
   **Known gap noticed, not fixed:** `marauder` is missing from
   `config-file.md`'s "Recognised apps" profile list and (unverified)
   possibly from `scripts/check_profile.py`'s own app list — pre-existing,
