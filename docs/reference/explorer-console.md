@@ -43,8 +43,37 @@ pass/fail check. See [Run the hardware gate](../how-to/board-test.md).
 | `b` | `<pct>` | Backlight, 0-100% |
 | `l` | `<rgb>` | On-board LEDs, e.g. `l 100` |
 | `g` | `<sec>` (20) | GUI smoke test: `apps/gpio` live on the panel |
-| `d` | `<sec>` (30) | App tree live: desktop → menu → app, exercising the real GUI/view-dispatcher stack rather than a standalone demo |
+| `d` | `<sec>` (30) | App tree live: desktop → menu → app, exercising the real GUI/view-dispatcher stack rather than a standalone demo. **Any console byte ends this session and drops back to the prompt** (with `<sec>` 0 - what `boot.autostart` uses - it runs until that happens; a nonzero `<sec>` also drops any *real* byte but ignores it until the timer runs out either way) - see "Driving the GUI headlessly" below for how to send input *without* ending the session. |
 | `V` | `<sec>` (10) | Re-measure full-screen flush throughput under real scheduler + live-netif contention, min/avg/max kpixel/s — see [Measurements](measurements.md) for the result this produced |
+
+### Driving the GUI headlessly
+
+There is no way to physically touch the panel from a Mac terminal, and `d`'s
+own "any byte ends this" rule (above) means a normal typed command can't
+double as a keypress - it would immediately end the very session it should
+be driving. `apps/bringup/explorer_app_demo.c` reserves one byte per
+logical key, all `>= 0x80` so they never collide with a typed ASCII command
+(`0x20`-`0x7E`) or CR/LF: sending one calls `cads_gui_input()` directly -
+the same function a real button or touch event reaches through
+`cads_gui_attach_input()`'s trampoline - and the `d` session keeps running
+instead of exiting.
+
+`scripts/board_key.py <key> [<key>...]` sends these bytes (no CRLF, unlike
+`board_cmd.py`):
+
+```bash
+scripts/board_key.py down down ok      # navigate into the 3rd menu item
+scripts/board_key.py back
+scripts/board_key.py --delay 0.3 up up ok
+```
+
+Valid keys: `up`, `down`, `left`, `right`, `ok`, `back`, `f1`, `f2` -
+matching `cads_key_t` in `input/cads_input.h`. Combine with a live capture
+(a webcam pointed at the panel, or `scripts/board_cmd.py S <sec>` for the
+existing TCP framebuffer stream) to drive and verify the real touchscreen
+UI from a script with nobody at the board - this is how the whole Marauder
+Bluetooth toolset (`docs/reference/marauder-coprocessor.md`) was navigated
+and screenshotted for verification with the board otherwise untouched.
 
 ## Storage
 

@@ -139,29 +139,43 @@ verification pass, then reverted - see that command's own comment in
 recognisable device name (`TUYA_...`) came back, proving the BLE stack
 itself, not just the build, actually works.
 
-**Now in `apps/marauder`'s touchscreen menu, but hidden until the ESP32 is
-actually seen talking.** Two new tools: "Sniff BT" (passive, bare `sniffbt`
-- every nearby BLE device, live, same shape as "Scan APs") and "BLE Spam"
-(ACTIVE, `blespam -t all` - behind the same mandatory confirm dialog every
-other transmit-based tool already uses, no exception for Bluetooth).
+**In `apps/marauder`'s touchscreen menu, always shown, same as WiFi.** Four
+new tools alongside the original eight WiFi ones: "Sniff BT" (passive, bare
+`sniffbt` - every nearby BLE device, live), "BLE Spam" (ACTIVE, `blespam -t
+all` - behind the same mandatory confirm dialog every other transmit-based
+tool already uses, no exception for Bluetooth), "Sniff PMKID" (passive,
+bare `sniffpmkid` - WPA2 handshake capture, waits for one to happen rather
+than forcing it; the `-d`/deauth-assisted variant is deliberately *not*
+wired up here, since forcing a handshake is exactly the kind of active
+transmission that belongs behind the ACTIVE gate, not a passive tool),
+"Sniff SAE" (passive, bare `sniffsae` - the WPA3 equivalent), and "Clear
+APs" (passive, `clearlist -a` - wipes the discovered AP list).
 
-Unlike the WiFi tools, these two are conditionally shown. There is no
-electrical presence-detect line on CN8 (just TX/RX), so "is the
-co-processor there" is a software liveness snapshot, re-taken every time
-the Marauder selector is (re-)entered: it sends `stopscan` (always replies,
-regardless of scan state - see this doc's own `wifi_scan_obj.scanning()`
-gotcha below) and starts a 2 s timer; any reply in that window means the
-Bluetooth items get spliced into the menu (`cads_menu_set_items()`), no
-reply means they get removed. This is a snapshot, not a continuous poll -
-opening the menu with no ESP32 connected shows only the 8 WiFi tools;
-opening it once the ESP32 is wired up and answering shows all 10. The same
-`stopscan` probe doubles as a fix for the gotcha below: every time you open
-this menu, any scan left running from a previous session gets cleared,
-whether or not you ever hit that gotcha yourself.
+**This was conditionally hidden earlier the same day, then reverted.** A
+first version sent a `stopscan` liveness probe on every selector entry and
+spliced the Bluetooth items in or out of the menu (`cads_menu_set_items()`)
+based on whether anything replied within 2 s - the idea being that CN8 has
+no electrical presence-detect line (just TX/RX), so software liveness was
+the only signal available. Live testing on real hardware found the timing
+wasn't reliable enough in practice (UART traffic from an already-running
+scan, task scheduling jitter, or just an unlucky 2 s window could all make
+a genuinely-connected ESP32 register as absent) - a menu that flickers
+items in and out is worse than one that's simply always there. Reverted:
+the Bluetooth tools now behave exactly like the WiFi ones always have - if
+the ESP32 isn't connected, selecting one just gets no reply, no special
+handling needed. `cads_marauder_selector_enter()` still sends `stopscan` on
+every entry - not for presence detection any more, just the fix for the
+gotcha below, which is worth keeping on its own.
 
-See `apps/marauder/cads_marauder.h`'s own "BLUETOOTH TOOLS ARE HIDDEN
-UNTIL..." comment and `cads_marauder_refresh_menu_items()` in
-`cads_marauder.c` for the implementation.
+**Formatting fix, found and confirmed live on the panel.** `sniffbt`'s real
+output arrives as one unbroken run - Marauder prints every device with
+`Serial.print()`, not `println()` - so without help, the reader's per-line
+length cap wrapped mid-MAC-address wherever the buffer happened to fill.
+`cads_marauder_reader_set_split_marker()` (new in `cads_marauder_reader.h`)
+treats `"Device: "` as an additional line-break trigger for this one tool,
+turning the run-on burst into one device per row - confirmed via webcam,
+before (mid-MAC-address wrapping) and after (clean rows, one showing a
+readable device name like `Galaxy Watch6 (SEEP)`).
 
 ## The CLI itself
 
