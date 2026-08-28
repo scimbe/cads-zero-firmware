@@ -81,8 +81,10 @@ nav:
       - tutorials/index.md
       - Build and flash your first image: tutorials/first-build.md
       - Read the on-target test: tutorials/first-gate.md
+      - WiFi recon and live capture in Wireshark: tutorials/wifi-wireshark.md
   - How-to:
       - how-to/index.md
+      - Set up VS Code: how-to/vscode-setup.md
       - Build the firmware: how-to/build.md
       - Flash the board: how-to/flash.md
       - Run the hardware gate: how-to/board-test.md
@@ -102,6 +104,9 @@ nav:
       - Configuration file and profiles: reference/config-file.md
       - Bring-up explorer console: reference/explorer-console.md
       - Measurements: reference/measurements.md
+      - WiFi co-processor wiring: reference/wifi-coprocessor.md
+      - ESP32Marauder co-processor: reference/marauder-coprocessor.md
+      - Marauder PCAP-over-TZSP stream: reference/marauder-pcap-stream.md
   - Explanation:
       - explanation/index.md
       - What ports from a Flipper, and what cannot: explanation/what-ports.md
