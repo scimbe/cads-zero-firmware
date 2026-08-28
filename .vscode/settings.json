@@ -27,5 +27,21 @@
   // one from a dependency.
   "search.useIgnoreFiles": true,
 
-  "python.analysis.typeCheckingMode": "basic"
+  "python.analysis.typeCheckingMode": "basic",
+
+  // Formatting: cpptools ships its own bundled clang-format, so this works
+  // even without one on PATH - it reads .clang-format at the repo root
+  // ("file" means "use whatever .clang-format says", not a built-in preset).
+  "[c]": { "editor.formatOnSave": true, "editor.defaultFormatter": "ms-vscode.cpptools" },
+  "[cpp]": { "editor.formatOnSave": true, "editor.defaultFormatter": "ms-vscode.cpptools" },
+  "C_Cpp.formatting": "clangFormat",
+  "C_Cpp.clang_format_style": "file",
+
+  // Linting: unlike formatting, cpptools does NOT bundle clang-tidy - it
+  // needs a real one on PATH (see docs/how-to/vscode-setup.md#linting-and-
+  // formatting for installing it). Reads .clang-tidy at the repo root
+  // automatically once enabled; no path/config needed here beyond turning
+  // it on.
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+  "C_Cpp.codeAnalysis.runAutomatically": true
 }

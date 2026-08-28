@@ -1,0 +1,52 @@
+# CaDS Zero clang-tidy config, curated against real output on real files
+# (apps/bringup/explorer.c, apps/marauder/*.c, modules/net/*.c - see the git
+# log for this file's own commit for the exact evidence), not picked from a
+# list of what sounds useful.
+#
+# clang-diagnostic-*/clang-analyzer-*/bugprone-* are enabled wholesale: they
+# came back completely clean (zero hits) across every real file tested,
+# including an 889-line one - a genuinely low-noise, bug-catching baseline
+# for this codebase specifically, not just "usually a good default".
+#
+# readability-* is DELIBERATELY NOT enabled wholesale. Turned on once against
+# explorer.c, it produced 201 warnings, and every single category directly
+# fights a documented, deliberate style choice already in this repo, not an
+# actual defect:
+#   - readability-uppercase-literal-suffix (87 hits) wants `0U`; every file
+#     in this codebase writes `0u` (see .clang-format's own header comment
+#     and any recently-written source - it's the established convention).
+#   - readability-magic-numbers (78 hits) wants a named constant for every
+#     bare literal - unworkable for a HAL-heavy embedded codebase full of
+#     register offsets, protocol byte values, and array sizes.
+#   - readability-braces-around-statements (15 hits) wants braces around
+#     every single-line if/for/while body; .clang-format's own
+#     AllowShortIfStatementsOnASingleLine setting says the opposite is the
+#     house style.
+#   - readability-identifier-length (8 hits) flags short names (`p`, `n`,
+#     `b`) this codebase uses constantly and deliberately.
+# Two individual readability checks from the same family are cherry-picked
+# below because they don't conflict with anything and did produce a real,
+# useful hit each.
+#
+# performance-no-int-to-ptr is explicitly disabled: it fires on the
+# int-to-pointer casts HAL register access is built out of
+# (`(volatile uint32_t*)0x40023C00`-style casts to a fixed peripheral
+# address), which is normal, necessary, and not something to "fix" here -
+# confirmed by finding exactly this pattern is what it flagged in
+# modules/net/src/cads_net_board.c.
+Checks: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  portability-*,
+  readability-math-missing-parentheses,
+  readability-function-cognitive-complexity,
+  -performance-no-int-to-ptr
+
+# Only warn about issues in this project's own headers, not the vendored
+# submodules under lib/ (FreeRTOS, lwIP, littlefs, CMSIS, Unity) - those are
+# read, not edited, here.
+HeaderFilterRegex: '^(apps|core|gui|modules|services|targets)/'
+
+WarningsAsErrors: ''
