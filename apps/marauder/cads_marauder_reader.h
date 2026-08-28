@@ -47,6 +47,7 @@ typedef struct {
     uint32_t lines_total;      /* lifetime count, for a future "N lines" status */
     cads_marauder_line_cb_t line_cb;
     void* line_cb_ctx;
+    const char* split_marker;  /* borrowed, static string; NULL = off - see setter */
 } cads_marauder_reader_t;
 
 void cads_marauder_reader_reset(cads_marauder_reader_t* r);
@@ -54,6 +55,26 @@ void cads_marauder_reader_reset(cads_marauder_reader_t* r);
 /** Set (or clear, with cb=NULL) the per-line observer. Reset by
  *  cads_marauder_reader_reset() like everything else in the struct. */
 void cads_marauder_reader_set_line_cb(cads_marauder_reader_t* r, cads_marauder_line_cb_t cb, void* ctx);
+
+/**
+ * Set (or clear, with marker=NULL) an extra line-break trigger beyond '\n'.
+ * Some Marauder CLI output is not one-record-per-line by design - BLE scan
+ * results in particular print every discovered device on Marauder's own
+ * Serial.print() (not println()) calls, so a whole burst arrives as one
+ * unbroken run of "<rssi> Device: <name/addr>" segments with no real
+ * newline between them; without this, CADS_MARAUDER_LINE_LEN's hard wrap
+ * cuts mid-MAC-address wherever the buffer happens to fill (confirmed live
+ * on the panel, 2026-08-28 - see docs/reference/marauder-coprocessor.md).
+ * When set, every time the accumulating partial line's tail matches
+ * `marker`, whatever came before that match is flushed as its own line and
+ * the marker itself starts the next one - so "Device: " turns Marauder's
+ * single run-on burst into one device per row, the same as WiFi's scanall
+ * output already gets for free from its own real newlines. `marker` is
+ * borrowed and must be a string literal or otherwise outlive the reader
+ * (same ownership convention as everything else here); cleared along with
+ * everything else by cads_marauder_reader_reset(), so re-set it after every
+ * reset for a tool that needs it, the same way line_cb already has to be. */
+void cads_marauder_reader_set_split_marker(cads_marauder_reader_t* r, const char* marker);
 
 /*
  * Feed raw bytes (as read off the UART) into the reader. Splits on '\n',

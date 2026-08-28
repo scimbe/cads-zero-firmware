@@ -128,6 +128,33 @@ static const char* cads_net_indicator_text(void) {
     return net.speed_mbit >= 100u ? "100M" : "10M";
 }
 
+/* Headless key injection, 2026-08-28: there is no way to physically touch
+ * the panel from a Mac terminal, and the interactive session's own "any
+ * console byte drops back to the prompt" rule (below) means a plain typed
+ * command can't double as a keypress either - it would immediately end the
+ * very session it is trying to drive. Reserves one byte per logical key,
+ * all >= 0x80 so they can never collide with an ordinary typed ASCII
+ * command (0x20-0x7E) or CR/LF (0x0D/0x0A): sending one of these over the
+ * console (scripts/board_key.py) calls cads_gui_input() directly - the same
+ * function cads_gui_attach_input()'s trampoline calls for a real button or
+ * touch event - and the loop below keeps running instead of exiting, so a
+ * script can drive several keys in a row without ever losing the session.
+ * Anything else still exits exactly as before; a human typing on a real
+ * terminal never produces these bytes by accident. */
+static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
+    switch(byte) {
+        case 0x80u: return CadsKeyUp;
+        case 0x81u: return CadsKeyDown;
+        case 0x82u: return CadsKeyLeft;
+        case 0x83u: return CadsKeyRight;
+        case 0x84u: return CadsKeyOk;
+        case 0x85u: return CadsKeyBack;
+        case 0x86u: return CadsKeyF1;
+        case 0x87u: return CadsKeyF2;
+        default: return CadsKeyNone;
+    }
+}
+
 uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
 
@@ -176,13 +203,32 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
     uint8_t wake_byte = 0u;
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
-        if(seconds == 0u) {
+        {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {
-                wake_byte = byte;
-                break;
+                cads_key_t injected = cads_explorer_app_demo_decode_key(byte);
+                if(injected != CadsKeyNone) {
+                    cads_input_event_t press = {
+                        .type = CadsInputPress, .key = injected, .timestamp = now};
+                    cads_gui_input(&s_gui, &press);
+                    cads_input_event_t release = {
+                        .type = CadsInputRelease, .key = injected, .timestamp = now};
+                    cads_gui_input(&s_gui, &release);
+                    continue; /* stay live - this was a simulated keypress, not an exit request */
+                }
+                /* A real (non-injected) byte: seconds == 0's interactive
+                 * session drops back to the prompt on any key, same as
+                 * always. A fixed-duration run (seconds != 0, e.g. the 'd
+                 * <n>' console command) keeps its own contract of running
+                 * for exactly that long regardless of console noise - drop
+                 * the byte and keep going, checked below. */
+                if(seconds == 0u) {
+                    wake_byte = byte;
+                    break;
+                }
             }
-        } else if(now - start >= seconds * 1000u) {
+        }
+        if(seconds != 0u && now - start >= seconds * 1000u) {
             break;
         }
         /* A promiscuous-capture M9 tool (802.1X sniff, TCP RST daemon) owns

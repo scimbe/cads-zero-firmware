@@ -7,9 +7,15 @@
  * this firmware's margin does not forgive one per tool). Tools split into
  * two kinds:
  *
- *   PASSIVE (Scan, Stop, List, Sniff BT) - send the command immediately on
- *   selection, no gate. They observe; they never put a frame on the air
- *   that wasn't already there.
+ *   PASSIVE (Scan, Stop, List, Sniff BT, Sniff PMKID, Sniff SAE, Clear APs) -
+ *   send the command immediately on selection, no gate. They observe; they
+ *   never put a frame on the air that wasn't already there. Sniff PMKID and
+ *   Sniff SAE are exactly this even though they exist to support cracking a
+ *   captured handshake afterward (elsewhere, e.g. hashcat on the Mac) - the
+ *   capture itself is passive, waiting for a handshake that would have
+ *   happened anyway, never forcing one via deauth (that combination exists
+ *   in Marauder's own CLI as sniffpmkid -d and is deliberately NOT wired up
+ *   here; it belongs behind the same ACTIVE gate as Deauth, not this one).
  *
  *   ACTIVE (Deauth, Evil Portal, Beacon Spam, Probe Flood, BLE Spam) -
  *   transmit-based. Selecting one always lands in a CONFIRM mode first: an
@@ -29,25 +35,25 @@
  * co-processor) is not linked into the default build for exactly this
  * reason - see apps/settings/cads_settings.c's own note on that decision.
  *
- * BLUETOOTH TOOLS ARE HIDDEN UNTIL THE ESP32 IS ACTUALLY SEEN TALKING
+ * BLUETOOTH TOOLS ARE ALWAYS IN THE MENU, SAME AS THE WIFI ONES
  * ---------------------------------------------------------------------
- * There is no electrical presence-detect line on CN8 (just TX/RX), so
- * "is the co-processor there" can only ever be a software liveness check,
- * not a hardware fact. Every time the selector view is (re)entered - a
- * fresh open from the main menu, or popping back to it from a tool - it
- * sends a `stopscan` (2026-08-28 note: this doubles as the fix for a real
- * Marauder-firmware gotcha found the same day - see
- * docs/reference/marauder-coprocessor.md and this file's own cads_marauder.c
- * for the `wifi_scan_obj.scanning()` gate it clears) and starts a short
- * timer. Any bytes back before the timer expires mean something is alive
- * and talking on the wire, so the Bluetooth items get added to the
- * selector's menu (cads_menu_set_items() - the menu widget's own "contents
- * built at run time" mechanism, nothing bespoke here); no reply in time
- * means they get removed again. This is necessarily a snapshot from the
- * last time the menu was opened, not a continuous background poll - the
- * link is not chatty enough (and the RAM/CPU budget not generous enough)
- * to justify polling it on a timer while the user is looking at something
- * else entirely.
+ * 2026-08-28: this module briefly tried to show/hide the two Bluetooth
+ * items based on a software liveness probe (send `stopscan` on every
+ * selector entry, add them if a reply came back within ~2 s, remove them
+ * otherwise - there is no electrical presence-detect line on CN8, just
+ * TX/RX, so that was the only signal available). Reverted the same day:
+ * live testing on real hardware showed the probe's timing was not reliable
+ * enough in practice (UART traffic from an already-running scan, task
+ * scheduling jitter, or just an unlucky 2 s window could all make a
+ * genuinely-connected ESP32 register as absent), and a menu item that
+ * flickers in and out is worse than one that is simply always there. The
+ * Bluetooth tools now behave exactly like the WiFi ones always have: if
+ * the ESP32 is not connected, selecting one just gets no reply - no
+ * special-casing, nothing to get wrong. cads_marauder_selector_enter()
+ * still sends `stopscan` on every entry, unconditionally - that part was
+ * never about presence detection, it is the fix for a real Marauder-
+ * firmware gotcha (see docs/reference/marauder-coprocessor.md's own
+ * section on it) and is worth keeping on its own.
  */
 #ifndef CADS_MARAUDER_H
 #define CADS_MARAUDER_H
@@ -71,8 +77,11 @@
 #define CADS_MARAUDER_TOOL_BEACON      0x0C07u
 #define CADS_MARAUDER_TOOL_PROBE       0x0C08u
 #define CADS_MARAUDER_TOOL_PCAP        0x0C09u
-#define CADS_MARAUDER_TOOL_SNIFFBT     0x0C0Au /**< passive, hidden unless the ESP32 was just seen */
-#define CADS_MARAUDER_TOOL_BLESPAM     0x0C0Bu /**< ACTIVE, hidden unless the ESP32 was just seen  */
+#define CADS_MARAUDER_TOOL_SNIFFBT     0x0C0Au
+#define CADS_MARAUDER_TOOL_BLESPAM     0x0C0Bu
+#define CADS_MARAUDER_TOOL_SNIFFPMKID  0x0C0Cu /**< passive - WPA2 PMKID/handshake capture */
+#define CADS_MARAUDER_TOOL_SNIFFSAE    0x0C0Du /**< passive - WPA3 SAE handshake capture   */
+#define CADS_MARAUDER_TOOL_CLEARAPS    0x0C0Eu /**< passive - wipes the discovered AP list */
 
 /** Register the suite's two views. Call once from cads_menu_app_init()'s own
  *  init chain, the same way every other optional app does. No-op when

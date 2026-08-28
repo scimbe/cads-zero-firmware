@@ -2,6 +2,7 @@
  * why this is split out from cads_marauder.c's GUI/HAL-heavy code. */
 #include "cads_marauder_reader.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 void cads_marauder_reader_reset(cads_marauder_reader_t* r) {
@@ -11,6 +12,20 @@ void cads_marauder_reader_reset(cads_marauder_reader_t* r) {
 void cads_marauder_reader_set_line_cb(cads_marauder_reader_t* r, cads_marauder_line_cb_t cb, void* ctx) {
     r->line_cb = cb;
     r->line_cb_ctx = ctx;
+}
+
+void cads_marauder_reader_set_split_marker(cads_marauder_reader_t* r, const char* marker) {
+    r->split_marker = marker;
+}
+
+/* True if partial[0..partial_len) ends with marker - marker is always
+ * short (CADS_MARAUDER_LINE_LEN-bounded, e.g. "Device: "), so a plain
+ * suffix compare is cheap enough to run on every byte fed in. */
+static bool cads_marauder_reader_partial_ends_with(
+    const char* partial, uint8_t partial_len, const char* marker) {
+    size_t marker_len = strlen(marker);
+    if(marker_len == 0u || marker_len > partial_len) return false;
+    return memcmp(partial + (partial_len - marker_len), marker, marker_len) == 0;
 }
 
 static void cads_marauder_reader_push_line(cads_marauder_reader_t* r, const char* text, uint8_t len) {
@@ -44,6 +59,21 @@ void cads_marauder_reader_feed(cads_marauder_reader_t* r, const uint8_t* data, s
         } else {
             cads_marauder_reader_push_line(r, r->partial, r->partial_len);
             r->partial_len = 0u;
+            continue;
+        }
+
+        if(r->split_marker != NULL &&
+           cads_marauder_reader_partial_ends_with(r->partial, r->partial_len, r->split_marker)) {
+            size_t marker_len = strlen(r->split_marker);
+            uint8_t before_len = (uint8_t)(r->partial_len - marker_len);
+            if(before_len > 0u) {
+                cads_marauder_reader_push_line(r, r->partial, before_len);
+                memmove(r->partial, r->partial + before_len, marker_len);
+                r->partial_len = (uint8_t)marker_len;
+            }
+            /* before_len == 0: partial IS just the marker so far (the very
+             * first device in a burst) - nothing to flush yet, keep
+             * accumulating past it. */
         }
     }
 }
