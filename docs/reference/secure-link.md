@@ -81,7 +81,14 @@ threat model as a field pentesting tool.
 ## Not yet built
 
 - The actual wire protocol/framing for sealed messages over the existing
-  board<->Mac TCP link (port 4242).
+  board<->Mac TCP link (port 4242). Design notes from ct-agent's review
+  (2026-08-28), to carry into that work rather than rediscover: length-
+  prefix frames; the frame needs an explicit "this is secure-link" marker
+  distinct from plaintext console/cli traffic, especially during any
+  transition period where both exist; the 24-byte nonce travels in the
+  clear alongside the ciphertext (it is not secret, the receiver needs it
+  to verify against - standard AEAD practice, and an easy thing to
+  reflexively want to hide when it shouldn't be).
 - Key provisioning - how a PSK actually gets onto the board (a `security.psk`
   config key via `modules/config` is the natural fit, not yet added).
 - Any caller that actually invokes `cads_secure_link_seal`/`open` outside
