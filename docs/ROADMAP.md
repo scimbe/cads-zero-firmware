@@ -1959,27 +1959,23 @@ final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
       codebase's actual existing style (checked against the style already
       used throughout, not a generic default), plus a CI check that fails
       on unformatted diffs. `[swarm-ready]`
-- [ ] clang-tidy integration, cross-platform (Windows/Linux/macOS) and
+- [x] clang-tidy integration, cross-platform (Windows/Linux/macOS) and
       wired so findings surface well in an editor's Problems panel, not
-      just a terminal log - almost certainly means a `compile_commands.json`
-      export from the existing CMake build plus a VS Code task/extension
-      that consumes it, verified on more than one OS before calling it done.
-      `[needs-decision]` - which clang-tidy checks to enable is a real
-      design choice (this project's own conventions - e.g. no dynamic
-      allocation, static assertions, section-attribute placement - will
-      false-positive against several stock checks), not something to
-      pick blind.
-- [ ] A complete VS Code project (`.vscode/` recommendations, tasks,
+      just a terminal log. Done 2026-08-28: curated `.clang-tidy`
+      (evidence-based against real files, not a stock preset - see the
+      file's own header comment) plus `.vscode/settings.json` wiring
+      (`C_Cpp.codeAnalysis.clangTidy.enabled`), `.clang-format` fixed to
+      match the codebase's real, already-consistent style
+      (`IndentCaseLabels: true`), format-on-save wired the same way.
+      Windows coverage documented honestly, not assumed: see the new
+      Windows subsection in `docs/how-to/vscode-setup.md#1-get-a-toolchain-on-path`.
+- [x] A complete VS Code project (`.vscode/` recommendations, tasks,
       launch configs for the existing GDB flow) with genuinely useful
       extensions for someone learning this specific firmware+board,
-      documented for beginners at the project's own published how-to
-      (`docs/how-to/build.md`, published to
-      https://scimbe.github.io/cads-zero/how-to/build/ via `mkdocs.yml`
-      + `.github/workflows/docs.yml`). Cross-platform is a real
-      requirement here too, not an afterthought - the existing
-      `scripts/*.py` tooling is already dependency-free Python for
-      exactly this reason (see `scripts/cads_serial.py`'s own header),
-      the new pieces should hold to the same bar. `[swarm-ready]`
+      documented for beginners at the project's own published how-to.
+      Done 2026-08-28 - see this Log's own "VS Code: high-integration
+      native workflow" entry below for what shipped and how it was
+      actually driven/verified (not just written and assumed working).
 - [x] Decision-rationale documentation: expand `docs/explanation/` and/or
       `docs/how-to/debug.md` with the "why" behind standing choices that
       are currently only explained in scattered code comments and this
@@ -2062,6 +2058,87 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-28 (Marauder recon over serial, no touchscreen needed - and a
+  real Marauder-firmware gotcha found live) — User was away from the board
+  ("nicht vor Ort") and asked whether WiFi recon (weak-password/vulnerability
+  survey) was possible anyway; wanted the actual capture to run on the
+  existing ITSboard+ESP32 setup (not the Mac's own WiFi chip, which cannot
+  do monitor mode/injection under macOS regardless of tooling - verified by
+  checking: no aircrack-ng/hashcat/hcxtools installed, and Apple's own
+  `airport` utility is gone from modern macOS). Installed `hashcat` +
+  `hcxtools` on the Mac for the offline-cracking half once a real capture
+  exists.
+  Found the explorer's WiFi-UART bring-up diagnostic (`~`, added
+  2026-08-28 morning as a throwaway loopback test - see this Log's own
+  Marauder co-processor entry) was the *only* serial-reachable path into
+  the co-processor at all - `apps/marauder`'s real bridge is touchscreen-
+  menu-only with no CLI trigger, deliberately so for its active/transmit
+  tools (Deauth etc. stay behind their own mandatory confirm dialog, not
+  bypassable). Extended `~` into a real, permanent, safe recon command
+  rather than reverting it as originally planned: streams Marauder's full
+  reply live in chunks instead of truncating to the original 64 B buffer,
+  and is hard-coded to send exactly one fixed command (`scanall` - lists
+  nearby APs, transmits nothing) so it cannot reach any active tool -
+  narrower door, not a smaller version of the touchscreen confirm gate.
+  Hardware-verified end to end, and found a real, reproducible Marauder
+  behavior along the way: a first live run returned only the command's own
+  echo + prompt, no scan data, no error - traced (via the pinned commit's
+  `CommandLine.cpp`, not guessing) to `if (!wifi_scan_obj.scanning())`
+  gating the *entire* WiFi/BT scan/attack command family; a scan left
+  running from anywhere (this command, an earlier touchscreen session, a
+  crash mid-scan) silently swallows every later `scanall` with zero error
+  output. `stopscan -f` over the same link cleared it; a fresh `scanall`
+  then returned real APs from the live RF environment (`persepolis-II`,
+  `persepolis-XI`, `FTTH_UX9399`, ...). This is a genuine Marauder-firmware
+  property, not a bug in this repo's own code - and `apps/marauder`'s
+  touchscreen tool view has no visibility into it either: a stuck scan
+  would look identical there (press Scan, nothing happens, no error). Left
+  as a documented gotcha in `~`'s own comment rather than a silent fix,
+  since fixing it in `apps/marauder` (e.g. always `stopscan -f` before
+  `scanall`) is a real, separate change to the touchscreen app's behavior
+  that should get its own hardware-verified pass, not ride in on a serial
+  diagnostic's fix.
+  `board_cmd.py '~' <seconds>` is now the answer to "can we survey WiFi
+  networks without being at the board" - yes, headlessly, from wherever the
+  console USB is reachable.
+
+- 2026-08-28 (VS Code: high-integration native workflow, build/flash/debug/
+  registers) — User wanted VS Code driven entirely through its own classic
+  UI (status bar, Activity Bar, Run and Debug panel), explicitly not
+  Command-Palette/task-menu-driven, without touching the existing toolchain
+  or any other installed extension (Keil Studio Pack stays, used for a
+  different project in the same VS Code instance). Delivered and personally
+  verified live (real build → real flash → real breakpoint stop → real
+  register/peripheral inspection, screenshotted at each step, not just
+  described): a genuine `flash` CMake custom target (`USES_TERMINAL`, shows
+  up in CMake Tools' own target picker, not just `tasks.json`); a vendored
+  Apache-2.0 STM32F429 SVD file wired into `cortex-debug` via `svdFile` for
+  a real named-peripheral XPeripherals tree, plus the recommended
+  `mcu-debug.peripheral-viewer` extension (the actively-maintained
+  standalone successor to cortex-debug's own bundled SVD view - 1.4M+
+  installs); `.clang-format`/`.clang-tidy` wired into format-on-save and
+  live linting. Two real bugs found and fixed along the way, both via
+  actually running things rather than reading the config and assuming: (1)
+  `code .` reuses an already-running VS Code process's stale environment -
+  a `PATH` fix needs a full quit (`Cmd+Q`), not just a new window; (2) a
+  `llvm-vs-code-extensions.vscode-clangd` install (present because it's
+  what the *other* project, ITS-BRD-VSC, recommends, in the same VS Code
+  instance) runs blind against this repo with no `compile_commands.json`
+  wiring of its own, producing false "file not found" errors and spurious
+  warnings from its own bundled clang-tidy checks - marked
+  `unwantedRecommendations` for this workspace, cpptools is this project's
+  real IntelliSense engine. Rewrote `docs/how-to/vscode-setup.md` with 7
+  real screenshots and an honest Windows section (WSL2 vs. native - the
+  console tooling imports the POSIX-only `termios` module and cannot run on
+  native Windows Python at all, verified by reading the import, not
+  assumed) and a much more explicit ITS-BRD-VSC comparison: this project
+  deliberately uses VS Code's own default tooling plus mainstream
+  extensions over one vendor's bundled toolchain, trading Keil Studio
+  Pack's out-of-the-box polish for portability (works identically from any
+  CI/IDE/terminal) and capabilities ITS-BRD-VSC's setup doesn't have at all
+  (a host-only build+test with zero hardware attached, two independent
+  toolchains - STM32 and ESP32/Marauder - in one repo).
 
 - 2026-08-28 (net.dhcp crash: console-task stack overflow, found and fixed
   on real hardware) — User request: real internet to the board via a Mac
