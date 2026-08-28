@@ -217,6 +217,11 @@ add_subdirectory(modules/storage)
 # host-tested; load/save wrap littlefs). See modules/config.
 add_subdirectory(modules/config)
 
+# Security: AEAD wrapper (XChaCha20-Poly1305 via vendored Monocypher) for the
+# board <-> Mac link - target neutral in the same sense as storage/config,
+# zero HAL dependency, fully host-testable. See modules/security.
+add_subdirectory(modules/security)
+
 # Net is target neutral in the same sense as storage: cads/net/net.h has two
 # implementations (src/cads_net_board.c, a real lwIP netif over hal_eth_mac.h;
 # src/cads_net_sim.c, an honest "no link" stub - see that file's own header

@@ -35,6 +35,7 @@
 #include "input/cads_input.h"
 #include "input_probe.h"
 #include "tasks.h"
+#include "cads/toolbox/fmt.h"
 #include "cads/toolbox/pubsub.h"
 #include "cads/toolbox/record.h"
 #include "cads/toolbox/str.h"
@@ -435,7 +436,8 @@ static void cads_help(void) {
         "#   y          raw flash driver diagnostic, no littlefs (debug 'u' failures)\r\n"
         "#   z FAULT    trip UsageFault deliberately - HALTS FOR GOOD, needs a reflash\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n"
-        "#   ~ <sec>    WiFi/Marauder passive scan (scanall) over raw USART6, streamed live - no touchscreen needed, default 8s\r\n");
+        "#   ~ <sec>    WiFi/Marauder passive scan (scanall) over raw USART6, streamed live - no touchscreen needed, default 8s\r\n"
+        "#   J <n>      hardware RNG live check: n random bytes as hex, default 16, max 64 (board-only)\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -911,6 +913,39 @@ void cads_explorer_run(void) {
                 cads_probe_put_uint(cads_hal_wifi_uart_dropped());
                 cads_probe_puts(" overruns=");
                 cads_probe_put_uint(cads_hal_wifi_uart_overruns());
+                cads_probe_puts("\r\n");
+                break;
+            }
+            case 'J': {
+                /* Hardware RNG live check (RM0090 ch. 24, cads_hal_rng_bytes())
+                 * - added 2026-08-28 alongside modules/security's AEAD wrapper,
+                 * which needs a genuine entropy source for its per-message
+                 * nonce. Prints raw bytes as hex so a human (or a script) can
+                 * eyeball "does this look like real noise" - not a statistical
+                 * randomness test, just proof the driver returns success and
+                 * produces *something* off real silicon, which a host build
+                 * can never exercise (there is no RNG peripheral in the
+                 * simulator - this command does not exist there). */
+                uint32_t count = cads_parse_uint(argument);
+                if(!count) count = 16u;
+                if(count > 64u) count = 64u;
+
+                uint8_t bytes[64];
+                bool ok = cads_hal_rng_bytes(bytes, count);
+                if(!ok) {
+                    cads_probe_puts("# rng: FAILED (hardware fault or continuous-test failure - "
+                                     "see cads_hal_rng_bytes()'s own comment)\r\n");
+                    break;
+                }
+                cads_probe_puts("# rng: ");
+                cads_probe_put_uint(count);
+                cads_probe_puts(" bytes: ");
+                for(uint32_t i = 0; i < count; i++) {
+                    char hex[3];
+                    cads_fmt_hex(hex, sizeof(hex), bytes[i], 2u, false);
+                    cads_probe_puts(hex);
+                    cads_probe_puts(" ");
+                }
                 cads_probe_puts("\r\n");
                 break;
             }

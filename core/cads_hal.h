@@ -336,6 +336,32 @@ void cads_hal_watchdog_init(uint32_t timeout_ms);
 /** Kicks the watchdog. See the tick-hook note above for who calls this. */
 void cads_hal_watchdog_feed(void);
 
+/* --- hardware random number generator -------------------------------------
+ *
+ * STM32F429's RNG peripheral (RM0090 ch. 24) - a real analog entropy source
+ * (ring oscillators XORed together), not a PRNG. Added 2026-08-28 as the
+ * nonce source for modules/security's AEAD link (see that module's own
+ * header): a fixed pre-shared key with an XChaCha20-Poly1305 24-byte random
+ * nonce per message needs a genuine entropy source, not `rand()`.
+ *
+ * cads_hal_rng_bytes() implements RM0090's own documented procedure
+ * end to end, not a simplified version of it:
+ *   - the FIPS 140-2 continuous-RNG self-test the manual itself calls for
+ *     (discard the first word after enabling; every later word must differ
+ *     from the one before it, or the call fails - catches a stuck-at fault
+ *     in the analog seed, which is exactly what that test exists to catch);
+ *   - SECS/CECS live error checking on every word, not just once at start
+ *     (a seed error can begin mid-stream);
+ *   - a bounded retry count per word (matching hal_clock.c's own bounded-spin
+ *     convention for hardware polling - RM0090 6.3.1/20.3.2 style), so a
+ *     genuine hardware RNG fault reports failure instead of hanging the
+ *     caller forever.
+ * Returns false (and leaves `out` in whatever partial state it was in when
+ * the failure happened) on any error - the caller MUST treat that as "no
+ * nonce available" and refuse to encrypt, never fall back to a weaker
+ * source silently. */
+bool cads_hal_rng_bytes(uint8_t* out, size_t len);
+
 #ifdef __cplusplus
 }
 #endif

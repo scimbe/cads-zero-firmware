@@ -25,6 +25,7 @@ add_library(cads_hal_itsboard STATIC
     hal/hal_pwm.c
     hal/hal_sample_timer.c
     hal/hal_watchdog.c
+    hal/hal_rng.c
     hal/hal_init.c
 )
 
