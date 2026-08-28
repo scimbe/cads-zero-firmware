@@ -58,7 +58,7 @@ AlignTrailingComments: true
 BinPackArguments: true
 BinPackParameters: true
 
-IndentCaseLabels: false
+IndentCaseLabels: true
 IndentPPDirectives: None
 
 SortIncludes: false
