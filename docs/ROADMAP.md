@@ -2059,6 +2059,87 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (Bluetooth in the touchscreen menu, headless key injection, and
+  a night-long "touch stopped working" mystery finally explained) — Long,
+  eventful continuation of the same day's Marauder work. In rough order:
+
+  **The recurring "touch/buttons dead" panic, explained.** Multiple times
+  this session the user reported the panel frozen and unresponsive. First
+  suspected as a real hang; live GDB attaches (`st-util --no-reset`) each
+  time found the CPU perfectly healthy - idling normally, zero fault
+  registers set, scheduler running fine. The actual cause: `apps/bringup/
+  explorer_app_demo.c`'s interactive session (`d` with `seconds==0`, what
+  `boot.autostart` uses to hand the panel to the GUI at boot) ends and
+  drops back to the bare console prompt on **any** console byte - and
+  nearly every diagnostic command sent this whole session
+  (`board_cmd.py`'s `s`/`k`/`i`/`~`/`E`, all of it) is exactly such a byte.
+  The panel wasn't crashed; the loop that ticks `cads_gui_tick()` had
+  simply exited and nothing was driving the screen any more, silently,
+  every single time. `docs/reference/explorer-console.md` now says this
+  explicitly on the `d` row - this should never cost debugging time again.
+
+  **A real, separate self-inflicted mistake, owned rather than glossed
+  over:** mid-investigation, an `arm-none-eabi-gdb --batch` session was
+  torn down with `kill -9` instead of a clean detach, desyncing the
+  ST-Link's USB protocol state (`Failed to enter SWD mode`, chipid
+  `0x000`) - the documented issue #57 wedge pattern, this time self-caused
+  rather than hardware-caused. Fixed the same way: physical USB replug,
+  then (once, when a *second* wedge didn't fully clear on replug alone)
+  `--connect-under-reset` to recover without another physical cycle.
+
+  **Bluetooth touchscreen menu: built, made dynamic, found unreliable live,
+  reverted to always-shown.** Four new Marauder tools (Sniff BT, BLE Spam,
+  Sniff PMKID, Sniff SAE, Clear APs - see the same-day Marauder log entry
+  below for the earlier two). First shipped with the two Bluetooth items
+  conditionally hidden until a `stopscan` liveness probe got a reply within
+  2 s (no electrical presence line exists on CN8's TX/RX pair, so this was
+  the only signal available). Real hardware testing found the timing
+  unreliable in practice - items appeared, then vanished again on a later
+  visit with the ESP32 still demonstrably connected and answering. Reverted
+  same session: Bluetooth tools now behave exactly like the WiFi ones
+  always have, always in the menu, no special-casing. A working, honestly
+  reported "this idea didn't hold up live" beats a nicer-sounding design
+  that flickers.
+
+  **A real BLE formatting bug, found and fixed via a live webcam capture.**
+  Marauder's `sniffbt` output has no real newline between devices
+  (`Serial.print()`, not `println()`), so a scan burst arrived as one run
+  and CADS_MARAUDER_LINE_LEN's hard wrap cut mid-MAC-address. Fixed with a
+  new, generic "split marker" mechanism in `cads_marauder_reader.h` (not
+  Bluetooth-specific in the reader itself - just configurable per tool);
+  confirmed via two webcam photos, wrapped-mid-address before, clean
+  one-device-per-row after (one row legibly showing "Galaxy Watch6
+  (SEEP)"). A second, superficially similar case - a real AP whose ESSID
+  happens to be its own MAC address, long enough to split across two
+  display rows - was investigated, root-caused via the same live-photo
+  method, and deliberately left as-is: the reader's own header comment
+  already documents accepting this exact class of degradation to keep
+  `CADS_MARAUDER_LINE_LEN` small, so "fixing" it would mean re-opening a
+  tradeoff already made on purpose, not fixing a defect.
+
+  **Headless GUI key injection - the tool that made the rest of tonight's
+  verification possible at all.** There was no way to touch the panel from
+  a Mac terminal, and `d`'s own exit-on-any-byte rule (above) meant a typed
+  command couldn't double as a keypress either. `apps/bringup/
+  explorer_app_demo.c` now reserves one byte per logical key (`>=0x80`,
+  never colliding with typed ASCII or CR/LF); receiving one calls
+  `cads_gui_input()` directly - the same function a real button/touch event
+  reaches - and the interactive session keeps running instead of exiting.
+  `scripts/board_key.py <key> [<key>...]` sends these bytes. Verified live:
+  navigated Desktop → Menu → Marauder → Sniff BT purely via injected keys,
+  confirmed via webcam at each step, then used the same tool to sweep
+  Settings/About/GPIO/Network/Active Net Tools/Files/Arcade for a
+  representative check of the rest of the firmware's GUI - all found
+  functioning correctly, nothing else broken.
+
+  **Tooling lesson, worth remembering:** the webcam used for these captures
+  (`ffmpeg -f avfoundation`) does not have a stable device index across
+  invocations on this Mac - it silently shifted between calls, several
+  times producing photos of the wrong (virtual/placeholder) camera instead
+  of the one pointed at the board. The fix: look the device up by name
+  (`ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "HD Pro
+  Webcam C920"`) fresh before every single capture, never cache the index.
+
 - 2026-08-28 (Marauder recon over serial, no touchscreen needed - and a
   real Marauder-firmware gotcha found live) — User was away from the board
   ("nicht vor Ort") and asked whether WiFi recon (weak-password/vulnerability
