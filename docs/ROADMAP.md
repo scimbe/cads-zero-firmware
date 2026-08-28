@@ -2142,6 +2142,29 @@ _None outstanding._
   predates this iteration, left as a follow-up rather than scope-creeping
   into the profile system while mid-feature.
 
+  **STM32-side hardware check (2026-08-28, same session, ST-Link
+  connected, no ESP32 present).** Also fixed a real bug found the same
+  way as the two above - by actually running the tool: `scripts/
+  swd_lock.py` had NO SHEBANG LINE (docstring was line 1), so direct
+  invocation (`scripts/swd_lock.py st-flash ...`, the exact usage CLAUDE.md
+  itself documents) fell through to `/bin/sh`, which choked on the first
+  Python syntax it hit - added `#!/usr/bin/env python3`. With that fixed:
+  flashed this iteration's full build (join + PCAP relay + Bluetooth-build
+  changes, none of which touch GPIO/Ethernet/boot code) to the real board,
+  reset twice independently, and ran the `d 15` app-tree live smoke test.
+  Forensic ring held steady at 6 records across all three checks - no new
+  entries - and the explorer prompt came back clean each time. The ring's
+  existing 6 records (2 with sane low-uptime timestamps, 4 with the
+  garbled text/absurd-timestamp signature CLAUDE.md already documents for
+  stale CCM content) symbolize to `cads_fault_dump` itself and to
+  `cads_hal_eth_mac_init`/`cads_gpio_init_alternate` - boot-time
+  Ethernet/GPIO code this iteration never touched - confirming they
+  predate today's changes rather than being caused by them. This confirms
+  the STM32 side boots clean and runs the app tree live without fault; it
+  does NOT confirm the actual join, the actual PCAP-to-Wireshark relay, or
+  actual Bluetooth CLI commands - those need the ESP32 connected (ideally
+  with Wireshark running on the Mac for the PCAP path) and are still open.
+
 - 2026-08-28 (Marauder co-processor: wired, flashed, verified) — **The WiFi
   co-processor is real hardware now, not a design doc.** An ESP32-WROOM-32
   DevKit is wired to CN8 pins 8/9 (PC6/PC7, USART6) - confirmed against the

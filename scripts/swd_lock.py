@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Serialize every SWD (ST-Link debug-port) operation on this host.
 
 Why this exists (issue #57, 2026-08-27): two clients talking to one ST-Link
