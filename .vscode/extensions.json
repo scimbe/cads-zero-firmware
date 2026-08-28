@@ -6,6 +6,25 @@
     "ms-vscode.cmake-tools",
     "ms-vscode.cpptools",
     "marus25.cortex-debug",
+    // Standalone successor to cortex-debug's own bundled SVD/peripheral
+    // view (literally extracted out of cortex-debug by the same project,
+    // see docs/how-to/vscode-setup.md#5-debug-and-inspect-real-registers) -
+    // 1.4M+ installs, actively maintained. Reads the SAME "svdFile" already
+    // set in launch.json with zero extra config.
+    "mcu-debug.peripheral-viewer",
     "ms-python.python"
+  ],
+  // llvm-vs-code-extensions.vscode-clangd isn't wrong to have installed (it's
+  // what ITS-BRD-VSC's own setup recommends, in the same VS Code instance) -
+  // but with no .clangd/compile_commands.json symlink here, it runs blind on
+  // this project: false "file not found" on real headers, plus its own
+  // bundled clang-tidy checks (not this repo's curated .clang-tidy) firing
+  // as spurious warnings. cpptools (via CMake Tools' configurationProvider,
+  // already wired above) is this project's actual IntelliSense engine - see
+  // docs/how-to/vscode-setup.md's troubleshooting section. Disable clangd
+  // for THIS workspace only (Extensions panel -> clangd -> gear icon ->
+  // "Disable (Workspace)") rather than uninstalling it globally.
+  "unwantedRecommendations": [
+    "llvm-vs-code-extensions.vscode-clangd"
   ]
 }

@@ -462,6 +462,22 @@ if(CADS_TARGET STREQUAL "itsboard")
         COMMAND ${CMAKE_SIZE} $<TARGET_FILE:cads-zero.elf>
         COMMENT "Producing cads-zero.bin / .hex and reporting size"
     )
+
+    # A real, buildable CMake target - not a script only reachable through a
+    # separate task menu. This is what lets CMake Tools' own status bar/kit
+    # picker/target sidebar drive flashing directly (build this target the
+    # same way you'd build any other), rather than flashing only being
+    # reachable through VS Code's Command Palette or a custom task - see
+    # docs/how-to/vscode-setup.md's own note on why that distinction matters.
+    # Delegates to scripts/flash.sh itself rather than reimplementing its
+    # SAFETY.md-documented constraints (sector-erase only, no mass erase,
+    # 0x08000000 only) a second time in CMake.
+    add_custom_target(flash
+        COMMAND ${CADS_ROOT}/scripts/flash.sh
+        DEPENDS cads-zero.elf
+        COMMENT "Flashing cads-zero.bin over ST-Link (scripts/flash.sh)"
+        USES_TERMINAL
+    )
 else()
     add_subdirectory(targets/sim)
 

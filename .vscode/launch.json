@@ -9,20 +9,29 @@
       "executable": "${workspaceFolder}/build/itsboard/cads-zero.elf",
       "servertype": "stutil",
       "device": "STM32F429ZI",
+      // Vendored from STMicroelectronics' own CMSIS pack (Apache-2.0, same
+      // licence as the cmsis_device_f4 submodule already in lib/) rather than
+      // relying on a path into some other extension's own cache, which would
+      // only exist on a machine that happened to install that extension
+      // first. Turns the debugger's REGISTERS view from raw r0-r15 into a
+      // real named-peripheral tree (RCC, GPIOA, USART3, ...) - this is what
+      // "look at the registers" means for embedded work in practice, not
+      // just the core registers.
+      "svdFile": "${workspaceFolder}/targets/itsboard/STM32F429.svd",
       "runToEntryPoint": "main",
-      "preLaunchTask": "Build: ITSboard firmware"
+      "preLaunchTask": "Build: ITSboard firmware",
+      // Resolves via CADS_ARM_TOOLCHAIN_BIN when it's set (scripts/cads_env.sh's
+      // own variable - see docs/how-to/vscode-setup.md#1-get-a-toolchain-on-path
+      // for making this permanent in your shell so any `code .` launch picks it
+      // up); falls back to plain PATH otherwise (true if you installed via
+      // Homebrew/apt). If VS Code was launched from the Dock/Spotlight rather
+      // than a terminal, it inherits neither - launch it with `code .` from a
+      // terminal that has the toolchain set up instead.
+      "armToolchainPath": "${env:CADS_ARM_TOOLCHAIN_BIN}"
       // No serialNumber set: st-util picks whichever ST-Link is attached,
       // which is fine with one board plugged in. If you ever have two
       // ST-Links on the same Mac at once, add "serialNumber": "<id>" here
       // (find it with `st-info --probe`).
-      //
-      // No armToolchainPath set either: this assumes arm-none-eabi-gdb is
-      // on PATH (true if you installed the toolchain via Homebrew/apt - see
-      // docs/how-to/vscode-setup.md). If you're using the vcpkg-artifacts
-      // toolchain instead, add your own
-      // "armToolchainPath": "${env:CADS_ARM_TOOLCHAIN_BIN}" override in a
-      // local (gitignored) settings/launch override rather than editing
-      // this checked-in file.
     },
     {
       "name": "Attach to ITSboard (already running)",
@@ -31,7 +40,8 @@
       "cwd": "${workspaceFolder}",
       "executable": "${workspaceFolder}/build/itsboard/cads-zero.elf",
       "servertype": "stutil",
-      "device": "STM32F429ZI"
+      "device": "STM32F429ZI",
+      "svdFile": "${workspaceFolder}/targets/itsboard/STM32F429.svd"
       // No reset, no fresh flash - for inspecting a board mid-run or mid-
       // fault exactly as it is (docs/how-to/debug.md's own "attach, don't
       // reset" technique for reading a halted fault handler's evidence).
