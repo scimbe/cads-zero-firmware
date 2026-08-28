@@ -1,0 +1,31 @@
+{
+  // CMake Tools: drive everything from CMakePresets.json (the "itsboard" and
+  // "host" presets at the repo root) rather than its own separate "kits"
+  // system - one source of truth for how each target is configured.
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+
+  // CMake Tools feeds the active preset's compile_commands.json to cpptools
+  // automatically once both extensions are installed - IntelliSense then
+  // matches whichever preset ("itsboard" or "host") is currently selected in
+  // the status bar, includes and all. Nothing to configure here by hand.
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+
+  // Keep search results and the file explorer focused on source, not the
+  // two build trees this project produces (build/itsboard, build/host).
+  "search.exclude": {
+    "build/**": true
+  },
+  "files.exclude": {
+    "**/*.o": true,
+    "**/*.obj": true
+  },
+
+  // The vendored submodules under lib/ (FreeRTOS, lwIP, littlefs, CMSIS,
+  // Unity) are read, not edited, here - keep them out of full-text search
+  // results so a search for a CaDS Zero symbol doesn't surface a same-named
+  // one from a dependency.
+  "search.useIgnoreFiles": true,
+
+  "python.analysis.typeCheckingMode": "basic"
+}

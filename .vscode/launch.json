@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug on ITSboard (st-util)",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/itsboard/cads-zero.elf",
+      "servertype": "stutil",
+      "device": "STM32F429ZI",
+      "runToEntryPoint": "main",
+      "preLaunchTask": "Build: ITSboard firmware"
+      // No serialNumber set: st-util picks whichever ST-Link is attached,
+      // which is fine with one board plugged in. If you ever have two
+      // ST-Links on the same Mac at once, add "serialNumber": "<id>" here
+      // (find it with `st-info --probe`).
+      //
+      // No armToolchainPath set either: this assumes arm-none-eabi-gdb is
+      // on PATH (true if you installed the toolchain via Homebrew/apt - see
+      // docs/how-to/vscode-setup.md). If you're using the vcpkg-artifacts
+      // toolchain instead, add your own
+      // "armToolchainPath": "${env:CADS_ARM_TOOLCHAIN_BIN}" override in a
+      // local (gitignored) settings/launch override rather than editing
+      // this checked-in file.
+    },
+    {
+      "name": "Attach to ITSboard (already running)",
+      "type": "cortex-debug",
+      "request": "attach",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/itsboard/cads-zero.elf",
+      "servertype": "stutil",
+      "device": "STM32F429ZI"
+      // No reset, no fresh flash - for inspecting a board mid-run or mid-
+      // fault exactly as it is (docs/how-to/debug.md's own "attach, don't
+      // reset" technique for reading a halted fault handler's evidence).
+    }
+  ]
+}

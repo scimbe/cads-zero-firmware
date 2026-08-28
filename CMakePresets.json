@@ -1,0 +1,39 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "itsboard",
+      "displayName": "ITSboard (STM32F429ZI)",
+      "description": "Real firmware, arm-none-eabi-gcc via cmake/arm-none-eabi-gcc.cmake. Needs the toolchain resolved via CADS_ARM_TOOLCHAIN_BIN or PATH - see docs/how-to/vscode-setup.md.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/itsboard",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/arm-none-eabi-gcc.cmake",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "host",
+      "displayName": "Host (sim + unit tests)",
+      "description": "The SDL2 simulator and the full unit/golden-image suite, built with your system's native compiler - no ARM toolchain needed for this one.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "itsboard", "configurePreset": "itsboard" },
+    { "name": "host", "configurePreset": "host" }
+  ],
+  "testPresets": [
+    {
+      "name": "host",
+      "configurePreset": "host",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    }
+  ]
+}

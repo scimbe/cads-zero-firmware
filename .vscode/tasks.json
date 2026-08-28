@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build: ITSboard firmware",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build.sh",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Build: Host (sim + unit tests)",
+      "type": "shell",
+      "command": "cmake --preset host && cmake --build --preset host",
+      "group": "build",
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Test: Host unit tests",
+      "type": "shell",
+      "command": "ctest --preset host",
+      "group": { "kind": "test", "isDefault": true },
+      "dependsOn": ["Build: Host (sim + unit tests)"]
+    },
+    {
+      "label": "Flash: ITSboard over ST-Link",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/flash.sh",
+      "group": "none",
+      "dependsOn": ["Build: ITSboard firmware"]
+    },
+    {
+      "label": "Test: Hardware gate (board_test.py)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/board_test.py",
+      "detail": "Builds, flashes, resets, and reads the on-target TAP self-test back over the ST-Link's serial port. Needs a real ITSboard connected.",
+      "group": "none"
+    },
+    {
+      "label": "Build: ESP32Marauder co-processor",
+      "type": "shell",
+      "command": "${workspaceFolder}/tools/marauder-build/build_and_flash.sh --build-only",
+      "detail": "Clones/patches/builds ESP32Marauder for the wired co-processor - see docs/reference/marauder-coprocessor.md. Drop --build-only to also flash (needs the ESP32 connected and in bootloader mode).",
+      "group": "none"
+    }
+  ]
+}

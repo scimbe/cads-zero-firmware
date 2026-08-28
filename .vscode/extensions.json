@@ -1,0 +1,11 @@
+{
+  // Every one of these is free (no paid licence, no account, no trial). See
+  // docs/how-to/vscode-setup.md for what each one is actually for and why
+  // it's the one recommended here over alternatives.
+  "recommendations": [
+    "ms-vscode.cmake-tools",
+    "ms-vscode.cpptools",
+    "marus25.cortex-debug",
+    "ms-python.python"
+  ]
+}

@@ -13,3 +13,7 @@ compile_commands.json
 __pycache__/
 *.pyc
 .venv/
+
+# CMake's own convention for personal, un-shared preset overrides (a local
+# toolchain path, say) layered on top of the checked-in CMakePresets.json.
+CMakeUserPresets.json

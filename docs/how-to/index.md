@@ -2,6 +2,9 @@
 
 Task-oriented. These assume you know what you are doing and want the commands.
 
+- **[Set up VS Code](vscode-setup.md)** — free extensions, build/flash/debug
+  without leaving the editor, and how this setup differs from HAW Hamburg's
+  other ITSboard example.
 - **[Build the firmware](build.md)**
 - **[Flash the board](flash.md)**
 - **[Run the hardware gate](board-test.md)**
