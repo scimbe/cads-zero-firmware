@@ -6,6 +6,6 @@
 #ifndef CADS_VERSION_H
 #define CADS_VERSION_H
 
-#define CADS_VERSION "0.0.1"
+#define CADS_VERSION "0.1.0"
 
 #endif /* CADS_VERSION_H */
