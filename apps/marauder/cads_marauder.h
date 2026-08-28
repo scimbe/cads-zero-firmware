@@ -26,6 +26,21 @@
  *   way apps/active's M9 suite already requires for its own transmit-based
  *   tools.
  *
+ *   CONFIG (Select Target) - a third shape, neither of the above. Found
+ *   2026-08-28 reading Marauder's own CommandLine.cpp, not assumed:
+ *   `attack -t deauth` (and the AP-list beacon spam / probe flood variants)
+ *   silently refuse to start at all - "You don't have any targets selected.
+ *   Use select" - unless `wifi_scan_obj.filterActive()` is true, which only
+ *   ever becomes true after a `select -a <index>` marks something in
+ *   Marauder's own scanned access_points list. Every ACTIVE tool this
+ *   module ever sent before this one existed was consequently a silent
+ *   no-op on real hardware. Select Target is a numeric field (Up/Down
+ *   adjusts, Ok sends `select -a <N>`) rather than a target-picker list -
+ *   a full scrollable list of scanned APs would need its own array of
+ *   parsed entries, and this firmware's RAM margin (a few hundred bytes)
+ *   does not forgive that; the index to dial in comes from reading it off
+ *   "List APs"'s own already-working output first.
+ *
  * The wire this bridges (CN8 pins 8/9, USART6, 115200 baud - see
  * docs/reference/marauder-coprocessor.md) carries Marauder's plaintext CLI:
  * a command line out, one or more response lines back. This module owns
@@ -82,6 +97,7 @@
 #define CADS_MARAUDER_TOOL_SNIFFPMKID  0x0C0Cu /**< passive - WPA2 PMKID/handshake capture */
 #define CADS_MARAUDER_TOOL_SNIFFSAE    0x0C0Du /**< passive - WPA3 SAE handshake capture   */
 #define CADS_MARAUDER_TOOL_CLEARAPS    0x0C0Eu /**< passive - wipes the discovered AP list */
+#define CADS_MARAUDER_TOOL_SELECT      0x0C0Fu /**< own CONFIG mode, not OUTPUT/CONFIRM - see cads_marauder.c */
 
 /** Register the suite's two views. Call once from cads_menu_app_init()'s own
  *  init chain, the same way every other optional app does. No-op when

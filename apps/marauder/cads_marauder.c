@@ -92,6 +92,10 @@ static const cads_marauder_tool_meta_t cads_marauder_tools[] = {
     {"Sniff PMKID",  "sniffpmkid",          "WPA2 handshake, passive",    false, NULL},
     {"Sniff SAE",    "sniffsae",            "WPA3 handshake, passive",    false, NULL},
     {"Clear APs",    "clearlist -a",        "wipes the discovered list",  false, NULL},
+    /* cmd is unused for this one - CADS_MARAUDER_MODE_SELECT builds
+     * "select -a <N>" itself from s_session.select_target_index rather than
+     * sending a fixed string on entry, the way every other tool does. */
+    {"Select Target", NULL,                 "pick index for Deauth/etc.", false, NULL},
 };
 #define CADS_MARAUDER_TOOL_COUNT \
     (sizeof(cads_marauder_tools) / sizeof(cads_marauder_tools[0]))
@@ -102,6 +106,7 @@ typedef enum {
     CADS_MARAUDER_MODE_OUTPUT = 0, /* passive tool ran (or list/help) - just show lines */
     CADS_MARAUDER_MODE_CONFIRM,    /* active tool: warning + Yes/No before it starts */
     CADS_MARAUDER_MODE_RUN,        /* active tool running - Back stops it (sends stopscan) */
+    CADS_MARAUDER_MODE_SELECT,     /* Select Target: numeric field, Up/Down/Ok - see cads_marauder.h */
 } cads_marauder_mode_t;
 
 typedef struct {
@@ -111,6 +116,9 @@ typedef struct {
     bool link_active;         /* true briefly around a send/receive burst - see below */
     uint32_t link_active_until_ms;
     cads_marauder_reader_t reader;
+    uint32_t select_target_index; /* CADS_MARAUDER_MODE_SELECT's own state - deliberately NOT
+                                    * reset alongside the reader on every tool switch, so dialing
+                                    * in an index once survives navigating away and back */
 } cads_marauder_session_t;
 
 static cads_marauder_session_t s_session;
@@ -305,6 +313,7 @@ static const cads_menu_item_t cads_marauder_items[] = {
     {"Sniff PMKID", "passive", CADS_MARAUDER_TOOL_SNIFFPMKID},
     {"Sniff SAE",   "passive", CADS_MARAUDER_TOOL_SNIFFSAE},
     {"Clear APs",   "passive", CADS_MARAUDER_TOOL_CLEARAPS},
+    {"Select Target", "config", CADS_MARAUDER_TOOL_SELECT},
 };
 
 static void cads_marauder_select(const cads_menu_item_t* item, size_t index, void* context) {
@@ -329,7 +338,11 @@ static void cads_marauder_select(const cads_menu_item_t* item, size_t index, voi
      * cads_marauder_reader.h's own note on why some Marauder output needs
      * this and most doesn't. */
     cads_marauder_reader_set_split_marker(&s_session.reader, meta->split_marker);
-    if(meta->active) {
+    if(s_session.selected_tool == CADS_MARAUDER_TOOL_SELECT) {
+        /* Deliberately does not touch s_session.select_target_index - see
+         * that field's own comment on why it survives a tool switch. */
+        s_session.mode = CADS_MARAUDER_MODE_SELECT;
+    } else if(meta->active) {
         s_session.mode = CADS_MARAUDER_MODE_CONFIRM;
         s_session.confirm_yes = false;
     } else {
@@ -410,6 +423,19 @@ static void cads_marauder_draw_confirm(cads_rect_t area) {
     cads_marauder_draw_text(area, 8, "Up/Down choose, Ok=go", CadsColorGray);
 }
 
+static void cads_marauder_draw_select(cads_rect_t area) {
+    char line[32];
+    char num[12];
+    cads_str_copy(line, sizeof(line), "Index: ");
+    cads_fmt_uint(num, sizeof(num), s_session.select_target_index);
+    cads_str_append(line, sizeof(line), num);
+    cads_marauder_draw_text(area, 1, line, CadsColorWhite);
+    cads_marauder_draw_text(area, 3, "Read the index off \"List", CadsColorGray);
+    cads_marauder_draw_text(area, 4, "APs\" first, then dial it", CadsColorGray);
+    cads_marauder_draw_text(area, 5, "in here.", CadsColorGray);
+    cads_marauder_draw_text(area, 7, "Up/Down adjust, Ok=select", CadsColorGray);
+}
+
 static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
     (void)context;
     cads_canvas_fill_rect(area.x, area.y, area.width, area.height, CadsColorBackground);
@@ -421,6 +447,7 @@ static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
         case CADS_MARAUDER_MODE_OUTPUT: cads_marauder_draw_output(area); break;
         case CADS_MARAUDER_MODE_CONFIRM: cads_marauder_draw_confirm(area); break;
         case CADS_MARAUDER_MODE_RUN: cads_marauder_draw_output(area); break;
+        case CADS_MARAUDER_MODE_SELECT: cads_marauder_draw_select(area); break;
     }
     if(s_session.selected_tool == CADS_MARAUDER_TOOL_PCAP) cads_marauder_draw_pcap_status(area);
 }
@@ -454,6 +481,37 @@ static bool cads_marauder_run_input(const cads_input_event_t* event) {
     return false;
 }
 
+static bool cads_marauder_select_input(const cads_input_event_t* event) {
+    switch(event->key) {
+        case CadsKeyUp: s_session.select_target_index++; break;
+        case CadsKeyDown:
+            if(s_session.select_target_index > 0u) s_session.select_target_index--;
+            break;
+        case CadsKeyOk: {
+            /* "select -a <N>" - marks index N (from a prior scanall, read off
+             * "List APs") as selected in Marauder's own access_points list.
+             * Without this, Deauth/AP-list Beacon Spam/Probe Flood all
+             * silently refuse to start - see cads_marauder.h's own "CONFIG"
+             * note. An out-of-range N is Marauder's own problem to report
+             * ("Index not in range") - shown by switching to OUTPUT so the
+             * reply is visible, same as every other command's response. */
+            char cmd[24];
+            char num[12];
+            cads_str_copy(cmd, sizeof(cmd), "select -a ");
+            cads_fmt_uint(num, sizeof(num), s_session.select_target_index);
+            cads_str_append(cmd, sizeof(cmd), num);
+            cads_marauder_reader_reset(&s_session.reader);
+            cads_marauder_send(cmd, cads_hal_ticks_ms());
+            s_session.mode = CADS_MARAUDER_MODE_OUTPUT;
+            break;
+        }
+        case CadsKeyBack: return false;
+        default: break;
+    }
+    cads_view_dirty(&s_tool_view);
+    return true;
+}
+
 static bool cads_marauder_tool_input(const cads_input_event_t* event, void* context) {
     (void)context;
     if(event->type != CadsInputPress) return false;
@@ -461,6 +519,7 @@ static bool cads_marauder_tool_input(const cads_input_event_t* event, void* cont
         case CADS_MARAUDER_MODE_OUTPUT: return false; /* only Back, unconsumed, pops */
         case CADS_MARAUDER_MODE_CONFIRM: return cads_marauder_confirm_input(event);
         case CADS_MARAUDER_MODE_RUN: return cads_marauder_run_input(event);
+        case CADS_MARAUDER_MODE_SELECT: return cads_marauder_select_input(event);
     }
     return false;
 }
