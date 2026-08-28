@@ -6,10 +6,15 @@
  *
  *   cads_fs <image> get <fs-path> [out-file]   # read a file (stdout if no out)
  *   cads_fs <image> put <fs-path> <in-file>    # write/replace a file
+ *   cads_fs <image> format                     # write a fresh, empty littlefs image
  *
  * Every I/O result is checked: a short read/write or a failed close is an
  * error, not a silent truncation - the image can be written back to the
  * board, so reporting a partial transfer as success risks real data loss.
+ *
+ * `format` does not load an existing image first (there may not be a valid
+ * one to load - that is exactly when this is needed) - it builds a fresh
+ * one from the flash-sim's own blank backing store and writes only that.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -133,12 +138,41 @@ static int do_put(const char* fs_path, const char* in_path, const char* image) {
     return 0;
 }
 
+/* Produces a fresh, valid, empty littlefs image from scratch - no existing
+ * image to load, since the whole point is recovering from one that either
+ * does not exist yet or cannot be trusted (2026-08-28: a board round-trip
+ * left the on-device volume in a state the firmware crashed reading, even
+ * though this same host tool could still read a file out of it cleanly -
+ * "the host tool can read it" is not proof the on-device driver agrees).
+ * cads_storage_format() erases every block it touches before writing
+ * metadata (littlefs's own lfs_format()), so the flash-sim backing array's
+ * starting content (cads_flash_host.c's static array, zero-filled BSS, not
+ * the 0xFF a real erased chip reads as) does not matter. */
+static int do_format(const char* image) {
+    if(cads_storage_format() != CADS_STORAGE_OK) {
+        fprintf(stderr, "format failed\n");
+        return 1;
+    }
+    if(cads_flash_host_save_image(image) != 0) {
+        fprintf(stderr, "save image %s failed\n", image);
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    if(argc < 2) {
+        fprintf(stderr, "usage: %s <image> format\n", argv[0]);
+        fprintf(stderr, "       %s <image> get|put <fs-path> [file]\n", argv[0]);
+        return 2;
+    }
+    const char* image = argv[1];
+    if(argc >= 3 && strcmp(argv[2], "format") == 0) return do_format(image);
+
     if(argc < 4) {
         fprintf(stderr, "usage: %s <image> get|put <fs-path> [file]\n", argv[0]);
         return 2;
     }
-    const char* image = argv[1];
     const char* cmd = argv[2];
     const char* fs_path = argv[3];
     if(cads_flash_host_load_image(image) != 0) {
