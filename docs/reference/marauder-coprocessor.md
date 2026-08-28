@@ -105,7 +105,7 @@ channel, AP-to-station associations) from the real RF environment, and
 `stopscan` halts cleanly. WiFi capture/injection is genuinely working, not
 just booting.
 
-## Bluetooth (2026-08-28: fixed, flashed, hardware-verified - no touchscreen menu yet)
+## Bluetooth (2026-08-28: fixed, flashed, hardware-verified, in the touchscreen menu)
 
 Bluetooth was disabled in earlier builds after enabling `HAS_BT` threw
 roughly 15 NimBLE compile errors, on the assumption that Marauder's BLE
@@ -139,14 +139,29 @@ verification pass, then reverted - see that command's own comment in
 recognisable device name (`TUYA_...`) came back, proving the BLE stack
 itself, not just the build, actually works.
 
-**Not yet in `apps/marauder`'s touchscreen menu.** `apps/marauder/cads_marauder.c`'s
-tool table (`cads_marauder_tools[]`) only has WiFi entries today - Scan
-APs, Stop Scan, List APs, Deauth, Evil Portal, Beacon Spam, Probe Flood,
-Sniff (PCAP). Adding Bluetooth tools (`sniffbt` as a passive entry;
-`blespam` would need to go in as an ACTIVE one, behind the same mandatory
-confirm dialog every other transmit-based tool already uses) is a real,
-separate follow-up - not started, tracked as open work, not something this
-verification pass silently included.
+**Now in `apps/marauder`'s touchscreen menu, but hidden until the ESP32 is
+actually seen talking.** Two new tools: "Sniff BT" (passive, bare `sniffbt`
+- every nearby BLE device, live, same shape as "Scan APs") and "BLE Spam"
+(ACTIVE, `blespam -t all` - behind the same mandatory confirm dialog every
+other transmit-based tool already uses, no exception for Bluetooth).
+
+Unlike the WiFi tools, these two are conditionally shown. There is no
+electrical presence-detect line on CN8 (just TX/RX), so "is the
+co-processor there" is a software liveness snapshot, re-taken every time
+the Marauder selector is (re-)entered: it sends `stopscan` (always replies,
+regardless of scan state - see this doc's own `wifi_scan_obj.scanning()`
+gotcha below) and starts a 2 s timer; any reply in that window means the
+Bluetooth items get spliced into the menu (`cads_menu_set_items()`), no
+reply means they get removed. This is a snapshot, not a continuous poll -
+opening the menu with no ESP32 connected shows only the 8 WiFi tools;
+opening it once the ESP32 is wired up and answering shows all 10. The same
+`stopscan` probe doubles as a fix for the gotcha below: every time you open
+this menu, any scan left running from a previous session gets cleared,
+whether or not you ever hit that gotcha yourself.
+
+See `apps/marauder/cads_marauder.h`'s own "BLUETOOTH TOOLS ARE HIDDEN
+UNTIL..." comment and `cads_marauder_refresh_menu_items()` in
+`cads_marauder.c` for the implementation.
 
 ## The CLI itself
 
@@ -158,3 +173,34 @@ and, more reliably, directly in the pinned commit's
 `esp32_marauder/CommandLine.h` - the wiki page's detailed argument syntax
 failed to render via automated fetch; the header's `HELP_*` string constants
 are the authoritative, always-current source.
+
+### Gotcha: a scan left running silently swallows every later scan/attack command
+
+Found live 2026-08-28 while building the headless recon path
+(`board_cmd.py ~`, see `apps/bringup/explorer.c`): sending `scanall` (or any
+other scan/attack command) sometimes returns nothing but its own echo and
+the `> ` prompt - no "Scanning for..." line, no data, no error either.
+Traced to the pinned commit's `CommandLine.cpp`, not guessed:
+
+```cpp
+if (!wifi_scan_obj.scanning()) {
+    // the entire WiFi/BT scan/attack command family lives inside this if
+}
+```
+
+Every scan/attack command (`scanall`, `sniffbt`, `attack -t ...`,
+`blespam`, ...) sits inside this one guard. If Marauder already believes a
+scan is running - from this session, an earlier touchscreen session, or a
+scan that got interrupted mid-flight - every later command in that whole
+family is silently dropped, with zero indication why. `stopscan -f` clears
+it unconditionally (its own handler sits outside the guard, so it always
+works) and a fresh command then goes through normally.
+
+This is a real Marauder-firmware property, not a bug anywhere in this
+repo's own code, and it affects the touchscreen tool view exactly the same
+way the raw serial link showed it: press "Scan APs", nothing happens, no
+error anywhere to look at. `apps/marauder/cads_marauder.c`'s selector now
+sends `stopscan` every time its menu is (re)entered specifically to keep
+this from ever being reachable through the touchscreen (see this doc's own
+Bluetooth section above) - but any tool invoked directly over the raw
+`~` diagnostic still needs this in mind.

@@ -84,6 +84,8 @@ static const cads_marauder_tool_meta_t cads_marauder_tools[] = {
     {"Beacon Spam",  "attack -t beacon -r", "floods random SSIDs",       true},
     {"Probe Flood", "attack -t probe",     "floods probe requests",      true},
     {"Sniff (PCAP)", "sniffraw -serial",   "live relay to Wireshark",    false},
+    {"Sniff BT",     "sniffbt",            "nearby BLE devices, live",   false},
+    {"BLE Spam",     "blespam -t all",     "floods fake BLE devices",    true},
 };
 #define CADS_MARAUDER_TOOL_COUNT \
     (sizeof(cads_marauder_tools) / sizeof(cads_marauder_tools[0]))
@@ -129,6 +131,19 @@ typedef struct {
 static cads_marauder_selector_t s_selector;
 static cads_view_t s_tool_view;
 static bool s_uart_ready;
+
+/* --- ESP32 presence (drives whether the Bluetooth items are in the
+ * selector's menu at all - see cads_marauder.h's own "BLUETOOTH TOOLS ARE
+ * HIDDEN..." note for the full reasoning). No electrical presence line
+ * exists on CN8, so this is a software liveness snapshot: a probe sent on
+ * every selector entry, and whatever cads_marauder_tick() sees (or doesn't)
+ * within CADS_MARAUDER_ESP32_PROBE_MS decides the answer. ------------------ */
+
+#define CADS_MARAUDER_ESP32_PROBE_MS 2000u /* generous vs. the <100 ms replies actually observed */
+
+static bool s_esp32_present;
+static bool s_esp32_probe_pending;
+static uint32_t s_esp32_probe_deadline_ms;
 
 /* --- PCAP relay (Sniff (PCAP) tool) - see cads_marauder_pcap.h and this
  * file's own header comment on why the demux runs unconditionally. ------- */
@@ -280,6 +295,12 @@ static void cads_marauder_draw_text(cads_rect_t area, uint8_t row, const char* t
 
 /* --- selector --------------------------------------------------------------- */
 
+/* The first CADS_MARAUDER_ITEMS_BASE_COUNT entries are the always-shown WiFi
+ * tools; the rest are Bluetooth, only spliced into the live menu (see
+ * cads_marauder_refresh_menu()) once the ESP32 has actually been seen
+ * replying - one array, sliced by count, rather than two separate tables,
+ * since cads_menu_set_items() takes exactly a (pointer, count) pair and the
+ * base tools' relative order/content never changes. */
 static const cads_menu_item_t cads_marauder_items[] = {
     {"Scan APs",    "passive", CADS_MARAUDER_TOOL_SCAN},
     {"Stop Scan",   "passive", CADS_MARAUDER_TOOL_STOP},
@@ -289,7 +310,12 @@ static const cads_menu_item_t cads_marauder_items[] = {
     {"Beacon Spam", "ACTIVE",  CADS_MARAUDER_TOOL_BEACON},
     {"Probe Flood", "ACTIVE",  CADS_MARAUDER_TOOL_PROBE},
     {"Sniff (PCAP)", "passive", CADS_MARAUDER_TOOL_PCAP},
+    {"Sniff BT",    "passive", CADS_MARAUDER_TOOL_SNIFFBT},
+    {"BLE Spam",    "ACTIVE",  CADS_MARAUDER_TOOL_BLESPAM},
 };
+#define CADS_MARAUDER_ITEMS_BASE_COUNT 8u
+#define CADS_MARAUDER_ITEMS_FULL_COUNT \
+    (sizeof(cads_marauder_items) / sizeof(cads_marauder_items[0]))
 
 static void cads_marauder_select(const cads_menu_item_t* item, size_t index, void* context) {
     (void)index;
@@ -333,9 +359,31 @@ static bool cads_marauder_selector_input(const cads_input_event_t* event, void* 
     return consumed;
 }
 
+/* Splices the Bluetooth items in or out of the live menu to match
+ * s_esp32_present - see cads_marauder.h's own note on why this is a
+ * snapshot, re-taken on every selector entry, not a continuous poll. */
+static void cads_marauder_refresh_menu_items(void) {
+    size_t count = s_esp32_present ? CADS_MARAUDER_ITEMS_FULL_COUNT : CADS_MARAUDER_ITEMS_BASE_COUNT;
+    cads_menu_set_items(&s_selector.menu, cads_marauder_items, count);
+    cads_view_dirty(&s_selector.view);
+}
+
 static void cads_marauder_selector_enter(void* context) {
     cads_marauder_selector_t* sel = (cads_marauder_selector_t*)context;
     cads_menu_set_area(&sel->menu, cads_view_area(&sel->view));
+
+    /* Also the fix for a real Marauder-firmware gotcha (2026-08-28, see
+     * docs/reference/marauder-coprocessor.md): a scan left running from
+     * anywhere silently swallows every later scan/attack command
+     * (`wifi_scan_obj.scanning()` gate in Marauder's own CommandLine.cpp).
+     * stopscan is unconditional and always replies regardless of that gate,
+     * so it doubles perfectly as both the cleanup and the liveness probe -
+     * one command, two jobs, and entering this menu now always leaves the
+     * co-processor idle instead of occasionally inheriting a stuck scan. */
+    uint32_t now = cads_hal_ticks_ms();
+    cads_marauder_send("stopscan", now);
+    s_esp32_probe_pending = true;
+    s_esp32_probe_deadline_ms = now + CADS_MARAUDER_ESP32_PROBE_MS;
 }
 
 /* --- shared tool view: draw ------------------------------------------------- */
@@ -470,6 +518,24 @@ void cads_marauder_tick(uint32_t now_ms) {
         if(got_any) {
             cads_marauder_mark_link_active(now_ms);
             cads_view_dirty(&s_tool_view);
+
+            /* Any bytes at all are proof of life for the probe below -
+             * content doesn't matter, only that something answered. */
+            if(s_esp32_probe_pending) {
+                s_esp32_probe_pending = false;
+                if(!s_esp32_present) {
+                    s_esp32_present = true;
+                    cads_marauder_refresh_menu_items();
+                }
+            }
+        }
+    }
+
+    if(s_esp32_probe_pending && (int32_t)(now_ms - s_esp32_probe_deadline_ms) >= 0) {
+        s_esp32_probe_pending = false;
+        if(s_esp32_present) {
+            s_esp32_present = false;
+            cads_marauder_refresh_menu_items();
         }
     }
 
@@ -502,9 +568,11 @@ void cads_marauder_init(cads_view_dispatcher_t* dispatcher) {
     cads_marauder_pcap_set_passthrough_cb(&s_pcap, cads_marauder_pcap_passthrough, NULL);
 
     s_selector.dispatcher = dispatcher;
+    /* Starts with the Bluetooth items excluded - presence is unknown until
+     * the selector is actually entered and its probe gets a reply (see
+     * cads_marauder_selector_enter()/cads_marauder_refresh_menu_items()). */
     cads_menu_init(
-        &s_selector.menu, cads_marauder_items,
-        sizeof(cads_marauder_items) / sizeof(cads_marauder_items[0]), &cads_font12);
+        &s_selector.menu, cads_marauder_items, CADS_MARAUDER_ITEMS_BASE_COUNT, &cads_font12);
     cads_menu_set_activate(&s_selector.menu, cads_marauder_select, &s_selector);
 
     cads_view_init(&s_selector.view, cads_marauder_selector_draw, cads_marauder_selector_input, &s_selector);

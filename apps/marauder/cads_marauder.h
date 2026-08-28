@@ -7,17 +7,18 @@
  * this firmware's margin does not forgive one per tool). Tools split into
  * two kinds:
  *
- *   PASSIVE (Scan, Stop, List) - send the command immediately on selection,
- *   no gate. They observe; they never put a frame on the air that wasn't
- *   already there.
+ *   PASSIVE (Scan, Stop, List, Sniff BT) - send the command immediately on
+ *   selection, no gate. They observe; they never put a frame on the air
+ *   that wasn't already there.
  *
- *   ACTIVE (Deauth, Evil Portal, Beacon Spam, Probe Flood) - transmit-based.
- *   Selecting one always lands in a CONFIRM mode first: an explicit warning
- *   that this sends real 802.11 traffic and is for a network you control or
- *   are authorized to test, Yes/No, Back cancels. Only Yes starts it. This
- *   is not optional per-tool configuration - every active tool goes through
- *   the same gate, the same way apps/active's M9 suite already requires for
- *   its own transmit-based tools.
+ *   ACTIVE (Deauth, Evil Portal, Beacon Spam, Probe Flood, BLE Spam) -
+ *   transmit-based. Selecting one always lands in a CONFIRM mode first: an
+ *   explicit warning that this sends real 802.11/BLE traffic and is for a
+ *   network/area you control or are authorized to test, Yes/No, Back
+ *   cancels. Only Yes starts it. This is not optional per-tool
+ *   configuration - every active tool goes through the same gate, the same
+ *   way apps/active's M9 suite already requires for its own transmit-based
+ *   tools.
  *
  * The wire this bridges (CN8 pins 8/9, USART6, 115200 baud - see
  * docs/reference/marauder-coprocessor.md) carries Marauder's plaintext CLI:
@@ -27,6 +28,26 @@
  * PPPoS path (a different protocol for a different, currently unwired,
  * co-processor) is not linked into the default build for exactly this
  * reason - see apps/settings/cads_settings.c's own note on that decision.
+ *
+ * BLUETOOTH TOOLS ARE HIDDEN UNTIL THE ESP32 IS ACTUALLY SEEN TALKING
+ * ---------------------------------------------------------------------
+ * There is no electrical presence-detect line on CN8 (just TX/RX), so
+ * "is the co-processor there" can only ever be a software liveness check,
+ * not a hardware fact. Every time the selector view is (re)entered - a
+ * fresh open from the main menu, or popping back to it from a tool - it
+ * sends a `stopscan` (2026-08-28 note: this doubles as the fix for a real
+ * Marauder-firmware gotcha found the same day - see
+ * docs/reference/marauder-coprocessor.md and this file's own cads_marauder.c
+ * for the `wifi_scan_obj.scanning()` gate it clears) and starts a short
+ * timer. Any bytes back before the timer expires mean something is alive
+ * and talking on the wire, so the Bluetooth items get added to the
+ * selector's menu (cads_menu_set_items() - the menu widget's own "contents
+ * built at run time" mechanism, nothing bespoke here); no reply in time
+ * means they get removed again. This is necessarily a snapshot from the
+ * last time the menu was opened, not a continuous background poll - the
+ * link is not chatty enough (and the RAM/CPU budget not generous enough)
+ * to justify polling it on a timer while the user is looking at something
+ * else entirely.
  */
 #ifndef CADS_MARAUDER_H
 #define CADS_MARAUDER_H
@@ -50,6 +71,8 @@
 #define CADS_MARAUDER_TOOL_BEACON      0x0C07u
 #define CADS_MARAUDER_TOOL_PROBE       0x0C08u
 #define CADS_MARAUDER_TOOL_PCAP        0x0C09u
+#define CADS_MARAUDER_TOOL_SNIFFBT     0x0C0Au /**< passive, hidden unless the ESP32 was just seen */
+#define CADS_MARAUDER_TOOL_BLESPAM     0x0C0Bu /**< ACTIVE, hidden unless the ESP32 was just seen  */
 
 /** Register the suite's two views. Call once from cads_menu_app_init()'s own
  *  init chain, the same way every other optional app does. No-op when
