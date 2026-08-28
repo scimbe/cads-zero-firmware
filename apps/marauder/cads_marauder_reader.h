@@ -13,7 +13,30 @@
 #include <stdint.h>
 
 #define CADS_MARAUDER_OUT_LINES 5u
-#define CADS_MARAUDER_LINE_LEN  30u /* fits the panel width at cads_font12 */
+/* 48, not the panel-width-driven 30 an earlier version of this file used:
+ * a real AP scan line ("-76 Ch: 2 fc:34:97:30:ad:21 ESSID: persepolis-XI 11
+ * 14", 57 chars incl. the two trailing beacon-interval hex bytes Marauder's
+ * WiFiScan.cpp always appends) does not fit in 30 chars, and
+ * cads_marauder_join's SSID matcher (cads_marauder_join.c) needs to see a
+ * whole "ESSID: <name>" segment unsplit to match reliably - a line that
+ * gets overflow-split mid-ESSID is invisible to the matcher. 48 covers
+ * every SSID up to ~20 chars unsplit (the large majority of real networks);
+ * the 802.11 max of 32 bytes can still split on an unusually long name,
+ * which degrades to "not found" rather than a wrong match or a crash. Costs
+ * (48-30)*(OUT_LINES+1 partial) = 108 B over the previous 30-char buffer -
+ * paid because both the join feature's correctness and the plain display's
+ * readability depend on it, not merely cosmetic. Display truncation for the
+ * panel width (480 px, area.width-8 usable at cads_font12) still happens at
+ * draw time in cads_marauder.c, independent of this parse-time bound. */
+#define CADS_MARAUDER_LINE_LEN  48u
+
+/* Called once per completed line, in addition to (not instead of) the ring
+ * buffer - a way for something other than the display (e.g. the join
+ * scan-and-match state machine, cads_marauder_join.h) to observe every line
+ * as it arrives, since the ring only keeps the last OUT_LINES and the UART
+ * can only have one reader draining it. `line` is NUL-terminated and valid
+ * only for the duration of the call. */
+typedef void (*cads_marauder_line_cb_t)(void* ctx, const char* line);
 
 typedef struct {
     char lines[CADS_MARAUDER_OUT_LINES][CADS_MARAUDER_LINE_LEN];
@@ -22,9 +45,15 @@ typedef struct {
     char partial[CADS_MARAUDER_LINE_LEN];
     uint8_t partial_len;
     uint32_t lines_total;      /* lifetime count, for a future "N lines" status */
+    cads_marauder_line_cb_t line_cb;
+    void* line_cb_ctx;
 } cads_marauder_reader_t;
 
 void cads_marauder_reader_reset(cads_marauder_reader_t* r);
+
+/** Set (or clear, with cb=NULL) the per-line observer. Reset by
+ *  cads_marauder_reader_reset() like everything else in the struct. */
+void cads_marauder_reader_set_line_cb(cads_marauder_reader_t* r, cads_marauder_line_cb_t cb, void* ctx);
 
 /*
  * Feed raw bytes (as read off the UART) into the reader. Splits on '\n',

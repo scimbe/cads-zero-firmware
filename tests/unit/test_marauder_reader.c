@@ -125,9 +125,10 @@ static void test_very_overlong_run_flushes_multiple_segments(void) {
     long_line[sizeof(long_line) - 1u] = '\0';
     feed_str(&r, long_line);
     feed_str(&r, "\nshort\n");
-    /* 79 bytes / (LINE_LEN-1=29 per segment) = 3 flush segments, + "short". */
-    TEST_ASSERT_EQUAL_UINT8(4u, r.count);
-    TEST_ASSERT_EQUAL_STRING("short", cads_marauder_reader_line(&r, 3));
+    /* 79 'x' bytes: one overflow flush at LINE_LEN-1 (47) bytes, then the
+     * remaining 32 bytes flushed by the real '\n', then "short". */
+    TEST_ASSERT_EQUAL_UINT8(3u, r.count);
+    TEST_ASSERT_EQUAL_STRING("short", cads_marauder_reader_line(&r, 2));
 }
 
 static void test_lines_total_counts_every_line_ever(void) {

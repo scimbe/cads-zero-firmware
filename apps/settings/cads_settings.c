@@ -12,6 +12,13 @@
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
 #include "cads_dialog.h"
+#ifdef CADS_APP_MARAUDER_ENABLED
+/* Relative path, not an include-dir dependency - the same trick
+ * apps/menu/cads_menu_app.c already uses to reach this optional app without
+ * apps/settings needing a public link to cads_app_marauder just to compile;
+ * the actual symbol resolves at final-link time (see CMakeLists.txt). */
+#include "../marauder/cads_marauder.h"
+#endif
 #include "cads_hal.h"
 #include "cads_menu.h"
 #include "cads_softkeys.h"
@@ -42,6 +49,9 @@ typedef enum {
     CADS_SETTINGS_ROW_CALIBRATION,
     CADS_SETTINGS_ROW_TEST_PATTERN,
     CADS_SETTINGS_ROW_CONFIG_RELOAD,
+#ifdef CADS_APP_MARAUDER_ENABLED
+    CADS_SETTINGS_ROW_WIFI_JOIN,
+#endif
     CADS_SETTINGS_ROW_RESET,
 } cads_settings_row_t;
 
@@ -49,11 +59,17 @@ typedef enum {
     CADS_SETTINGS_CONFIRM_NONE = 0,
     CADS_SETTINGS_CONFIRM_CALIBRATION,
     CADS_SETTINGS_CONFIRM_CONFIG,
+#ifdef CADS_APP_MARAUDER_ENABLED
+    CADS_SETTINGS_CONFIRM_WIFI_JOIN,
+#endif
     CADS_SETTINGS_CONFIRM_RESET,
 } cads_settings_confirm_kind_t;
 
 static char s_brightness_detail[8];
 static char s_spi_detail[16];
+#ifdef CADS_APP_MARAUDER_ENABLED
+static char s_wifi_join_detail[CADS_CONFIG_SSID_MAX];
+#endif
 
 static cads_menu_item_t s_items[] = {
     {"Brightness", s_brightness_detail, CADS_SETTINGS_ROW_BRIGHTNESS},
@@ -61,6 +77,9 @@ static cads_menu_item_t s_items[] = {
     {"Touch calibration", NULL, CADS_SETTINGS_ROW_CALIBRATION},
     {"Test pattern", NULL, CADS_SETTINGS_ROW_TEST_PATTERN},
     {"Reload config", NULL, CADS_SETTINGS_ROW_CONFIG_RELOAD},
+#ifdef CADS_APP_MARAUDER_ENABLED
+    {"Join WiFi", s_wifi_join_detail, CADS_SETTINGS_ROW_WIFI_JOIN},
+#endif
     {"Factory reset", NULL, CADS_SETTINGS_ROW_RESET},
 };
 
@@ -133,6 +152,20 @@ static volatile bool s_config_reload_requested = false;
  * set that would diverge from the file and be undone on the next boot
  * (findings #18, #19). */
 static volatile bool s_config_reset_requested = false;
+#ifdef CADS_APP_MARAUDER_ENABLED
+/* Same request/service split as reload/reset above, and for the same reason:
+ * cads_marauder_join() ends up writing to the shared WiFi UART
+ * (cads_hal_wifi_uart_write(), a plain busy-wait with no locking of its
+ * own - see targets/itsboard/hal/hal_uart_wifi.c) which cads_marauder_tick()
+ * also drives every console-task loop iteration. Calling it straight from
+ * this row's INPUT-task handler would let two tasks race that one link, the
+ * exact bug class the SPI-mutex incident (2026-08-26, see CLAUDE.md) taught
+ * this project to check for first. Deferring to
+ * cads_settings_service_config() - called from the same console-task loop
+ * as cads_marauder_tick() (apps/bringup/explorer_app_demo.c) - keeps the
+ * WiFi UART single-owner. */
+static volatile bool s_wifi_join_requested = false;
+#endif
 
 /* Push a loaded config into the live subsystems and the settings shadow, so
  * the panel and the Brightness/SPI rows reflect the file. Only re-applies a
@@ -174,6 +207,12 @@ static void cads_settings_apply_config(const cads_config_t* cfg) {
         cads_net_set_config(&net);
     }
 
+#ifdef CADS_APP_MARAUDER_ENABLED
+    cads_str_copy(
+        s_wifi_join_detail, sizeof(s_wifi_join_detail),
+        (cfg->wifi_enabled && cfg->wifi_ssid[0] != '\0') ? cfg->wifi_ssid : "not configured");
+#endif
+
     s_applied_config = *cfg;
     s_have_applied_config = true;
     cads_settings_refresh_details();
@@ -204,6 +243,12 @@ void cads_settings_service_config(void) {
         s_config_reload_requested = false;
         cads_settings_load_and_apply();
     }
+#ifdef CADS_APP_MARAUDER_ENABLED
+    if(s_wifi_join_requested) {
+        s_wifi_join_requested = false;
+        cads_marauder_join(s_applied_config.wifi_ssid, s_applied_config.wifi_password);
+    }
+#endif
 }
 
 /* The menu row handler: only REQUEST a reload. The actual storage work happens
@@ -217,6 +262,33 @@ static void cads_settings_config_reload(void) {
         CADS_SETTINGS_CONFIRM_CONFIG, "Reload config",
         "Re-reading /config.txt and applying it.", answers, 1u);
 }
+
+#ifdef CADS_APP_MARAUDER_ENABLED
+/* Requests a join against whatever wifi.ssid/wifi.password /config.txt last
+ * applied (s_applied_config, kept current by cads_settings_apply_config()) -
+ * not a fresh read of the file, so "Reload config" first if it was just
+ * edited. The actual join (cads_marauder_join(), which starts a background
+ * scan-and-match - see apps/marauder/cads_marauder.h) runs from
+ * cads_settings_service_config() on the console task; see
+ * s_wifi_join_requested's own comment for why this row can't just call it
+ * directly. */
+static void cads_settings_wifi_join(void) {
+    static const cads_dialog_answer_t answers[] = {{CadsKeyOk, "OK"}};
+    if(!s_applied_config.wifi_enabled || s_applied_config.wifi_ssid[0] == '\0') {
+        cads_settings_open_confirm(
+            CADS_SETTINGS_CONFIRM_WIFI_JOIN, "Join WiFi",
+            "No WiFi SSID configured - set wifi.enabled/wifi.ssid/wifi.password "
+            "in /config.txt and Reload config first.",
+            answers, 1u);
+        return;
+    }
+    s_wifi_join_requested = true;
+    cads_settings_open_confirm(
+        CADS_SETTINGS_CONFIRM_WIFI_JOIN, "Join WiFi",
+        "Scanning for the configured SSID and joining over the Marauder link.",
+        answers, 1u);
+}
+#endif
 
 static uint8_t cads_settings_next_brightness(uint8_t current) {
     if(current < 25u) return 25u;
@@ -330,6 +402,12 @@ static void cads_settings_activate(const cads_menu_item_t* item, size_t index, v
         case CADS_SETTINGS_ROW_CONFIG_RELOAD:
             cads_settings_config_reload();
             break;
+
+#ifdef CADS_APP_MARAUDER_ENABLED
+        case CADS_SETTINGS_ROW_WIFI_JOIN:
+            cads_settings_wifi_join();
+            break;
+#endif
 
         case CADS_SETTINGS_ROW_RESET: {
             static const cads_dialog_answer_t answers[] = {

@@ -9,6 +9,7 @@
 add_library(cads_app_marauder STATIC
     cads_marauder.c
     cads_marauder_reader.c
+    cads_marauder_join.c
 )
 
 target_include_directories(cads_app_marauder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

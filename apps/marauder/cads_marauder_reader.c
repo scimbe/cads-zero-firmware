@@ -8,6 +8,11 @@ void cads_marauder_reader_reset(cads_marauder_reader_t* r) {
     memset(r, 0, sizeof(*r));
 }
 
+void cads_marauder_reader_set_line_cb(cads_marauder_reader_t* r, cads_marauder_line_cb_t cb, void* ctx) {
+    r->line_cb = cb;
+    r->line_cb_ctx = ctx;
+}
+
 static void cads_marauder_reader_push_line(cads_marauder_reader_t* r, const char* text, uint8_t len) {
     uint8_t slot = (uint8_t)((r->head + r->count) % CADS_MARAUDER_OUT_LINES);
     if(r->count == CADS_MARAUDER_OUT_LINES) {
@@ -20,6 +25,8 @@ static void cads_marauder_reader_push_line(cads_marauder_reader_t* r, const char
     memcpy(r->lines[slot], text, n);
     r->lines[slot][n] = '\0';
     r->lines_total++;
+
+    if(r->line_cb != NULL) r->line_cb(r->line_cb_ctx, r->lines[slot]);
 }
 
 void cads_marauder_reader_feed(cads_marauder_reader_t* r, const uint8_t* data, size_t len) {

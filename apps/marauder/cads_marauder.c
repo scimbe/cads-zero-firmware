@@ -39,7 +39,10 @@
 
 #include <string.h>
 
+#include "cads/toolbox/fmt.h"
+#include "cads/toolbox/str.h"
 #include "cads_hal.h"
+#include "cads_marauder_join.h"
 #include "cads_marauder_reader.h"
 #include "cads_menu.h"
 #include "cads_softkeys.h"
@@ -88,6 +91,17 @@ typedef struct {
 } cads_marauder_session_t;
 
 static cads_marauder_session_t s_session;
+
+/* --- background SSID join (independent of whichever tool view is open,
+ * see cads_marauder_join() below and cads_marauder_join.h for the protocol
+ * reasoning) --------------------------------------------------------------- */
+
+#define CADS_MARAUDER_JOIN_SCAN_TIMEOUT_MS 15000u /* generous: real scans take several seconds */
+
+static cads_marauder_join_state_t s_join;
+static char s_join_password[64]; /* CADS_CONFIG_PASS_MAX */
+static bool s_join_active;
+static uint32_t s_join_deadline_ms;
 
 /* --- views ----------------------------------------------------------------- */
 
@@ -144,6 +158,60 @@ static void cads_marauder_send(const char* cmd, uint32_t now_ms) {
     cads_marauder_mark_link_active(now_ms);
 }
 
+/* --- background SSID join -------------------------------------------------- */
+
+/* cads_marauder_reader_t's line_cb signature - forwards every completed
+ * output line to the join state machine while a join search is running.
+ * Registered on the SAME reader the tool view's own display uses (there is
+ * only one UART, one reader); see cads_marauder_select()'s own note on why
+ * it must be re-armed after a tool switch resets that reader. */
+static void cads_marauder_join_line_cb(void* ctx, const char* line) {
+    (void)ctx;
+    cads_marauder_join_feed_line(&s_join, line);
+}
+
+/* Arms (or re-arms, after a reader reset) the join line observer - a no-op
+ * when no join is in progress. */
+static void cads_marauder_join_arm_reader(void) {
+    if(s_join_active) {
+        cads_marauder_reader_set_line_cb(&s_session.reader, cads_marauder_join_line_cb, NULL);
+    }
+}
+
+/* Checked from cads_marauder_tick() every tick while a join is in progress:
+ * once the state machine reports FOUND or TIMED_OUT, send the follow-up
+ * command(s) and end the background join. */
+static void cads_marauder_join_service(uint32_t now_ms) {
+    if(!s_join_active) return;
+
+    cads_marauder_join_check_timeout(&s_join, now_ms, s_join_deadline_ms);
+
+    if(s_join.status == CADS_MARAUDER_JOIN_FOUND) {
+        cads_marauder_send("stopscan", now_ms);
+
+        char cmd[64];
+        char num[12];
+        cads_str_copy(cmd, sizeof(cmd), "join -a ");
+        cads_fmt_uint(num, sizeof(num), s_join.found_index);
+        cads_str_append(cmd, sizeof(cmd), num);
+        cads_str_append(cmd, sizeof(cmd), " -p ");
+        cads_str_append(cmd, sizeof(cmd), s_join_password);
+        cads_marauder_send(cmd, now_ms);
+
+        s_join_active = false;
+        cads_marauder_reader_set_line_cb(&s_session.reader, NULL, NULL);
+    } else if(s_join.status == CADS_MARAUDER_JOIN_TIMED_OUT) {
+        /* The configured SSID never showed up in range within the scan
+         * window - stop the scan and give up quietly. Whoever triggered
+         * the join (Settings) has no separate error channel today; the
+         * "no line ever matched" outcome is visible in the tool view's own
+         * output if Scan APs happens to be open, same as any other scan. */
+        cads_marauder_send("stopscan", now_ms);
+        s_join_active = false;
+        cads_marauder_reader_set_line_cb(&s_session.reader, NULL, NULL);
+    }
+}
+
 /* --- small helpers --------------------------------------------------------- */
 
 static const cads_marauder_tool_meta_t* cads_marauder_meta(void) {
@@ -174,6 +242,11 @@ static void cads_marauder_select(const cads_menu_item_t* item, size_t index, voi
     cads_marauder_selector_t* sel = (cads_marauder_selector_t*)context;
     s_session.selected_tool = item->id;
     cads_marauder_reader_reset(&s_session.reader);
+    /* reader_reset() just cleared the line_cb too - re-arm it so a
+     * background join (started from Settings, independent of which tool
+     * view is open) keeps seeing every line even though the user just
+     * navigated to a different tool. */
+    cads_marauder_join_arm_reader();
 
     const cads_marauder_tool_meta_t* meta = cads_marauder_meta();
     if(meta->active) {
@@ -318,21 +391,22 @@ void cads_marauder_tick(uint32_t now_ms) {
     if(s_session.link_active && (int32_t)(now_ms - s_session.link_active_until_ms) >= 0) {
         s_session.link_active = false;
     }
+
+    cads_marauder_join_service(now_ms);
 }
 
 void cads_marauder_join(const char* ssid, const char* password) {
-    /* Deliberately NOT implemented as a blocking scan-and-scrape here: this
-     * function only sends the scan command and marks the link active. The
-     * actual SSID-matching, indexing and join happens by watching the tool
-     * view's own output reader for AP lines while CADS_MARAUDER_TOOL_SCAN is
-     * selected - matching an entry against `ssid` and issuing `join -a
-     * <n> -p <password>` once found is real work tracked as a follow-up
-     * (see docs/reference/marauder-coprocessor.md's join section for the
-     * exact index-counting rule this needs); wiring a fire-and-forget scan
-     * now is the safe, honest partial step rather than a join that silently
-     * targets the wrong network. */
     if(ssid == NULL || ssid[0] == '\0' || password == NULL) return;
-    cads_marauder_send("scanall", cads_hal_ticks_ms());
+
+    uint32_t now = cads_hal_ticks_ms();
+    cads_str_copy(s_join_password, sizeof(s_join_password), password);
+    cads_marauder_join_start(&s_join, ssid);
+    if(s_join.status != CADS_MARAUDER_JOIN_SEARCHING) return; /* empty ssid, defensively */
+
+    s_join_active = true;
+    s_join_deadline_ms = now + CADS_MARAUDER_JOIN_SCAN_TIMEOUT_MS;
+    cads_marauder_join_arm_reader();
+    cads_marauder_send("scanall", now);
 }
 
 void cads_marauder_init(cads_view_dispatcher_t* dispatcher) {

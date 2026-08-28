@@ -68,15 +68,24 @@ void cads_marauder_tick(uint32_t now_ms);
 bool cads_marauder_link_active(void);
 
 /**
- * Send `ssid`/`password` to Marauder's own join flow: adds the SSID as a
- * manual entry (`ssid -a -n <ssid>`) and joins it (`join -a <index> -p
- * <password>`), using the entry's own index rather than assuming 0 - see
- * cads_marauder.c's own comment on why. Fire-and-forget: the result (join
- * success/failure) shows up as ordinary output lines the tool view already
- * displays, the same as any other command. Intended to be called once from
- * Settings when wifi.enabled and a non-empty SSID are configured (see
- * docs/reference/config-file.md's wifi.* keys) - the config fields Marauder
- * now uses, not the deferred PPP path they were first added for.
+ * Join `ssid`/`password` via a scan-and-match background search: starts a
+ * `scanall`, watches every AP-format output line Marauder prints (via
+ * cads_marauder_join.h's state machine) for one whose ESSID matches `ssid`,
+ * counts its position among AP lines to find its access_points list index,
+ * then sends `stopscan` followed by `join -a <index> -p <password>` -
+ * Marauder's `join -a` only ever indexes into that scanned list (confirmed
+ * against the pinned ESP32Marauder source; see cads_marauder_join.h for the
+ * full reasoning on why this indirection is unavoidable). Runs in the
+ * background independent of which tool view is open or gets navigated to
+ * while it searches (cads_marauder_select() re-arms the line observer after
+ * every reader reset for exactly this reason). Gives up quietly after
+ * CADS_MARAUDER_JOIN_SCAN_TIMEOUT_MS if the SSID never appears - there is no
+ * separate error-reporting channel today; a failed join is currently only
+ * visible by its absence (no join attempt ever gets sent). Fire-and-forget,
+ * intended to be called once from Settings when wifi.enabled and a
+ * non-empty SSID are configured (see docs/reference/config-file.md's
+ * wifi.* keys) - the config fields Marauder now uses, not the deferred PPP
+ * path they were first added for.
  */
 void cads_marauder_join(const char* ssid, const char* password);
 
