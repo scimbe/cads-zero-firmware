@@ -28,10 +28,30 @@
 #include "input_probe.h"
 
 /* Stack sizes in words. The UI task carries the canvas call chain, which is
- * the deepest; the others are shallow. */
+ * the deepest; the others are shallow.
+ *
+ * CADS_CONSOLE_STACK doubled 512->1024 (2026-08-28): a real, hardware-
+ * confirmed stack overflow. This task's own app-tree loop
+ * (explorer_app_demo.c) calls cads_net_poll() every tick, and with
+ * net.dhcp=1 that runs lwIP's DHCP client state machine (dhcp_recv() /
+ * dhcp_handle_state_machine() et al) - visibly deeper than the plain
+ * static-IP path - on the SAME stack that same loop also uses for the
+ * full app-tree tick chain (marauder_tick's PCAP/join call depth,
+ * settings_service_config, gui_tick, ...). Caught live on the real board:
+ * vApplicationIdleHook() (this file's own stack-guard sentinel check,
+ * immediately below) faulted with a garbage PC
+ * (0xF7FF0FF0 - an instruction-fetch violation, CFSR IACCVIOL) reached via
+ * a corrupted return address - the textbook signature of a stack
+ * overflow severe enough to corrupt the very code trying to detect it.
+ * Reproduced with net.dhcp=1 and a real DHCP server present; net.dhcp=0
+ * (the static-IP path) never hit it. Cheap to fix generously: unlike the
+ * SRAM heap this scripts/check_ram_budget.py's 256 B floor actually
+ * guards, task stacks live in CCM (CADS_CCM_SECTION below), which had
+ * ~59 KB free out of 64 KB before this change - doubling costs 2 KB of
+ * that, not a single byte of the tight SRAM margin. */
 #define CADS_UI_STACK      512
 #define CADS_INPUT_STACK   256
-#define CADS_CONSOLE_STACK 512
+#define CADS_CONSOLE_STACK 1024
 
 CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_ui_stack[CADS_UI_STACK];
 CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_input_stack[CADS_INPUT_STACK];

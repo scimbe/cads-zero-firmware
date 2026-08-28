@@ -2063,6 +2063,63 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (net.dhcp crash: console-task stack overflow, found and fixed
+  on real hardware) — User request: real internet to the board via a Mac
+  Ethernet interface with Internet Sharing on. Setting `net.dhcp = 1` and
+  resetting crashed the board every time, live-verified via `st-util
+  --no-reset` + GDB (not console silence alone, which turned out to be
+  misleading - see below): CPU trapped inside the fault handler itself,
+  SP clobbered to an absurd low value. Wasted real time on two wrong leads
+  before finding it, worth recording so they are not retried blind:
+  **(1) filesystem/config corruption** - reverting `net.dhcp` to 0 didn't
+  stop the crash, a fresh `cads_config.py pull` still read back clean
+  content, and a from-scratch reformatted littlefs volume (new `cads_fs
+  format` subcommand, a genuine tooling gap found along the way - see its
+  own commit) crashed identically. Conclusively ruled out.
+  **(2) SWD/debug-session flakiness** - a real hardware power-cycle
+  (`reset cause: power-on`, forensic ring genuinely cleared to 0 records -
+  CCM survives a plain `st-flash reset` but not real power loss) still
+  didn't fix it, ruling this out too. Also cost a chunk of apparent-crash
+  time that was actually **my own port-selection mistake**: this Nucleo
+  enumerates two `/dev/cu.usbmodem*` devices, and after the first
+  auto-detect hiccup I pinned `board_cmd.py --port` to the wrong
+  (non-console) one, so several "still crashed" reads were really just
+  querying dead air - own goal, not a board or firmware problem, and a
+  reminder to trust a live GDB attach over console silence when the two
+  disagree.
+  **The real cause**: `apps/bringup/explorer_app_demo.c`'s main loop calls
+  `cads_net_poll()` every tick on the **console task** (`apps/bringup/
+  tasks.c`, 512-word/2048 B stack) - with `net.dhcp=1` that runs lwIP's
+  DHCP client state machine, visibly deeper than the static-IP path, on
+  the exact same stack this loop also uses for the evening's whole added
+  call chain (`cads_marauder_tick`'s PCAP/join depth,
+  `cads_settings_service_config`, `cads_gui_tick`, ...). Caught live:
+  `vApplicationIdleHook()` - this project's own stack-guard sentinel check
+  (`tasks.c`) - faulted with a garbage PC (`0xF7FF0FF0`, an
+  instruction-fetch violation), the textbook signature of a stack overflow
+  severe enough to corrupt the very code trying to detect it. **Fix**:
+  doubled `CADS_CONSOLE_STACK` 512->1024 words. Unlike the SRAM heap
+  `scripts/check_ram_budget.py` guards (256 B floor, currently 704 B
+  margin, unaffected by this change), task stacks live in CCM, which had
+  ~59 KB free out of 64 KB - doubling cost 2 KB of that, nothing from the
+  tight budget. **Verified working**: real DHCP lease (`192.168.2.3`,
+  gateway/DNS `192.168.2.1` - macOS Internet Sharing's own subnet),
+  reproduced clean across two independent full test runs with the
+  forensic ring not growing between them (the two stale-looking records
+  still in it afterward are confirmed leftovers from the pre-fix crash,
+  not an active recurrence - the same plain-reset-doesn't-clear-CCM fact
+  from lead (2) above, this time working in the diagnosis's favor: an
+  unchanging ring across a real successful run is proof of "old and
+  inert," not "still happening").
+  **New reusable tooling**: `cads_fs <image> format` (`tools/cads_fs.c`) -
+  there was previously no way to produce a fresh, valid, empty littlefs
+  image from the host side at all; recovering from a *suspected*
+  filesystem problem required inventing it. Also fixed a real,
+  since-the-original-commit bug in `scripts/swd_lock.py` (missing
+  `#!/usr/bin/env python3` shebang - broke the exact direct-invocation
+  usage CLAUDE.md itself documents) found the same way, by actually
+  running the tool instead of trusting it worked.
+
 - 2026-08-28 (Marauder: WiFi join wired, live PCAP-to-Wireshark relay built)
   — Autonomous `/loop` continuation of the Marauder feature set (user's
   scope, in priority order: join, PCAP streaming, Bluetooth). Two of three
