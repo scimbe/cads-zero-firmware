@@ -44,9 +44,10 @@ static void test_parse_overrides_selected_keys(void) {
         "wifi.enabled = on\n"
         "wifi.ssid = MyNet\n"
         "wifi.password = s3cret\n"
-        "wifi.uart = uart4\n";
+        "wifi.uart = uart4\n"
+        "wifi.pcap_target = 192.168.33.50\n";
     size_t applied = cads_config_parse(text, strlen(text), &c);
-    TEST_ASSERT_EQUAL_UINT(9u, applied);
+    TEST_ASSERT_EQUAL_UINT(10u, applied);
     TEST_ASSERT_EQUAL_UINT8(42u, c.brightness);
     TEST_ASSERT_TRUE(c.fast_clock);
     TEST_ASSERT_TRUE(c.net_dhcp);
@@ -58,6 +59,7 @@ static void test_parse_overrides_selected_keys(void) {
     TEST_ASSERT_EQUAL_STRING("MyNet", c.wifi_ssid);
     TEST_ASSERT_EQUAL_STRING("s3cret", c.wifi_password);
     TEST_ASSERT_EQUAL_STRING("uart4", c.wifi_uart);
+    TEST_ASSERT_EQUAL_HEX32(IP4(192, 168, 33, 50), c.pcap_target_ip);
 }
 
 static void test_parse_ignores_junk_and_whitespace(void) {
@@ -91,6 +93,7 @@ static void test_serialize_round_trips(void) {
     a.net_ip = IP4(172, 16, 5, 9);
     a.wifi_enabled = true;
     strncpy(a.wifi_ssid, "Lab", sizeof(a.wifi_ssid) - 1u);
+    a.pcap_target_ip = IP4(192, 168, 33, 50);
     char text[CADS_CONFIG_TEXT_MAX];
     size_t n = cads_config_serialize(&a, text, sizeof(text));
     TEST_ASSERT_TRUE(n > 0u);

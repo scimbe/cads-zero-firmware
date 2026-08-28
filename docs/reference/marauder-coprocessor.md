@@ -120,8 +120,9 @@ unaffected and builds/flashes today.
 
 ## The CLI itself
 
-Marauder's serial CLI (what the STM32-side bridge in modules/wifi or a
-successor will drive) is documented at
+Marauder's serial CLI (what apps/marauder's CLI bridge on the STM32 side
+drives - modules/wifi carries a different, deferred protocol for a possible
+future second co-processor, see that module's own header) is documented at
 [github.com/justcallmekoko/ESP32Marauder/wiki/cli](https://github.com/justcallmekoko/ESP32Marauder/wiki/cli)
 and, more reliably, directly in the pinned commit's
 `esp32_marauder/CommandLine.h` - the wiki page's detailed argument syntax

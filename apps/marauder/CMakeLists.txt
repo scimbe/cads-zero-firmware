@@ -10,6 +10,7 @@ add_library(cads_app_marauder STATIC
     cads_marauder.c
     cads_marauder_reader.c
     cads_marauder_join.c
+    cads_marauder_pcap.c
 )
 
 target_include_directories(cads_app_marauder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -18,4 +19,5 @@ target_link_libraries(cads_app_marauder PUBLIC
     cads_gui_view
     cads_gui_widgets
     cads_toolbox
+    cads_net
     PRIVATE cads_flags)

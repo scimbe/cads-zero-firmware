@@ -212,3 +212,9 @@ cads_add_unit_test(test_marauder_join
     ${CADS_ROOT}/apps/marauder/cads_marauder_join.c
 )
 target_include_directories(test_marauder_join PRIVATE ${CADS_ROOT}/apps/marauder)
+
+cads_add_unit_test(test_marauder_pcap
+    test_marauder_pcap.c
+    ${CADS_ROOT}/apps/marauder/cads_marauder_pcap.c
+)
+target_include_directories(test_marauder_pcap PRIVATE ${CADS_ROOT}/apps/marauder)

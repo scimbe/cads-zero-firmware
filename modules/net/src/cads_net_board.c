@@ -32,6 +32,7 @@
 #include "lwip/pbuf.h"
 #include "lwip/raw.h"
 #include "lwip/timeouts.h"
+#include "lwip/udp.h"
 #include "netif/etharp.h"
 #include "netif/ethernet.h"
 
@@ -524,4 +525,30 @@ cads_net_traceroute_result_t cads_net_traceroute_probe(
     if(responder_ip) *responder_ip = ctx.responder_ip;
     if(rtt_ms) *rtt_ms = ctx.rtt_ms;
     return ctx.reached_target ? CadsNetTracerouteReachedTarget : CadsNetTracerouteHop;
+}
+
+/* A transient pcb per datagram, not a cached one: sends are infrequent
+ * (one per relayed 802.11 frame, not a tight loop) and this avoids holding
+ * a MEMP_NUM_UDP_PCB slot for the module's entire lifetime - the same
+ * "create, use, remove" shape cads_net_ping()/cads_net_traceroute_probe()
+ * already use for their raw_pcbs, just udp_pcb here. */
+void cads_net_udp_send(uint32_t dst_ip, uint16_t dst_port, const uint8_t* payload, uint16_t len) {
+    if(!cads_net_link_was_up || dst_ip == 0u || len == 0u) return;
+
+    struct pbuf* p = pbuf_alloc(PBUF_TRANSPORT, len, PBUF_RAM);
+    if(!p) return; /* lwipopts.h's MEM_SIZE arena is exhausted - drop, no retry */
+    pbuf_take(p, payload, len);
+
+    struct udp_pcb* pcb = udp_new();
+    if(!pcb) {
+        pbuf_free(p);
+        return; /* MEMP_NUM_UDP_PCB exhausted - drop, no retry */
+    }
+
+    ip4_addr_t dest;
+    ip4_addr_set_u32(&dest, lwip_htonl(dst_ip));
+    (void)udp_sendto(pcb, p, &dest, dst_port);
+
+    udp_remove(pcb);
+    pbuf_free(p);
 }

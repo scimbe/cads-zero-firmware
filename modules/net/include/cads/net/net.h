@@ -164,6 +164,21 @@ typedef enum {
 cads_net_traceroute_result_t cads_net_traceroute_probe(
     uint32_t ip, uint8_t ttl, uint32_t timeout_ms, uint32_t* responder_ip, uint32_t* rtt_ms);
 
+/**
+ * Send `len` bytes of `payload` as one best-effort UDP datagram to
+ * `dst_ip`:`dst_port` (host byte order) - apps/marauder's PCAP-over-TZSP
+ * relay (docs/reference/marauder-pcap-stream.md) is the first caller,
+ * sending one datagram per captured 802.11 frame to a Wireshark udpdump
+ * listener. No retry, no queue, no return value: a transient failure (a
+ * full lwIP UDP PCB pool, an allocation failure from lwipopts.h's own
+ * static MEM_SIZE arena) just drops this one datagram, the same
+ * fire-and-forget contract UDP itself already has. No-op (nothing sent) if
+ * the link is not up or `dst_ip` is 0 - the same "nothing to send through
+ * yet" reasoning as cads_net_arp_probe(), reused here so a caller does not
+ * need its own link-up check before every send.
+ */
+void cads_net_udp_send(uint32_t dst_ip, uint16_t dst_port, const uint8_t* payload, uint16_t len);
+
 #ifdef __cplusplus
 }
 #endif

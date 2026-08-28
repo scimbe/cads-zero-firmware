@@ -51,6 +51,16 @@ typedef struct {
     char wifi_ssid[CADS_CONFIG_SSID_MAX];
     char wifi_password[CADS_CONFIG_PASS_MAX];
     char wifi_uart[CADS_CONFIG_UART_MAX]; /**< which UART the ESP is on     */
+
+    /** Live-capture UDP target: where apps/marauder's PCAP-over-TZSP relay
+     *  (a `sniffraw -serial` capture streamed to Wireshark's udpdump extcap
+     *  over this board's own Ethernet link - see
+     *  docs/reference/marauder-pcap-stream.md) sends each captured 802.11
+     *  frame. Host byte order, 0 = unset (the relay stays silent). No port
+     *  field - the relay always uses CADS_MARAUDER_PCAP_UDP_PORT
+     *  (apps/marauder/cads_marauder_pcap.h), matching the fixed port
+     *  Wireshark's udpdump is configured to listen on. */
+    uint32_t pcap_target_ip;
 } cads_config_t;
 
 /** Fill `cfg` with the built-in base version (the file written when none

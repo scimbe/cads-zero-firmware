@@ -88,3 +88,11 @@ cads_net_traceroute_result_t cads_net_traceroute_probe(
     (void)rtt_ms;
     return CadsNetTracerouteNoReply; /* never a link, so nothing ever answers - see this file's header */
 }
+
+void cads_net_udp_send(uint32_t dst_ip, uint16_t dst_port, const uint8_t* payload, uint16_t len) {
+    (void)dst_ip;
+    (void)dst_port;
+    (void)payload;
+    (void)len;
+    /* never a link, so nothing ever gets sent - see this file's header */
+}

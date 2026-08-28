@@ -15,3 +15,7 @@ Information-oriented and deliberately dry. Look things up here.
   with the conditions they were taken under.
 - **[Configuration file and profiles](config-file.md)** — every `/config.txt`
   key, the `*.profile` format, and the host tools.
+- **[ESP32Marauder co-processor](marauder-coprocessor.md)** — building and
+  flashing the WiFi recon/attack co-processor's own firmware.
+- **[Marauder PCAP-over-TZSP stream](marauder-pcap-stream.md)** — live-capture
+  relay to Wireshark over this board's own Ethernet link.

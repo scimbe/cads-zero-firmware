@@ -26,10 +26,11 @@ parsed", never a garbage state.
 | `net.ip` | IPv4 | `192.168.33.99` | Static host address (ignored when `net.dhcp = 1`). |
 | `net.netmask` | IPv4 | `255.255.255.0` | Static subnet mask. |
 | `net.gateway` | IPv4 | `192.168.33.1` | Static default gateway. |
-| `wifi.enabled` | bool | `0` | Reserved for the ESP32 dev board. Persisted, not yet acted on. |
-| `wifi.ssid` | string ≤32 | *(empty)* | Reserved. |
-| `wifi.password` | string ≤63 | *(empty)* | Reserved. |
-| `wifi.uart` | string | `usart6` | Reserved: which UART the ESP board is wired to. |
+| `wifi.enabled` | bool | `0` | Gates Settings → **Join WiFi**: `1` and a non-empty `wifi.ssid` let that row start a join against the ESP32Marauder co-processor (see [marauder-coprocessor.md](marauder-coprocessor.md)). |
+| `wifi.ssid` | string ≤32 | *(empty)* | The SSID Settings → Join WiFi scans for and joins via Marauder's `join -a` (index-based — there is no CLI command to set an SSID by name, see `cads_marauder_join()`'s own doc comment). |
+| `wifi.password` | string ≤63 | *(empty)* | Password for `wifi.ssid`. |
+| `wifi.uart` | string | `usart6` | Which UART the co-processor is wired to. Not yet read by the driver (`board.h`'s `CADS_WIFI_*` constants are the actual source of truth today) — carried for a future multi-UART board. |
+| `wifi.pcap_target` | IPv4 | `0.0.0.0` | Where the Marauder tool's **Sniff (PCAP)** live relay sends TZSP-encapsulated captured frames (UDP port 37008, Wireshark's own `udpdump` default — see [marauder-pcap-stream.md](marauder-pcap-stream.md)). `0.0.0.0` (unset) means the relay parses and counts frames but sends nothing. |
 
 Booleans accept `1`/`0`, `on`/`off`, `true`/`false`, `yes`/`no`. IPv4 values
 are dotted decimal; an out-of-range octet or a malformed address is rejected
@@ -54,18 +55,23 @@ net.ip = 192.168.33.99
 net.netmask = 255.255.255.0
 net.gateway = 192.168.33.1
 
-# wifi (ESP32 dev board - reserved, not yet active)
+# wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)
 wifi.enabled = 0
 wifi.ssid =
 wifi.password =
 wifi.uart = usart6
+wifi.pcap_target = 0.0.0.0
 ```
 
 ### Applying changes
 
-`display.*` and `net.*` are applied live by **Settings → Reload config** — no
-reboot. They are also applied once at startup. `wifi.*` are stored and
-round-tripped but have no effect until the ESP32 UART driver exists.
+`display.*`, `net.*` and `wifi.*` are all applied live by **Settings →
+Reload config** — no reboot. They are also applied once at startup.
+`wifi.ssid`/`wifi.password` only take effect when Settings → **Join WiFi**
+is actually selected (Reload config alone does not trigger a join, it just
+updates what a later Join WiFi row would use); `wifi.pcap_target` takes
+effect immediately — the Marauder tool view's PCAP relay reads it on every
+reload/startup, same as `net.*`.
 
 ## `*.profile` — build-time feature selection
 

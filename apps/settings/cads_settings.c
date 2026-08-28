@@ -206,6 +206,11 @@ static void cads_settings_apply_config(const cads_config_t* cfg) {
             .netmask = cfg->net_netmask, .gateway = cfg->net_gateway};
         cads_net_set_config(&net);
     }
+#ifdef CADS_APP_MARAUDER_ENABLED
+    if(first || cfg->pcap_target_ip != s_applied_config.pcap_target_ip) {
+        cads_marauder_set_pcap_target(cfg->pcap_target_ip);
+    }
+#endif
 
 #ifdef CADS_APP_MARAUDER_ENABLED
     cads_str_copy(

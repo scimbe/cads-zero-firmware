@@ -13,10 +13,22 @@
  * exactly the way modules/wifi/src/cads_wifi_board.c's bootstrap-line parser
  * already is. It keeps only the last CADS_MARAUDER_OUT_LINES lines (a small
  * ring, not a growing log) - this is a live status view on a 480x320 panel,
- * not a pcap capture tool; docs/reference/marauder-coprocessor.md's planned
- * "stream raw captures to Wireshark" work is a separate, lower-level path
- * that will not go through this line reader at all (it needs the raw bytes
- * between Marauder's own [BUF/BEGIN]/[BUF/CLOSE] markers, not text lines).
+ * not a pcap capture tool.
+ *
+ * PCAP RELAY
+ * ----------
+ * The "Sniff (PCAP)" tool's raw-byte relay to Wireshark (see
+ * cads_marauder_pcap.h) sits IN FRONT of the line reader, not beside it:
+ * every byte off the UART goes to cads_marauder_pcap_feed() first, which
+ * demuxes Marauder's own [BUF/BEGIN]/[BUF/CLOSE]-framed binary bursts
+ * (`sniffraw -serial`) from ordinary CLI text and hands only the latter to
+ * the line reader via its passthrough callback. For any tool other than
+ * Sniff (PCAP) - Scan, List, join's background scan, an attack's own
+ * output - there are never any real bursts on the wire, so the demux is
+ * provably transparent (see test_marauder_pcap.c's own passthrough tests)
+ * and costs nothing behaviourally; it runs unconditionally rather than
+ * being switched in/out per tool to avoid a whole class of "which mode is
+ * the UART in" bugs.
  *
  * JOIN
  * ----
@@ -39,10 +51,12 @@
 
 #include <string.h>
 
+#include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
 #include "cads_hal.h"
 #include "cads_marauder_join.h"
+#include "cads_marauder_pcap.h"
 #include "cads_marauder_reader.h"
 #include "cads_menu.h"
 #include "cads_softkeys.h"
@@ -69,6 +83,7 @@ static const cads_marauder_tool_meta_t cads_marauder_tools[] = {
     {"Evil Portal", "evilportal -c start", "rogue AP + phishing page",   true},
     {"Beacon Spam",  "attack -t beacon -r", "floods random SSIDs",       true},
     {"Probe Flood", "attack -t probe",     "floods probe requests",      true},
+    {"Sniff (PCAP)", "sniffraw -serial",   "live relay to Wireshark",    false},
 };
 #define CADS_MARAUDER_TOOL_COUNT \
     (sizeof(cads_marauder_tools) / sizeof(cads_marauder_tools[0]))
@@ -114,6 +129,13 @@ typedef struct {
 static cads_marauder_selector_t s_selector;
 static cads_view_t s_tool_view;
 static bool s_uart_ready;
+
+/* --- PCAP relay (Sniff (PCAP) tool) - see cads_marauder_pcap.h and this
+ * file's own header comment on why the demux runs unconditionally. ------- */
+
+static cads_marauder_pcap_t s_pcap;
+static uint32_t s_pcap_target_ip;   /* host order, 0 = relay stays silent */
+static uint32_t s_pcap_frame_count; /* frames decoded this session, shown in the tool view */
 
 static const cads_softkey_t cads_marauder_selector_keys[] = {
     {CadsKeyUp, "Up"},
@@ -212,6 +234,37 @@ static void cads_marauder_join_service(uint32_t now_ms) {
     }
 }
 
+/* --- PCAP relay callbacks --------------------------------------------------
+ *
+ * Both are driven synchronously from inside cads_marauder_pcap_feed(),
+ * called from cads_marauder_tick()'s own read loop - so both run on the
+ * console task, same as everything else that touches s_session.reader or
+ * the WiFi UART (see s_wifi_join_requested's comment in
+ * apps/settings/cads_settings.c for why that single-task discipline
+ * matters on this link). */
+
+static void cads_marauder_pcap_passthrough(void* ctx, const uint8_t* data, uint8_t len) {
+    (void)ctx;
+    cads_marauder_reader_feed(&s_session.reader, data, len);
+}
+
+static void cads_marauder_pcap_frame(void* ctx, const uint8_t* frame, uint16_t frame_len, uint32_t orig_len) {
+    (void)ctx;
+    (void)orig_len;
+    s_pcap_frame_count++;
+    if(s_pcap_target_ip == 0u) return;
+
+    uint8_t datagram[CADS_MARAUDER_TZSP_HDR_LEN + CADS_MARAUDER_PCAP_FRAME_MAX];
+    size_t n = cads_marauder_tzsp_build(datagram, sizeof(datagram), frame, frame_len);
+    if(n > 0u) {
+        cads_net_udp_send(s_pcap_target_ip, CADS_MARAUDER_PCAP_UDP_PORT, datagram, (uint16_t)n);
+    }
+}
+
+void cads_marauder_set_pcap_target(uint32_t ip_host) {
+    s_pcap_target_ip = ip_host;
+}
+
 /* --- small helpers --------------------------------------------------------- */
 
 static const cads_marauder_tool_meta_t* cads_marauder_meta(void) {
@@ -235,6 +288,7 @@ static const cads_menu_item_t cads_marauder_items[] = {
     {"Evil Portal", "ACTIVE",  CADS_MARAUDER_TOOL_EVILPORTAL},
     {"Beacon Spam", "ACTIVE",  CADS_MARAUDER_TOOL_BEACON},
     {"Probe Flood", "ACTIVE",  CADS_MARAUDER_TOOL_PROBE},
+    {"Sniff (PCAP)", "passive", CADS_MARAUDER_TOOL_PCAP},
 };
 
 static void cads_marauder_select(const cads_menu_item_t* item, size_t index, void* context) {
@@ -242,6 +296,11 @@ static void cads_marauder_select(const cads_menu_item_t* item, size_t index, voi
     cads_marauder_selector_t* sel = (cads_marauder_selector_t*)context;
     s_session.selected_tool = item->id;
     cads_marauder_reader_reset(&s_session.reader);
+    /* Defensive, not required for correctness (see cads_marauder_pcap.h's
+     * "self-describing" note - it always resyncs on its own at the next
+     * "[BUF/BEGIN]" regardless): avoids any lingering mid-burst state from
+     * a Sniff (PCAP) session bleeding past a tool switch. */
+    cads_marauder_pcap_resync(&s_pcap);
     /* reader_reset() just cleared the line_cb too - re-arm it so a
      * background join (started from Settings, independent of which tool
      * view is open) keeps seeing every line even though the user just
@@ -290,6 +349,27 @@ static void cads_marauder_draw_output(cads_rect_t area) {
     }
 }
 
+/* Only meaningful for the Sniff (PCAP) tool - shown so the count means
+ * something even before Wireshark is pointed at this board (see
+ * cads_marauder_set_pcap_target()'s own comment on why 0 still counts
+ * frames, it just does not send them). */
+static void cads_marauder_draw_pcap_status(cads_rect_t area) {
+    char line[48];
+    char num[12];
+    cads_str_copy(line, sizeof(line), "Relayed: ");
+    cads_fmt_uint(num, sizeof(num), s_pcap_frame_count);
+    cads_str_append(line, sizeof(line), num);
+    if(s_pcap_target_ip != 0u) {
+        char ip[16];
+        cads_fmt_ipv4(ip, sizeof(ip), s_pcap_target_ip);
+        cads_str_append(line, sizeof(line), " -> ");
+        cads_str_append(line, sizeof(line), ip);
+    } else {
+        cads_str_append(line, sizeof(line), " (no target - set wifi.pcap_target)");
+    }
+    cads_marauder_draw_text(area, 7, line, CadsColorGray);
+}
+
 static void cads_marauder_draw_confirm(cads_rect_t area) {
     cads_marauder_draw_text(area, 1, "Sends real 802.11 traffic.", CadsColorAmber);
     cads_marauder_draw_text(area, 2, "Use only on a network you", CadsColorAmber);
@@ -312,6 +392,7 @@ static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
         case CADS_MARAUDER_MODE_CONFIRM: cads_marauder_draw_confirm(area); break;
         case CADS_MARAUDER_MODE_RUN: cads_marauder_draw_output(area); break;
     }
+    if(s_session.selected_tool == CADS_MARAUDER_TOOL_PCAP) cads_marauder_draw_pcap_status(area);
 }
 
 /* --- shared tool view: input ------------------------------------------------ */
@@ -378,7 +459,11 @@ void cads_marauder_tick(uint32_t now_ms) {
             n = 0u;
             while(n < sizeof(chunk) && cads_hal_wifi_uart_read(&chunk[n])) n++;
             if(n > 0u) {
-                cads_marauder_reader_feed(&s_session.reader, chunk, n);
+                /* Demuxes bursts from CLI text and feeds the reader itself
+                 * via the passthrough callback - see this file's own header
+                 * comment ("PCAP RELAY") on why this always runs, not just
+                 * while Sniff (PCAP) is the selected tool. */
+                cads_marauder_pcap_feed(&s_pcap, chunk, n);
                 got_any = true;
             }
         } while(n == sizeof(chunk));
@@ -411,6 +496,10 @@ void cads_marauder_join(const char* ssid, const char* password) {
 
 void cads_marauder_init(cads_view_dispatcher_t* dispatcher) {
     if(dispatcher == NULL) return;
+
+    cads_marauder_pcap_init(&s_pcap);
+    cads_marauder_pcap_set_frame_cb(&s_pcap, cads_marauder_pcap_frame, NULL);
+    cads_marauder_pcap_set_passthrough_cb(&s_pcap, cads_marauder_pcap_passthrough, NULL);
 
     s_selector.dispatcher = dispatcher;
     cads_menu_init(

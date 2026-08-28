@@ -2063,6 +2063,59 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-28 (Marauder: WiFi join wired, live PCAP-to-Wireshark relay built)
+  — Autonomous `/loop` continuation of the Marauder feature set (user's
+  scope, in priority order: join, PCAP streaming, Bluetooth). Two of three
+  done, host-tested and RAM-budget-passing; **neither hardware-verified
+  yet** (no board session this iteration - see each item's own "not yet
+  hardware-verified" note).
+  **1) `cads_marauder_join()`** now does the real thing instead of a stub:
+  starts `scanall`, watches every AP-format output line via the reader's
+  new `line_cb` hook (`cads_marauder_join.c`, host-tested,
+  `test_marauder_join.c`), counts AP-line arrival order as the
+  `access_points` list index (Marauder's `join -a <index>` is the only way
+  in — no CLI command sets an SSID by name, confirmed against
+  `CommandLine.cpp`), then `stopscan` + `join -a <index> -p <password>`.
+  Wired into a new Settings **"Join WiFi"** row reading `cfg->wifi_ssid`/
+  `wifi_password`, following the same request-flag-on-INPUT-task /
+  service-on-console-task split as Reload config — not just style-copying:
+  `cads_hal_wifi_uart_write()` has no locking of its own and
+  `cads_marauder_tick()` already drives that link every console-task loop,
+  so calling the join straight from the menu row would race two tasks on
+  one UART (the SPI-mutex incident's lesson, applied before it repeated).
+  **2) Live PCAP-over-TZSP relay to Wireshark**, `apps/marauder/
+  cads_marauder_pcap.{h,c}` + a new Marauder menu tool **"Sniff (PCAP)"**
+  (`sniffraw -serial`): demuxes Marauder's own `[BUF/BEGIN]`/`[BUF/CLOSE]`-
+  framed binary bursts from the ordinary CLI text sharing the same UART,
+  self-describes the one-time 24 B pcap global header by racing its magic
+  number against the close marker byte-by-byte (no external "is this the
+  first burst" session state to forget to reset), decodes each record, and
+  relays the raw 802.11 frame as a minimal TZSP datagram
+  (`cads_marauder_tzsp_build()`, header bytes verified byte-exact against
+  Wireshark's own `packet-tzsp.c` constants — confirmed via web fetch, not
+  memory) over UDP port 37008 (`udpdump`'s own default) via a new
+  `cads_net_udp_send()` (`modules/net`, board: transient `udp_pcb` per
+  send; sim: honest no-op, matching the "no link, ever" stub). RAM is the
+  binding constraint (704 B margin after this, floor 256 B) so frames
+  truncate at 128 B rather than buffering a whole capture — valid pcap
+  snapshot-length semantics, Wireshark renders it as
+  "[Frame is marked as truncated]", not an error. New `wifi.pcap_target`
+  config key (IPv4, 0 = relay stays silent). 12 new host tests
+  (`test_marauder_pcap.c`) cover the demux (global header, multi-record
+  bursts, zero-length records, truncation-stays-in-sync, byte-at-a-time
+  resumability, CLI-text passthrough) and the TZSP builder.
+  Docs: `docs/reference/marauder-pcap-stream.md` (new — setup, wire format,
+  troubleshooting), `config-file.md`'s stale "wifi.\* reserved, not yet
+  active" language corrected (it's been active since the join work), both
+  Marauder docs added to `reference/index.md` (neither was linked from
+  there before, an earlier-iteration gap).
+  **3) Bluetooth porting — not started this iteration.**
+  **Known gap noticed, not fixed:** `marauder` is missing from
+  `config-file.md`'s "Recognised apps" profile list and (unverified)
+  possibly from `scripts/check_profile.py`'s own app list — pre-existing,
+  predates this iteration, left as a follow-up rather than scope-creeping
+  into the profile system while mid-feature.
+
 - 2026-08-28 (Marauder co-processor: wired, flashed, verified) — **The WiFi
   co-processor is real hardware now, not a design doc.** An ESP32-WROOM-32
   DevKit is wired to CN8 pins 8/9 (PC6/PC7, USART6) - confirmed against the

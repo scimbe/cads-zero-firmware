@@ -49,6 +49,7 @@
 #define CADS_MARAUDER_TOOL_EVILPORTAL  0x0C06u
 #define CADS_MARAUDER_TOOL_BEACON      0x0C07u
 #define CADS_MARAUDER_TOOL_PROBE       0x0C08u
+#define CADS_MARAUDER_TOOL_PCAP        0x0C09u
 
 /** Register the suite's two views. Call once from cads_menu_app_init()'s own
  *  init chain, the same way every other optional app does. No-op when
@@ -88,5 +89,22 @@ bool cads_marauder_link_active(void);
  * path they were first added for.
  */
 void cads_marauder_join(const char* ssid, const char* password);
+
+/**
+ * Set (or clear, with 0) the destination for the "Sniff (PCAP)" tool's live
+ * relay: every 802.11 frame Marauder streams back over a `sniffraw
+ * -serial` capture (demuxed from the same UART's ordinary CLI text by
+ * cads_marauder_pcap.h - see that header for the wire-format reasoning) is
+ * TZSP-encapsulated and sent as one UDP datagram to `ip_host`:
+ * CADS_MARAUDER_PCAP_UDP_PORT via cads_net_udp_send(). `ip_host` is host
+ * byte order, 0 = relay stays silent (frames are still parsed and counted,
+ * just never sent - so the tool view's own frame counter still means
+ * something with no target configured, e.g. while checking wiring before
+ * pointing Wireshark at it). Intended to be called once from Settings when
+ * cfg->pcap_target_ip changes, the same "only re-apply what changed"
+ * pattern cads_settings_apply_config() already uses for net_ip and the
+ * others - see that function's own comment.
+ */
+void cads_marauder_set_pcap_target(uint32_t ip_host);
 
 #endif /* CADS_MARAUDER_H */

@@ -22,6 +22,7 @@ void cads_config_defaults(cads_config_t* cfg) {
     cfg->wifi_ssid[0] = '\0';
     cfg->wifi_password[0] = '\0';
     cads_str_copy(cfg->wifi_uart, sizeof(cfg->wifi_uart), "usart6");
+    cfg->pcap_target_ip = 0u; /* unset - the PCAP-over-TZSP relay stays silent */
 }
 
 /* --- small parse helpers ---------------------------------------------------- */
@@ -150,6 +151,8 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                     copy_trimmed(cfg->wifi_password, sizeof(cfg->wifi_password), v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.uart")) {
                     copy_trimmed(cfg->wifi_uart, sizeof(cfg->wifi_uart), v, line_end); applied++;
+                } else if(key_is(s, kend, "wifi.pcap_target")) {
+                    if(parse_ipv4(v, line_end, &cfg->pcap_target_ip)) applied++;
                 }
             }
         }
@@ -202,11 +205,12 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_ip(out, size, "net.ip", cfg->net_ip);
     append_kv_ip(out, size, "net.netmask", cfg->net_netmask);
     append_kv_ip(out, size, "net.gateway", cfg->net_gateway);
-    cads_str_append(out, size, "\n# wifi (ESP32 dev board - reserved, not yet active)\n");
+    cads_str_append(out, size, "\n# wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)\n");
     append_kv_uint(out, size, "wifi.enabled", cfg->wifi_enabled ? 1u : 0u);
     append_kv_str(out, size, "wifi.ssid", cfg->wifi_ssid);
     append_kv_str(out, size, "wifi.password", cfg->wifi_password);
     append_kv_str(out, size, "wifi.uart", cfg->wifi_uart);
+    append_kv_ip(out, size, "wifi.pcap_target", cfg->pcap_target_ip);
     return strlen(out);
 }
 
