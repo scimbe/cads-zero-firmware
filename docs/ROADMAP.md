@@ -2059,6 +2059,69 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-29 (Silent boot-loop, found live and fixed by a plain reflash) —
+  User reported "Ich kann taster und gui nicht nutzen" (buttons/GUI
+  unusable). First response sent `d 1800` on the console per the
+  established app_demo fix - it printed the normal success line, which
+  turned out to be misleading: the console was answering, but a fresh
+  webcam photo taken ~7 hours later (09:33 vs 16:56 the same day) showed
+  the panel had gone from a correctly-rendered Home screen to blank/grey,
+  and every subsequent console command (`h`, `E`) got zero bytes back
+  even at a 15-18s timeout. That combination - console dead, panel blank -
+  is the real-crash signature this project has previously only produced
+  as a false alarm (the app_demo any-byte-exit bug, long since fixed);
+  this time it wasn't one.
+  Diagnosed the correct way per this file's own standing lesson: `st-util
+  --no-reset` (never plain `st-util`, which resets on connect and would
+  have destroyed the exact state being inspected) + a live GDB register
+  read. Found the CPU sitting at PC=0x0800020c/0x080006e6 (a few hundred
+  bytes into flash), every general-purpose register zero, LR=0xFFFFFFFF
+  (the CPU's hardware power-on-reset default, never overwritten by a real
+  call), SP=MSP=0x10010000 unchanged from the vector table's initial-SP
+  word, PSP=0 - textbook "spending nearly all its time re-entering
+  Reset_Handler", i.e. a fast reset loop, not a live hang.
+  Detached without incident this time (past sessions have wedged the
+  ST-Link doing this): sent `continue` from a non-batch, non-interactive
+  GDB with stdin on `/dev/null`, then `kill -INT` (not `-9`) on the GDB
+  *process* once it was blocked waiting on the target - GDB caught the
+  interrupt, printed the stop, and exited cleanly on the immediate stdin
+  EOF that followed. New gotcha for next time: `python3 scripts/swd_lock.py
+  st-util --no-reset &` backgrounded from a shell - the PID bash's `$!`
+  hands back is the Python wrapper's, not `st-util`'s own (the wrapper
+  runs it via `subprocess.run`, a child process) - killing only the
+  wrapper PID leaves the real `st-util` holding the ST-Link open
+  (confirmed via `st-info --probe` reporting "Found 0 stlink programmers"
+  / "another process has device opened for exclusive access" until the
+  actual `st-util` PID, found via `ps aux | grep st-util`, was also
+  terminated).
+  Root cause left unconfirmed but circumstantial evidence points at the
+  already-documented issue #57 mechanism (macOS auto-mounting
+  `NOD_F429ZI` and writing metadata that a live ST-Link interprets as
+  firmware at 0x08000000), not a firmware defect in HEAD: `cmake --build
+  build/itsboard` against the unmodified working tree reported "no work
+  to do" (the on-disk `.elf` already matched HEAD exactly, and HEAD had
+  already been hardware-verified booting clean that same morning, see the
+  screencast-viewer photo taken at 09:33 the same day), and the
+  boot-after-reflash forensic ring (read once, from the *previous*,
+  now-overwritten boot) showed `reset cause: IWDG watchdog` plus a
+  BusFault/HardFault pair with `BFAR=0x1EE7CF84` - not a valid address in
+  any real memory region on this part - and general-purpose registers
+  holding what looks like stray ASCII bytes, consistent with a stray
+  external write landing somewhere it shouldn't and being read back as
+  code or a pointer, not with any logic bug in this session's own recent
+  commits. `NOD_F429ZI` was not mounted at diagnosis time, so the
+  fstab-based permanent fix from issue #57 (offered to, never confirmed
+  by, the user) is still worth doing.
+  Fix was simply: rebuild (no-op, already current), re-verify RAM budget
+  (672 B margin, unchanged), `st-flash write` the identical known-good
+  `.bin` back to 0x08000000, confirm boot self-test 6/6 + scheduler start
+  + explorer ready over the console, restart the app_demo GUI session
+  (`d 1800`), and confirm on camera - Home screen, Leo mascot, Menu/Pet
+  buttons, fully live again. Total unattended downtime unknown (found
+  retroactively via the forensic ring's timestamp, `t=14488ms` into
+  *that* boot, not against wall-clock) but likely spanned most of the
+  gap between the two photos.
+
 - 2026-08-28 (Board<->Mac secure link, primitive layer - cross-session
   design and build) — Sparked by a user question about extending the
   ESP32Marauder use case further: could an embedded `ct-agent`/`ct-client`
