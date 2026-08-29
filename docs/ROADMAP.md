@@ -2059,6 +2059,77 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-29 (Expert pentest gap review + three built: net.mac_random,
+  active.armed, screencast-viewer verified; `cads_config.py` push/pull
+  correlates with real vector-table corruption - open) — User asked, as a
+  penetration tester, what this firmware is still missing that matters for
+  field engagements. Answered with a verified (not guessed) list: checked
+  the actual repo before claiming anything absent - `docs/HARDWARE.md`
+  itself already flags USB OTG FS as "present, unused" (BadUSB/HID
+  injection - the biggest real gap), WPA2/WPA3 handshake capture already
+  exists (`sniffpmkid`/`sniffsae`, confirmed in `cads_marauder.h`, so NOT
+  a gap), no loot/case-evidence concept, a single fixed hardcoded MAC
+  (`apps/bringup/explorer_eth.c`), and no scope/arm safety gate on any
+  active tool. User picked: build `net.mac_random` and `active.armed` now,
+  improve (don't necessarily rebuild) the MAC point, BadUSB discussed but
+  not started, loot/case concept and a wipe-on-seizure feature deferred.
+  **`net.mac_random`** (`modules/config`, `apps/bringup/explorer_eth.c`):
+  opt-in config bool: `cads_explorer_net_mac()` draws a fresh, correctly-
+  flagged (unicast + locally-administered bits forced) MAC from the
+  hardware RNG once per boot instead of the fixed `02:CA:D5:5E:00:01`
+  default - OPSEC against a field device presenting the same trackable
+  identity on every engagement's network. Board only (needs
+  `cads_hal_rng_bytes()`); simulator always uses the fixed value.
+  Hardware-verified: two resets produced two different, correctly-flagged
+  addresses (`02:B5:CC:97:61:56`, then `9E:C7:98:DA:A4:8F`). Left enabled
+  on the actual board as the delivered improvement, not just built.
+  **`active.armed`** (same config module, `apps/marauder/cads_marauder.c`,
+  `apps/active/cads_active.c`): device-wide safety catch gating every
+  transmit-based tool's CONFIRM step (Marauder's Deauth/Evil
+  Portal/Beacon Spam/Probe Flood/BLE Spam; M9's forged-frame suite) -
+  default off, blocks Yes from ever starting anything until a deliberate,
+  out-of-band config change arms it; independent of M9's own pre-existing
+  session-only `dry_run` toggle (kept, still useful, just not a hard
+  gate). Hardware-verified both states: unarmed shows "BLOCKED: device not
+  armed" with only Back live; armed shows the original Yes/No confirm
+  screen unchanged. Found and fixed a real latent bug sizing this: the
+  config serialize buffer was already too small for a fully-populated
+  config (~676 B needed vs. 512 B available) - `cads_str_append`'s bounded
+  writes would silently truncate the tail rather than error. Fixed by
+  raising the limit *and* merging load()/save()'s two separate static
+  buffers into one - net RAM effect was a 256 B *saving* despite the
+  larger buffer (672 B margin -> 928 B).
+  **Screencast viewer (Maintainer labor's PR #70)**: verified end-to-end
+  against real hardware (live frames, correct 480x320/4bpp/palette, in an
+  actual browser via Playwright) - see that PR's own thread; not a
+  firmware change, noted here for the day's full record. Install/usage
+  docs written (`docs/how-to/screencast-viewer.md`).
+  **Open, found while hardware-verifying the above, not yet root-caused:
+  `scripts/cads_config.py` push/pull operations correlate with real,
+  reproducible flash corruption at the firmware region** - the exact same
+  single-bit vector-table corruption pattern as issue #57
+  (`0x10010000 -> 0x00010000`, word 0 of the vector table at
+  `0x08000000`), confirmed via `st-util --no-reset` + live GDB register
+  reads multiple times this session, each time shortly after a
+  `cads_config.py push`/`pull` cycle (which only nominally touches
+  `0x08120000`, the filesystem region - not `0x08000000`) even with
+  `NOD_F429ZI` never observed mounted at the time. Recovered each time by
+  a plain firmware reflash + explicit `st-flash reset` (also learned: a
+  bare `st-flash write` with no following `reset` left the core genuinely
+  halted, not crashed - which produced its own separate round of "board
+  unresponsive" false alarms this session before the pattern was
+  understood; always follow a `write` with an explicit `reset` unless
+  chaining into another `write`). Root cause not found - candidates not
+  yet checked: whether `cads_config.py`'s two separate `st-flash`
+  subprocess invocations (read, then write) each do their own reset-for-
+  programming sequence that could race with a background client, or a
+  possible `st-flash`/ST-Link erratum specific to writing right up to the
+  2 MB flash ceiling (`0x08120000 + 896 KB = 0x08200000` exactly). Until
+  root-caused: after any `cads_config.py push` or `pull`, verify the board
+  actually boots (console or a photo, not just the script's own success
+  message) before trusting it, and reflash firmware if anything looks off
+  - a plain reflash has fixed it cleanly every time so far.
+
 - 2026-08-29 (GUI session: explicit quit byte replaces the 30-minute
   timeout) — User's own proposal, after the earlier boot-loop recovery
   above led to sending `d 1800` to keep the panel usable, which then
