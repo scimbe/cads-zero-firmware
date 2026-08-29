@@ -51,7 +51,12 @@
  * Same reasoning as Default_Handler in vectors_stm32f429.c: a reset would
  * throw away the only copy of the evidence. bkpt traps to an attached
  * debugger with the fault still live in memory; the loop after it is what
- * happens with nothing attached.
+ * happens with nothing attached - gated on DHCSR.C_DEBUGEN (see
+ * cads_fault_dump's own comment just above the bkpt) because an
+ * unconditional bkpt with no debugger attached does not fall through to
+ * that loop on this part, it re-faults - found live 2026-08-29 as a real
+ * fault-within-a-fault loop, only ever surfaced once this ran genuinely
+ * unattended for hours instead of at a desk with st-util open.
  */
 
 #include <stdint.h>
@@ -140,7 +145,23 @@ __attribute__((noreturn)) static void cads_fault_dump(const char* name, uint32_t
         name, &forensic_frame, cfsr, hfsr, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR,
         msp_at_fault, psp_at_fault);
 
-    __asm volatile("bkpt #0" ::: "memory");
+    /* bkpt with no debugger attached does not fall through quietly - on
+     * this part it escalates straight back into another HardFault (PM0214
+     * confirms this is expected Cortex-M behaviour, not a hypothetical: a
+     * BKPT instruction with DHCSR.C_DEBUGEN clear traps to the fault
+     * handler, not to a debug monitor that does not exist). Found live,
+     * 2026-08-29: a real fault with nobody attached re-entered this exact
+     * function via its own bkpt, over and over, each cycle only stopped by
+     * the IWDG timing out and resetting the board - which then booted,
+     * re-hit the ORIGINAL bug, and repeated. The forensic ring's own
+     * comment ("still readable... even if nothing is attached right now")
+     * was the intent; this bkpt defeated it for exactly the unattended
+     * case it exists for. Gate it on DHCSR.C_DEBUGEN so a live debugger
+     * still gets the trap it's built for, and an unattended board gets the
+     * clean, quiet halt the loop below was always meant to be. */
+    if((DCB->DHCSR & DCB_DHCSR_C_DEBUGEN_Msk) != 0u) {
+        __asm volatile("bkpt #0" ::: "memory");
+    }
     for(;;) {
     }
 }

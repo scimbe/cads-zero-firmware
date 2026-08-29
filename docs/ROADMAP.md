@@ -2059,6 +2059,63 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-29 (Real root cause of the silent boot-loop above: `bkpt` with no
+  debugger attached re-faults instead of halting - fixed) — The reflash
+  documented in the entry directly below got the panel back once, but the
+  same silence recurred twice more the same session even after a verified-
+  clean reflash and a filesystem-region-only config change (`net.dhcp`
+  0->1), which should never touch code. `st-util --no-reset` + live GDB
+  caught the actual live PC parked inside `cads_fault_dump` itself
+  (`targets/itsboard/startup/fault_handlers.c`) on two separate attaches,
+  and `arm-none-eabi-addr2line` against `build/itsboard/cads-zero.elf`
+  confirmed it: the fault handler was faulting *on itself*. Reading the
+  function found why - its last step before an intentional `for(;;) {}`
+  halt is `bkpt #0`, meant to trap into a live debugger and leave the
+  ordinary loop as the "nothing attached" fallback (the function's own
+  header comment says exactly that). On this part, executing `bkpt` with
+  `DHCSR.C_DEBUGEN` clear does not fall through quietly - PM0214 confirms
+  it escalates straight back into HardFault, so the *fault handler itself*
+  re-entered on its own bkpt, over and over, each cycle ended only by the
+  IWDG timing out and resetting the board - which booted clean, ran until
+  whatever the *original* bug was fired again, and repeated. This is why
+  the forensic ring held four records from two genuinely different fault
+  types (`BusFault`/`HardFault` at one boot, `MemManage`/`HardFault` at
+  another) instead of the one clean record the ring is designed to
+  capture - and why nothing was visible on console for hours: every
+  individual boot's diagnostic output was real, just never reaching a
+  listener, and the design that was specifically supposed to survive that
+  ("still readable by a debugger at the next reboot even if nothing is
+  attached right now") was exactly what the missing guard broke.
+  Fix: gate the `bkpt` on `DCB->DHCSR & DCB_DHCSR_C_DEBUGEN_Msk` (CMSIS_6
+  naming; `core_cm4.h` also aliases the legacy `CoreDebug_DHCSR_*` names to
+  the same bits) - a debugger still gets the trap it's built for, an
+  unattended board now gets the clean, quiet halt the loop was always
+  meant to be. Rebuilt (RAM margin unchanged, 672 B - this is flash-only
+  code), reflashed, reboot verified clean via console + a live webcam
+  photo of the Home screen.
+  **Not yet found: the original bug that faults in the first place.**
+  Left running on `net.dhcp = 0` (the known-stable config all session) as
+  the safe default rather than immediately flipping back to `net.dhcp = 1`
+  to chase it further, right after finally getting the panel back for the
+  user - circumstantial timing points at `net.dhcp = 1` (a previously-
+  fixed 2026-08-28 stack-overflow class, see that Log entry - possibly
+  under new pressure from everything added since: the AEAD/crypto module,
+  screencast, Marauder features) but this was never confirmed against a
+  clean single fault record, only inferred from a chaotic multi-fault
+  ring produced *before* today's bkpt fix existed. With the fault handler
+  now safe to trigger unattended, the next occurrence (deliberately
+  reproduced with `net.dhcp = 1`, or naturally) will finally give one
+  clean, readable record instead of a multi-hour mystery - worth a
+  dedicated session rather than reopening it at the tail of this one.
+  **Also found, unrelated, while running the full host suite as part of
+  verifying this fix (host itself did not rebuild - this is pre-existing,
+  not caused by this fix): `golden_splash` and `golden_boot_desktop` now
+  fail** (`golden_splash`: 18866/153600 pixels differ from
+  `targets/sim/golden/splash.png` - the diff image shows nearly the whole
+  splash screen, not a rounding-error sliver). Not investigated further
+  this session - flagged here so it is not silently rediscovered from
+  scratch next time `ctest` runs clean is assumed.
+
 - 2026-08-29 (Silent boot-loop, found live and fixed by a plain reflash) —
   User reported "Ich kann taster und gui nicht nutzen" (buttons/GUI
   unusable). First response sent `d 1800` on the console per the
