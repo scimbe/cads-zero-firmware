@@ -2059,6 +2059,53 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (Performance A/B campaign, candidate 1: Debug->Release for the
+  flashed firmware - a real fault found, reverted, NOT shipped) — User
+  asked for proactive, A/B-measured performance work as standing filler
+  whenever nothing else is queued, with an explicit, repeated constraint:
+  never risk functionality/robustness/stability for a performance gain.
+  Candidate 1: the `itsboard` CMake preset has always hardcoded
+  `CMAKE_BUILD_TYPE=Debug` (`-Og -g3`) for the actual flashed firmware - a
+  `Release` config path (`-Os -g`) has existed in the top-level
+  `CMakeLists.txt` the whole time but was never used to build what
+  actually ships. Built it standalone (own `cmake -S . -B <scratch dir>
+  -DCMAKE_BUILD_TYPE=Release`, same toolchain file) to compare.
+  **Measured:** flash usage 327 080 B -> 277 700 B (-15.1%); RAM budget
+  margin unchanged (928 B both - `-Os` mostly affects code size, not the
+  static data layout that budget actually gates).
+  **Then hardware-verified before trusting it - and it failed the check.**
+  Flashed, reset, ran `E` (forensic dump): a real `BusFault`
+  (`BFAR=0x230162C3`, `R3` matches - a live invalid-address dereference,
+  not a garbled/stale-looking record) with a coherent, non-garbage
+  PC/LR that `arm-none-eabi-addr2line` resolved against the *Release*
+  ELF specifically to `cads_text_draw_line`
+  (`gui/widgets/cads_textbox.c:91`) / `cads_net_poll` in the LR slot (the
+  LR value itself looks like leftover register content, not a real
+  caller - the PC match is what matters here). This did **not** reproduce
+  against the Debug ELF's own addresses at all, and the ring's other
+  slots read as genuine garbage (the CCM-content-misread pattern this
+  file already documents elsewhere), so this one record stands out as
+  real, not noise pattern-matched by accident.
+  **Immediately reflashed the known-good Debug build and reset** - verified
+  clean boot (self-test `ok 1`/`ok 2`/`ok 3`...) - rather than leave a
+  build with an unconfirmed crash on the device. This is exactly the
+  scenario the user's own "never risk stability" instruction exists for:
+  an optimization that looked purely mechanical (compiler flags, same
+  source) surfaced what looks like real, previously-latent undefined
+  behavior that `-Og`'s more conservative codegen happens to not trigger -
+  classic "works until you optimize it harder" territory, not something a
+  flash/RAM number alone would ever have caught.
+  **Status: candidate 1 REJECTED as-is, not shipped.** Root cause not
+  found yet - `cads_text_draw_line`'s own bounds handling
+  (`gui/widgets/cads_textbox.c`, the `buffer[i] = text[line.offset + i]`
+  loop and its `cads_canvas_draw_text` call) is the place to start; worth
+  a deliberate, single-purpose reproduction attempt (flash Release again,
+  exercise every text-rendering screen deliberately, watch for the same
+  fault) as a follow-up, but not folded into this campaign until that
+  reproduction is done and the actual UB is found and fixed. Candidates
+  2-5 (see this session's earlier plan) unstarted, pending user direction
+  after this result.
+
 - 2026-08-29 (Expert pentest gap review + three built: net.mac_random,
   active.armed, screencast-viewer verified; `cads_config.py` push/pull
   correlates with real vector-table corruption - open) — User asked, as a
