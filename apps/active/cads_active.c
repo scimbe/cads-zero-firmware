@@ -31,6 +31,7 @@
 
 #include <string.h>
 
+#include "cads/config/config.h"
 #include "cads/net/net.h"
 #include "cads/netx/frame.h"
 #include "cads/netx/rawio.h"
@@ -86,6 +87,10 @@ typedef struct {
     cads_active_mode_t mode;
     uint8_t config_cursor;
     bool confirm_yes;
+    bool armed; /* config's active.armed, read fresh on every CONFIRM entry -
+                 * see that field's own doc comment in cads/config/config.h.
+                 * The outer gate; dry_run below is the separate, existing
+                 * inner one - both must allow a real send. */
 
     /* Config (shared across tools - only one runs at a time). */
     bool dry_run;            /**< ON by default: the safety position        */
@@ -264,6 +269,14 @@ static void cads_active_draw_config(cads_rect_t area, const cads_active_tool_met
 
 static void cads_active_draw_confirm(cads_rect_t area, const cads_active_tool_meta_t* meta) {
     (void)meta;
+    if(!s_session.armed) {
+        cads_active_draw_text(area, 2, "BLOCKED: device not armed.", CadsColorRed);
+        cads_active_draw_text(area, 4, "Set active.armed = 1 in", CadsColorAmber);
+        cads_active_draw_text(area, 5, "config.txt to enable any", CadsColorAmber);
+        cads_active_draw_text(area, 6, "active tool on this device.", CadsColorAmber);
+        cads_active_draw_text(area, 8, "Back to cancel", CadsColorGray);
+        return;
+    }
     cads_active_draw_text(area, 2, "Sends forged traffic.", CadsColorAmber);
     cads_active_draw_text(area, 3, "Use only on a network", CadsColorAmber);
     cads_active_draw_text(area, 4, "you control.", CadsColorAmber);
@@ -353,10 +366,14 @@ static bool cads_active_config_input(const cads_input_event_t* event) {
                 case CADS_ACTIVE_CONFIG_TARGET:
                     s_session.target_octet = cads_active_clamp_octet((uint8_t)(s_session.target_octet + 1u));
                     break;
-                case CADS_ACTIVE_CONFIG_START:
+                case CADS_ACTIVE_CONFIG_START: {
                     s_session.confirm_yes = false;
                     s_session.mode = CADS_ACTIVE_MODE_CONFIRM;
+                    cads_config_t cfg;
+                    (void)cads_config_load(&cfg); /* always leaves cfg valid, error or not */
+                    s_session.armed = cfg.active_armed;
                     break;
+                }
                 default: break;
             }
             break;
@@ -369,6 +386,14 @@ static bool cads_active_config_input(const cads_input_event_t* event) {
 }
 
 static bool cads_active_confirm_input(const cads_input_event_t* event) {
+    if(!s_session.armed) {
+        /* Blocked view (cads_active_draw_confirm) - Back is the only live
+         * key. This is the actual enforcement point, not the drawing: Up/
+         * Down/Ok are inert here regardless of what's on screen. */
+        if(event->key == CadsKeyBack) s_session.mode = CADS_ACTIVE_MODE_CONFIG;
+        cads_view_dirty(&s_tool_view);
+        return true;
+    }
     switch(event->key) {
         case CadsKeyUp: s_session.confirm_yes = true; break;
         case CadsKeyDown: s_session.confirm_yes = false; break;

@@ -51,6 +51,7 @@
 
 #include <string.h>
 
+#include "cads/config/config.h"
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
@@ -113,6 +114,11 @@ typedef struct {
     uint32_t selected_tool;
     cads_marauder_mode_t mode;
     bool confirm_yes;
+    bool armed; /* config's active.armed, read fresh on every CONFIRM entry -
+                 * see that field's own doc comment in cads/config/config.h.
+                 * Deliberately NOT cached across tool switches: a config
+                 * reload from Settings must take effect on the very next
+                 * CONFIRM, not require leaving and re-entering Marauder. */
     bool link_active;         /* true briefly around a send/receive burst - see below */
     uint32_t link_active_until_ms;
     cads_marauder_reader_t reader;
@@ -345,6 +351,9 @@ static void cads_marauder_select(const cads_menu_item_t* item, size_t index, voi
     } else if(meta->active) {
         s_session.mode = CADS_MARAUDER_MODE_CONFIRM;
         s_session.confirm_yes = false;
+        cads_config_t cfg;
+        (void)cads_config_load(&cfg); /* always leaves cfg valid, error or not */
+        s_session.armed = cfg.active_armed;
     } else {
         s_session.mode = CADS_MARAUDER_MODE_OUTPUT;
         cads_marauder_send(meta->cmd, cads_hal_ticks_ms());
@@ -414,6 +423,14 @@ static void cads_marauder_draw_pcap_status(cads_rect_t area) {
 }
 
 static void cads_marauder_draw_confirm(cads_rect_t area) {
+    if(!s_session.armed) {
+        cads_marauder_draw_text(area, 2, "BLOCKED: device not armed.", CadsColorRed);
+        cads_marauder_draw_text(area, 4, "Set active.armed = 1 in", CadsColorAmber);
+        cads_marauder_draw_text(area, 5, "config.txt to enable any", CadsColorAmber);
+        cads_marauder_draw_text(area, 6, "active tool on this device.", CadsColorAmber);
+        cads_marauder_draw_text(area, 8, "Back to cancel", CadsColorGray);
+        return;
+    }
     cads_marauder_draw_text(area, 1, "Sends real 802.11 traffic.", CadsColorAmber);
     cads_marauder_draw_text(area, 2, "Use only on a network you", CadsColorAmber);
     cads_marauder_draw_text(area, 3, "own or are authorized to", CadsColorAmber);
@@ -455,6 +472,13 @@ static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
 /* --- shared tool view: input ------------------------------------------------ */
 
 static bool cads_marauder_confirm_input(const cads_input_event_t* event) {
+    if(!s_session.armed) {
+        /* Blocked view (cads_marauder_draw_confirm) - the only live key is
+         * Back, handled by the default case below returning false. Up/Down/
+         * Ok are deliberately inert here, not just visually hidden: this is
+         * the actual enforcement point, not the drawing. */
+        return event->key == CadsKeyBack ? false : true;
+    }
     switch(event->key) {
         case CadsKeyUp: s_session.confirm_yes = true; break;
         case CadsKeyDown: s_session.confirm_yes = false; break;

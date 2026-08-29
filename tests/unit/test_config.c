@@ -28,6 +28,7 @@ static void test_defaults(void) {
     TEST_ASSERT_EQUAL_HEX32(IP4(255, 255, 255, 0), c.net_netmask);
     TEST_ASSERT_EQUAL_HEX32(IP4(192, 168, 33, 1), c.net_gateway);
     TEST_ASSERT_FALSE(c.net_mac_random);
+    TEST_ASSERT_FALSE(c.active_armed);
     TEST_ASSERT_FALSE(c.wifi_enabled);
     TEST_ASSERT_EQUAL_STRING("usart6", c.wifi_uart);
 }
@@ -43,13 +44,14 @@ static void test_parse_overrides_selected_keys(void) {
         "net.ip = 10.0.0.5\n"
         "net.gateway = 10.0.0.1\n"
         "net.mac_random = 1\n"
+        "active.armed = 1\n"
         "wifi.enabled = on\n"
         "wifi.ssid = MyNet\n"
         "wifi.password = s3cret\n"
         "wifi.uart = uart4\n"
         "wifi.pcap_target = 192.168.33.50\n";
     size_t applied = cads_config_parse(text, strlen(text), &c);
-    TEST_ASSERT_EQUAL_UINT(11u, applied);
+    TEST_ASSERT_EQUAL_UINT(12u, applied);
     TEST_ASSERT_EQUAL_UINT8(42u, c.brightness);
     TEST_ASSERT_TRUE(c.fast_clock);
     TEST_ASSERT_TRUE(c.net_dhcp);
@@ -58,6 +60,7 @@ static void test_parse_overrides_selected_keys(void) {
     /* netmask was not in the text - keeps its default. */
     TEST_ASSERT_EQUAL_HEX32(IP4(255, 255, 255, 0), c.net_netmask);
     TEST_ASSERT_TRUE(c.net_mac_random);
+    TEST_ASSERT_TRUE(c.active_armed);
     TEST_ASSERT_TRUE(c.wifi_enabled);
     TEST_ASSERT_EQUAL_STRING("MyNet", c.wifi_ssid);
     TEST_ASSERT_EQUAL_STRING("s3cret", c.wifi_password);
@@ -95,6 +98,7 @@ static void test_serialize_round_trips(void) {
     a.net_dhcp = true;
     a.net_ip = IP4(172, 16, 5, 9);
     a.net_mac_random = true;
+    a.active_armed = true;
     a.wifi_enabled = true;
     strncpy(a.wifi_ssid, "Lab", sizeof(a.wifi_ssid) - 1u);
     a.pcap_target_ip = IP4(192, 168, 33, 50);

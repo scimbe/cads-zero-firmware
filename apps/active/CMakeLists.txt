@@ -20,4 +20,5 @@ target_link_libraries(cads_app_active PUBLIC
     cads_toolbox
     cads_netx
     cads_net
+    cads_config
     PRIVATE cads_flags)
