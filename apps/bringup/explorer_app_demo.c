@@ -129,18 +129,14 @@ static const char* cads_net_indicator_text(void) {
 }
 
 /* Headless key injection, 2026-08-28: there is no way to physically touch
- * the panel from a Mac terminal, and the interactive session's own "any
- * console byte drops back to the prompt" rule (below) means a plain typed
- * command can't double as a keypress either - it would immediately end the
- * very session it is trying to drive. Reserves one byte per logical key,
- * all >= 0x80 so they can never collide with an ordinary typed ASCII
- * command (0x20-0x7E) or CR/LF (0x0D/0x0A): sending one of these over the
- * console (scripts/board_key.py) calls cads_gui_input() directly - the same
+ * the panel from a Mac terminal, so a plain typed command can't double as a
+ * keypress either. Reserves one byte per logical key, all >= 0x80 so they
+ * can never collide with an ordinary typed ASCII command (0x20-0x7E) or
+ * CR/LF (0x0D/0x0A): sending one of these over the console
+ * (scripts/board_key.py) calls cads_gui_input() directly - the same
  * function cads_gui_attach_input()'s trampoline calls for a real button or
  * touch event - and the loop below keeps running instead of exiting, so a
- * script can drive several keys in a row without ever losing the session.
- * Anything else still exits exactly as before; a human typing on a real
- * terminal never produces these bytes by accident. */
+ * script can drive several keys in a row without ever losing the session. */
 static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
     switch(byte) {
         case 0x80u: return CadsKeyUp;
@@ -154,6 +150,18 @@ static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
         default: return CadsKeyNone;
     }
 }
+
+/* The one byte in the same reserved (>= 0x80) range that is NOT a real
+ * button: "leave the GUI, give the console back" - on request
+ * (2026-08-29), replacing the old rule that ANY plain byte (a real typed
+ * command, or a stray diagnostic like board_cmd.py's 'E') silently ended
+ * whatever session was running. That rule needed a duration (seconds != 0u
+ * below) specifically so a long-running session could survive being
+ * probed - which meant picking a number and eventually running out of it.
+ * One dedicated "exit" byte removes the timer entirely: a session (finite
+ * or, with seconds == 0u, unbounded) now ends only when this byte arrives,
+ * never by accident. scripts/board_key.py's "quit" sends it. */
+#define CADS_APP_DEMO_EXIT_BYTE 0x88u
 
 uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
@@ -181,31 +189,37 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 
     if(seconds == 0u) {
         cads_probe_puts(
-            "# app demo: desktop -> menu -> app live on the panel until a "
-            "console key arrives - OK opens the menu, F1 pets Leo, "
-            "every action here is reachable by touch too\r\n");
+            "# app demo: desktop -> menu -> app live on the panel, unbounded - "
+            "OK opens the menu, F1 pets Leo, every action here is reachable by "
+            "touch too; scripts/board_key.py quit returns to the console\r\n");
     } else {
         cads_probe_puts("# app demo: desktop -> menu -> app live on the panel for ");
         cads_probe_put_uint(seconds);
         cads_probe_puts(
-            "s - OK opens the menu, F1 pets Leo, "
-            "every action here is reachable by touch too\r\n");
+            "s (or scripts/board_key.py quit, sooner) - OK opens the menu, F1 "
+            "pets Leo, every action here is reachable by touch too\r\n");
     }
 
     uint32_t start = cads_hal_ticks_ms();
     uint32_t total_pixels = 0u;
     uint32_t frames = 0u;
 
-    /* seconds == 0: interactive session - run until a console byte arrives
-     * (the byte is consumed; any key drops back to the explorer prompt).
-     * This is what boot.autostart uses to hand the panel to the menu at
-     * power-on while keeping the console reachable. */
+    /* Every plain byte - a real typed command, a stray diagnostic like
+     * board_cmd.py's 'E' - is ignored, whether this run is bounded
+     * (seconds != 0u) or not (seconds == 0u, what boot.autostart uses).
+     * The only way out is CADS_APP_DEMO_EXIT_BYTE, checked first so it
+     * always wins even against a byte that also happens to decode as a
+     * key. A bounded run additionally times out on its own below. */
     uint8_t wake_byte = 0u;
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
         {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {
+                if(byte == CADS_APP_DEMO_EXIT_BYTE) {
+                    wake_byte = byte;
+                    break;
+                }
                 cads_key_t injected = cads_explorer_app_demo_decode_key(byte);
                 if(injected != CadsKeyNone) {
                     cads_input_event_t press = {
@@ -214,18 +228,8 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
                     cads_input_event_t release = {
                         .type = CadsInputRelease, .key = injected, .timestamp = now};
                     cads_gui_input(&s_gui, &release);
-                    continue; /* stay live - this was a simulated keypress, not an exit request */
                 }
-                /* A real (non-injected) byte: seconds == 0's interactive
-                 * session drops back to the prompt on any key, same as
-                 * always. A fixed-duration run (seconds != 0, e.g. the 'd
-                 * <n>' console command) keeps its own contract of running
-                 * for exactly that long regardless of console noise - drop
-                 * the byte and keep going, checked below. */
-                if(seconds == 0u) {
-                    wake_byte = byte;
-                    break;
-                }
+                /* any other byte: ignored, loop continues */
             }
         }
         if(seconds != 0u && now - start >= seconds * 1000u) {

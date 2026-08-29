@@ -43,20 +43,18 @@ pass/fail check. See [Run the hardware gate](../how-to/board-test.md).
 | `b` | `<pct>` | Backlight, 0-100% |
 | `l` | `<rgb>` | On-board LEDs, e.g. `l 100` |
 | `g` | `<sec>` (20) | GUI smoke test: `apps/gpio` live on the panel |
-| `d` | `<sec>` (30) | App tree live: desktop → menu → app, exercising the real GUI/view-dispatcher stack rather than a standalone demo. **Any console byte ends this session and drops back to the prompt** (with `<sec>` 0 - what `boot.autostart` uses - it runs until that happens; a nonzero `<sec>` also drops any *real* byte but ignores it until the timer runs out either way) - see "Driving the GUI headlessly" below for how to send input *without* ending the session. |
+| `d` | `[sec]` (unbounded) | App tree live: desktop → menu → app, exercising the real GUI/view-dispatcher stack rather than a standalone demo. **Ignores every plain console byte** - a real typed command or a stray `board_cmd.py` probe never ends the session by accident, whether it's unbounded (no argument - what `boot.autostart` also uses) or given a `<sec>` timeout. The only way back to the prompt, at any point, is `scripts/board_key.py quit` - see "Driving the GUI headlessly" below. |
 | `V` | `<sec>` (10) | Re-measure full-screen flush throughput under real scheduler + live-netif contention, min/avg/max kpixel/s — see [Measurements](measurements.md) for the result this produced |
 
 ### Driving the GUI headlessly
 
-There is no way to physically touch the panel from a Mac terminal, and `d`'s
-own "any byte ends this" rule (above) means a normal typed command can't
-double as a keypress - it would immediately end the very session it should
-be driving. `apps/bringup/explorer_app_demo.c` reserves one byte per
-logical key, all `>= 0x80` so they never collide with a typed ASCII command
-(`0x20`-`0x7E`) or CR/LF: sending one calls `cads_gui_input()` directly -
-the same function a real button or touch event reaches through
-`cads_gui_attach_input()`'s trampoline - and the `d` session keeps running
-instead of exiting.
+There is no way to physically touch the panel from a Mac terminal, so a
+normal typed command can't double as a keypress either.
+`apps/bringup/explorer_app_demo.c` reserves one byte per logical key, all
+`>= 0x80` so they never collide with a typed ASCII command (`0x20`-`0x7E`)
+or CR/LF: sending one calls `cads_gui_input()` directly - the same function
+a real button or touch event reaches through `cads_gui_attach_input()`'s
+trampoline.
 
 `scripts/board_key.py <key> [<key>...]` sends these bytes (no CRLF, unlike
 `board_cmd.py`):
@@ -65,15 +63,24 @@ instead of exiting.
 scripts/board_key.py down down ok      # navigate into the 3rd menu item
 scripts/board_key.py back
 scripts/board_key.py --delay 0.3 up up ok
+scripts/board_key.py quit              # end the session, back to the console
 ```
 
 Valid keys: `up`, `down`, `left`, `right`, `ok`, `back`, `f1`, `f2` -
-matching `cads_key_t` in `input/cads_input.h`. Combine with a live capture
-(a webcam pointed at the panel, or `scripts/board_cmd.py S <sec>` for the
-existing TCP framebuffer stream) to drive and verify the real touchscreen
-UI from a script with nobody at the board - this is how the whole Marauder
-Bluetooth toolset (`docs/reference/marauder-coprocessor.md`) was navigated
-and screenshotted for verification with the board otherwise untouched.
+matching `cads_key_t` in `input/cads_input.h`. `quit` is not one of them -
+it's the one reserved byte that is *not* a real button
+(`CADS_APP_DEMO_EXIT_BYTE`), and the only thing that ends a `d` session
+(2026-08-29; replaced an earlier "any byte ends it" rule that made a `d`
+session unsafe to probe with an ordinary console command). Send `quit`
+before running a plain `board_cmd.py` command while the app tree is live,
+then `d` (or `board_key.py <key>`) again to resume.
+
+Combine with a live capture (a webcam pointed at the panel, or
+`scripts/board_cmd.py S <sec>` for the existing TCP framebuffer stream) to
+drive and verify the real touchscreen UI from a script with nobody at the
+board - this is how the whole Marauder Bluetooth toolset
+(`docs/reference/marauder-coprocessor.md`) was navigated and screenshotted
+for verification with the board otherwise untouched.
 
 ## Storage
 

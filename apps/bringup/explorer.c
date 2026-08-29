@@ -428,7 +428,8 @@ static void cads_help(void) {
         "#   L <hz> [sec]  logic analyzer, IN0..7/INT0..5 -> waveform on panel, default 25Hz/5s\r\n"
         "#   K          continuity test: jumper OUT0 to INT0, drives low then high, reads back\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
-        "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
+        "#   d [sec]    app tree live: desktop -> menu -> app; no argument = unbounded, "
+        "board_key.py quit exits\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
         "#   r          toolbox test: cads_pubsub + cads_record\r\n"
         "#   u          M4 hardware gate: format/write, or verify after a reset\r\n"
@@ -449,21 +450,28 @@ void cads_explorer_run(void) {
 
 #ifdef CADS_APP_SETTINGS_ENABLED
     /* boot.autostart (default on): hand the panel straight to the menu so the
-     * board is usable standalone - no console needed. Any console key drops
-     * back to this prompt. Runs on the console task, the storage owner, and
-     * before the command loop, so the config read has no concurrent storage
-     * user. */
+     * board is usable standalone - no console needed. Runs unbounded
+     * (cads_explorer_app_demo(0u)) - see that function for why the exit
+     * condition is now one dedicated byte (scripts/board_key.py quit)
+     * rather than "any console key", and why: a plain typed command used
+     * to end this session by accident. Runs on the console task, the
+     * storage owner, and before the command loop, so the config read has
+     * no concurrent storage user. */
     {
         cads_config_t boot_cfg;
         (void)cads_config_load(&boot_cfg);
         if(boot_cfg.boot_autostart) {
-            cads_probe_puts("# boot.autostart=1: entering the menu, any console key returns here\r\n");
+            cads_probe_puts(
+                "# boot.autostart=1: entering the menu - scripts/board_key.py quit returns here\r\n");
             uint8_t wake = cads_explorer_app_demo(0u);
             cads_probe_puts("# back at the explorer prompt, '?' for help\r\n");
-            /* The wake byte is the first character of whatever was typed or
-             * scripted - seed the command line with it so a one-shot command
-             * sent to a booted board is not swallowed by the wake-up. */
-            if(wake != 0u && wake != '\r' && wake != '\n') {
+            /* wake is always CADS_APP_DEMO_EXIT_BYTE now (0u only if the
+             * dispatcher itself failed to start) - never a real command
+             * character, so there is nothing worth seeding the command
+             * line with any more; kept as a printable-ASCII guard rather
+             * than deleted outright in case a future caller ever passes a
+             * bounded duration here instead. */
+            if(wake >= 0x20u && wake <= 0x7Eu) {
                 line[0] = (char)wake;
                 length = 1u;
             }
@@ -664,7 +672,13 @@ void cads_explorer_run(void) {
             }
             case 'K': cads_explorer_continuity_demo(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
-            case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
+            /* No `?: 30u` fallback (unlike this file's other <sec> commands):
+             * an absent argument means unbounded (seconds == 0u), matching
+             * boot.autostart's own call - see explorer_app_demo.c for why
+             * unbounded is now safe to leave running (exit is one dedicated
+             * byte, not "any console key"). Pass a number for the old
+             * bounded behaviour instead, e.g. `d 30`. */
+            case 'd': cads_explorer_app_demo(cads_parse_uint(argument)); break;
             case 'x': cads_explorer_kernel_test(); break;
 #ifdef CADS_TARGET_ITSBOARD
             case 'X': {

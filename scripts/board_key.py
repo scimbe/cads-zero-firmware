@@ -3,9 +3,9 @@
 
 There is no way to physically touch the panel from a Mac terminal, and the
 app-tree's own interactive session (apps/bringup/explorer_app_demo.c, what
-boot.autostart hands the panel to) drops back to the plain console prompt on
-ANY console byte - so a normal typed command can't double as a keypress
-without ending the very session it would be driving.
+boot.autostart hands the panel to, and the console's own `d` command) never
+reacts to a plain typed byte - so a normal typed command can't double as a
+keypress, and can't accidentally end the session either.
 
 The firmware reserves one byte per logical key, all >= 0x80 so they can
 never collide with an ordinary typed ASCII command (0x20-0x7E) or CR/LF
@@ -17,10 +17,17 @@ cads_gui_attach_input()'s trampoline) and the app-tree loop keeps running
 instead of exiting - so this script can drive several keys in a row without
 ever losing the interactive session, unlike board_cmd.py's own commands.
 
+"quit" is the one byte in that range that is NOT a real button - it is the
+only thing that ends the session (2026-08-29, replacing the old "any byte
+exits" rule, which meant a stray diagnostic command could kill the session
+by accident). Send it before running any plain board_cmd.py command while
+the app tree is live, then `board_key.py`/`d` again afterward to resume.
+
 Usage:
     scripts/board_key.py down down ok       # navigate into the 3rd item
     scripts/board_key.py back
     scripts/board_key.py --delay 0.3 up up ok
+    scripts/board_key.py quit               # back to the console prompt
 """
 
 from __future__ import annotations
@@ -34,8 +41,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cads_serial import open_console  # noqa: E402
 
-# Must match cads_explorer_app_demo_decode_key() in
-# apps/bringup/explorer_app_demo.c exactly.
+# Must match cads_explorer_app_demo_decode_key() and CADS_APP_DEMO_EXIT_BYTE
+# in apps/bringup/explorer_app_demo.c exactly.
 KEY_BYTES = {
     "up": 0x80,
     "down": 0x81,
@@ -45,6 +52,7 @@ KEY_BYTES = {
     "back": 0x85,
     "f1": 0x86,
     "f2": 0x87,
+    "quit": 0x88,  # not a real button - ends the session, see module docstring
 }
 
 
