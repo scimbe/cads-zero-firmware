@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CaDS Zero — Screen Viewer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>CaDS Zero <span class="muted">— remote screen</span></div>
+  <div id="status" class="status status-connecting">connecting…</div>
+</header>
+
+<main>
+  <div class="panel-frame">
+    <canvas id="screen" width="480" height="320"></canvas>
+  </div>
+  <div class="meta">
+    <span id="dims">— × —</span>
+    <span id="fps">— fps</span>
+    <span id="frames">0 frames</span>
+  </div>
+</main>
+
+<script src="protocol.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

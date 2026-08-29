@@ -1,0 +1,94 @@
+:root {
+  --brand: #204C86;
+  --brand-light: #B5C4D8;
+  --accent: #9CB33B;
+  --bg: #0f1420;
+  --panel: #171e2e;
+  --line: #2a3450;
+  --text: #eef1f7;
+  --muted: #8a93ad;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.4rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(156, 179, 59, 0.2);
+}
+
+.muted { color: var(--muted); font-weight: 400; }
+
+.status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+}
+.status-connecting { color: var(--muted); }
+.status-connected { color: var(--accent); border-color: var(--accent); }
+.status-disconnected, .status-error { color: #e06c75; border-color: #e06c75; }
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 1rem;
+}
+
+.panel-frame {
+  padding: 14px;
+  background: linear-gradient(145deg, var(--brand), var(--brand-light));
+  border-radius: 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+canvas {
+  display: block;
+  background: #000;
+  border-radius: 6px;
+  image-rendering: pixelated;
+  max-width: min(90vw, 960px);
+  height: auto;
+}
+
+.meta {
+  display: flex;
+  gap: 1.2rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
