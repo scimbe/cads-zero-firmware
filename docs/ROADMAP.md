@@ -2059,6 +2059,34 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-29 (GUI session: explicit quit byte replaces the 30-minute
+  timeout) — User's own proposal, after the earlier boot-loop recovery
+  above led to sending `d 1800` to keep the panel usable, which then
+  expired an hour later ("warum kann ich die gui wieder nicht bedienen?" -
+  a real, mundane timeout, not another crash, confirmed via a plain `k`
+  probe answering normally). Rather than pick a bigger arbitrary duration
+  (considered and rejected - still just delays the same problem), the user
+  asked for an explicit on/off: enter GUI mode by command, leave only via
+  one dedicated "button" that does not physically exist. Implemented
+  exactly that: `apps/bringup/explorer_app_demo.c`'s session (both `d` with
+  no argument and `boot.autostart`'s own call, both `seconds == 0u`) now
+  runs unbounded and ignores every plain console byte, same protection a
+  bounded `d <n>` already had; the only exit, at any point, is one new
+  reserved byte (`CADS_APP_DEMO_EXIT_BYTE = 0x88`, in the same `>= 0x80`
+  range as the existing button-injection bytes) sent via
+  `scripts/board_key.py quit`. This removes the old `seconds == 0` special
+  case ("exits on any byte") entirely rather than adding a third mode -
+  bounded and unbounded sessions now share one byte-handling rule, which
+  is simpler code than before, not more. `d [sec]` help text and
+  `docs/reference/explorer-console.md` updated to match.
+  Hardware-verified: boot.autostart's unbounded session survived an `E`
+  probe untouched (confirmed live on camera - Leo still on screen after
+  the probe), `board_key.py quit` handed the console back immediately, a
+  plain command worked right after. Host suite: 34/36 (same 2 pre-existing
+  golden-image failures as the entry above, unrelated - not caused by this
+  change, `explorer_app_demo.c`/`explorer.c` have nothing to do with
+  splash/desktop rendering).
+
 - 2026-08-29 (Real root cause of the silent boot-loop above: `bkpt` with no
   debugger attached re-faults instead of halting - fixed) — The reflash
   documented in the entry directly below got the panel back once, but the
