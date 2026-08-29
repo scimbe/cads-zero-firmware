@@ -46,6 +46,14 @@ typedef struct {
     uint32_t net_ip;      /**< host byte order                             */
     uint32_t net_netmask; /**< host byte order                             */
     uint32_t net_gateway; /**< host byte order                             */
+    /** Fresh random, locally-administered MAC every boot (via the hardware
+     *  RNG - board-only, see cads_hal_rng_bytes()) instead of the fixed
+     *  firmware default. OPSEC: a field device that always presents the
+     *  same MAC on every engagement's network is a consistent, trackable
+     *  identity across visits; off by default so debugging/ARP-table
+     *  workflows that assume a stable address keep working unless this is
+     *  deliberately turned on. See apps/bringup/explorer_eth.c. */
+    bool net_mac_random;
 
     bool wifi_enabled;    /**< carried for the coming ESP32 dev board       */
     char wifi_ssid[CADS_CONFIG_SSID_MAX];

@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "board.h"
+#include "cads/config/config.h"
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads_hal.h"
@@ -253,16 +254,42 @@ void cads_explorer_eth_status(void) {
 /*
  * Locally-administered (bit 1 of the first byte set, per IEEE 802-2014
  * clause 8.2.2), never-forwarded-by-standard-switches unicast (bit 0
- * clear) address, fixed for now. Fine for the single board this firmware
- * currently runs on; the day a second board is on the same segment, this
- * needs to come from something per-device (the STM32's 96-bit UID would be
- * the obvious source) instead of a shared constant - not done here to keep
- * this bullet scoped to "the netif exists and passes frames" per
- * modules/net/include/lwipopts.h's file header.
+ * clear) address. Fixed by default - fine for the single board this
+ * firmware currently runs on; the day a second board is on the same
+ * segment, this needs to come from something per-device (the STM32's
+ * 96-bit UID would be the obvious source) instead of a shared constant.
+ *
+ * `net.mac_random` (2026-08-29, field-use OPSEC): with that config key set,
+ * this becomes a fresh random address every boot instead - a locally
+ * administered field device that always shows the same MAC leaves a
+ * consistent, trackable identity across every network it ever touches,
+ * which is exactly the kind of correlation a field engagement wants to
+ * avoid. Generated once, lazily, from the hardware RNG
+ * (cads_hal_rng_bytes(), the same driver `J` proves live - RM0090's
+ * documented procedure, FIPS 140-2 continuous-test included), then held
+ * for the rest of this boot: lwIP and every caller here need one stable
+ * address per session, not a new one per packet.
  */
-static const uint8_t cads_net_mac_value[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+static uint8_t cads_net_mac_value[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+static bool cads_net_mac_ready = false;
 
 const uint8_t* cads_explorer_net_mac(void) {
+    if(!cads_net_mac_ready) {
+        cads_net_mac_ready = true;
+        cads_config_t cfg;
+        (void)cads_config_load(&cfg); /* always leaves cfg valid, error or not */
+        if(cfg.net_mac_random) {
+            uint8_t random_bytes[6];
+            if(cads_hal_rng_bytes(random_bytes, sizeof(random_bytes))) {
+                random_bytes[0] = (uint8_t)((random_bytes[0] & 0xFEu) | 0x02u); /* unicast + locally administered */
+                memcpy(cads_net_mac_value, random_bytes, sizeof(cads_net_mac_value));
+            }
+            /* RNG failure (SECS/CECS live-seed error, exhausted retries):
+             * silently keep the fixed default rather than send an
+             * uninitialised or partially-random address - see
+             * cads_hal_rng_bytes()'s own contract in core/cads_hal.h. */
+        }
+    }
     return cads_net_mac_value;
 }
 
@@ -284,7 +311,7 @@ static void cads_net_send_probe_frame(void) {
     uint8_t frame[60]; /* Ethernet minimum frame size, CRC excluded (the MAC appends that) */
     memset(frame, 0, sizeof(frame));
     memset(frame, 0xFFu, 6u); /* dest: broadcast */
-    memcpy(frame + 6, cads_net_mac_value, 6u); /* src */
+    memcpy(frame + 6, cads_explorer_net_mac(), 6u); /* src */
     frame[12] = 0x88u;
     frame[13] = 0xB5u; /* ethertype */
     bool sent = cads_hal_eth_mac_transmit(frame, sizeof(frame));
@@ -294,9 +321,14 @@ static void cads_net_send_probe_frame(void) {
 void cads_explorer_net_test(uint32_t seconds) {
     static bool initialised = false;
     if(!initialised) {
-        cads_net_init(cads_net_mac_value);
+        const uint8_t* mac = cads_explorer_net_mac();
+        cads_net_init(mac);
         initialised = true;
-        cads_probe_puts("# net: initialised, mac=02:CA:D5:5E:00:01\r\n");
+        char macbuf[18];
+        cads_fmt_mac(macbuf, sizeof(macbuf), mac);
+        cads_probe_puts("# net: initialised, mac=");
+        cads_probe_puts(macbuf);
+        cads_probe_puts("\r\n");
     }
     if(!seconds) seconds = 20u;
 

@@ -18,6 +18,7 @@ void cads_config_defaults(cads_config_t* cfg) {
     cfg->net_ip = CADS_IP4(192, 168, 33, 99);
     cfg->net_netmask = CADS_IP4(255, 255, 255, 0);
     cfg->net_gateway = CADS_IP4(192, 168, 33, 1);
+    cfg->net_mac_random = false;
     cfg->wifi_enabled = false;
     cfg->wifi_ssid[0] = '\0';
     cfg->wifi_password[0] = '\0';
@@ -143,6 +144,8 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                     if(parse_ipv4(v, line_end, &cfg->net_netmask)) applied++;
                 } else if(key_is(s, kend, "net.gateway")) {
                     if(parse_ipv4(v, line_end, &cfg->net_gateway)) applied++;
+                } else if(key_is(s, kend, "net.mac_random")) {
+                    cfg->net_mac_random = parse_bool(v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.enabled")) {
                     cfg->wifi_enabled = parse_bool(v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.ssid")) {
@@ -205,6 +208,7 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_ip(out, size, "net.ip", cfg->net_ip);
     append_kv_ip(out, size, "net.netmask", cfg->net_netmask);
     append_kv_ip(out, size, "net.gateway", cfg->net_gateway);
+    append_kv_uint(out, size, "net.mac_random", cfg->net_mac_random ? 1u : 0u);
     cads_str_append(out, size, "\n# wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)\n");
     append_kv_uint(out, size, "wifi.enabled", cfg->wifi_enabled ? 1u : 0u);
     append_kv_str(out, size, "wifi.ssid", cfg->wifi_ssid);
