@@ -2059,6 +2059,33 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (Board<->Mac secure link: wire framing built) — User's
+  explicit follow-up to the crypto primitive layer (2026-08-28): "treibe
+  das Framing voran". `modules/security/include/cads/security/
+  secure_frame.h` + `.c`: `cads_secure_frame_encode()`/`_decode()` over
+  `cads_secure_link`'s seal/open, exactly to ct-agent's own review notes
+  from that earlier design session - 4-byte magic (first byte `>= 0x80`,
+  same disambiguation-from-plaintext convention this project already uses
+  for headless key injection, so a secure frame can never be mistaken for
+  a `cads_cli` command line during any transition period where both
+  exist), little-endian length field, nonce in the clear, ciphertext, mac.
+  Streaming-safe decode (`INCOMPLETE` on a partial frame with 0 bytes
+  consumed, `BAD_MAGIC` with 1 byte consumed for stream resync,
+  `AUTH_FAILED` with the full frame consumed on a tampered/wrong-key
+  frame) - built for a real TCP consumer, not just a round-trip demo.
+  11 host tests (`tests/unit/test_secure_frame.c`), all passing; host
+  suite overall 35/37 (same 2 pre-existing golden-image failures,
+  unrelated). Zero RAM/flash cost on the shipped board build - nothing
+  calls this yet, so the linker drops it (confirmed: RAM margin
+  unchanged at 928 B).
+  **Deliberately not done here**: wiring this into `cads_cli` (or any
+  other live transport) - the natural fit is the existing port 4242 `j`
+  console command, but that is a live-transport change touching
+  lwIP/scheduler-adjacent code, a different risk class than framing
+  itself, and key provisioning (`security.psk` in `modules/config`) is
+  still open too. See `docs/reference/secure-link.md` for the fuller
+  writeup.
+
 - 2026-08-30 (Deliberate reproduction attempt on the Release-build BusFault
   - not reproduced; separately, new evidence that flaky `st-flash write`
   verification is NOT specific to `cads_config.py`) — Follow-up to the

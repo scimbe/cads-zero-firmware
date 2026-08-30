@@ -51,6 +51,7 @@ target_include_directories(cads_monocypher PUBLIC ${CADS_ROOT}/lib/monocypher/sr
 
 add_library(cads_security STATIC
     src/cads_secure_link.c
+    src/cads_secure_frame.c
 )
 
 target_include_directories(cads_security

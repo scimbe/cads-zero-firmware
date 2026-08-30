@@ -1,9 +1,9 @@
 # Board <-> Mac secure link (primitive layer)
 
 2026-08-28: the crypto primitive and entropy source for an eventual
-encrypted board<->Mac link, built and hardware-verified. **Not yet wired
-into any wire protocol** - this page documents what exists today, not an
-aspirational full feature.
+encrypted board<->Mac link, built and hardware-verified. 2026-08-30: the
+wire framing on top of it. **Not yet wired into any live transport** -
+this page documents what exists today, not an aspirational full feature.
 
 ## Why
 
@@ -78,22 +78,41 @@ threat model as a field pentesting tool.
   (RFC 7905) to be fast and constant-time in plain software with no
   lookup tables, unlike table-driven AES without hardware acceleration.
 
+## Wire framing (2026-08-30)
+
+`modules/security/include/cads/security/secure_frame.h` -
+`cads_secure_frame_encode()`/`cads_secure_frame_decode()`, a self-describing
+frame format over `cads_secure_link`'s seal/open, built exactly to ct-agent's
+2026-08-28 review notes: a 4-byte magic whose first byte is `>= 0x80` (never
+confusable with cads_cli's plaintext ASCII, the same disambiguation
+convention this project already uses for the touchscreen's headless
+key-injection bytes), a little-endian length field, the 24-byte nonce in the
+clear (not secret - standard AEAD practice), then ciphertext + a 16-byte mac.
+`cads_secure_frame_decode()` is streaming-safe: fed a partial frame (a real
+TCP segment boundary landing mid-frame) it reports `INCOMPLETE` and consumes
+nothing, so a caller can call it again once more bytes arrive, and a bad
+magic byte reports `BAD_MAGIC` with `consumed = 1` so a caller resyncing a
+corrupted stream can just retry one byte at a time. 11 host tests
+(`tests/unit/test_secure_frame.c`): round-trip, the documented header layout
+byte-for-byte, both flavors of incomplete-frame, magic mismatch, tampered
+ciphertext (and that the output buffer is still wiped through this layer,
+not just at the `cads_secure_link` layer directly), wrong AD, an
+undersized decode buffer, an undersized encode buffer, two frames
+back-to-back on one stream, and the zero-length-plaintext edge case.
+Zero RAM/flash cost on the shipped firmware - nothing calls it yet, so the
+linker drops it entirely (confirmed: RAM margin unchanged, 928 B, across
+this addition).
+
 ## Not yet built
 
-- The actual wire protocol/framing for sealed messages over the existing
-  board<->Mac TCP link (port 4242). Design notes from ct-agent's review
-  (2026-08-28), to carry into that work rather than rediscover: length-
-  prefix frames; the frame needs an explicit "this is secure-link" marker
-  distinct from plaintext console/cli traffic, especially during any
-  transition period where both exist; the 24-byte nonce travels in the
-  clear alongside the ciphertext (it is not secret, the receiver needs it
-  to verify against - standard AEAD practice, and an easy thing to
-  reflexively want to hide when it shouldn't be).
+- Any caller that actually invokes this framing (or `cads_secure_link`
+  directly) against a real transport - the natural fit is `cads_cli`'s
+  existing read/write path (port 4242, the `j` console command), but that
+  is a live-transport change (touches lwIP/scheduler-adjacent code, a
+  different risk class than this session's other additions) and is
+  deliberately not folded into the framing work itself.
 - Key provisioning - how a PSK actually gets onto the board (a `security.psk`
   config key via `modules/config` is the natural fit, not yet added).
-- Any caller that actually invokes `cads_secure_link_seal`/`open` outside
-  the test suite - this module does not affect the shipped firmware's
-  behavior at all yet.
 
 See `docs/ROADMAP.md`'s 2026-08-28 Log for the fuller cross-session design
 discussion that led here.

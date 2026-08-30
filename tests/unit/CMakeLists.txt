@@ -200,6 +200,9 @@ target_link_libraries(test_config PRIVATE cads_config)
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)
 
+cads_add_unit_test(test_secure_frame test_secure_frame.c)
+target_link_libraries(test_secure_frame PRIVATE cads_security)
+
 # --- marauder -------------------------------------------------------------
 # The line reader has zero HAL/GUI dependencies by design (see
 # apps/marauder/cads_marauder_reader.h) - compiled straight into the test,
