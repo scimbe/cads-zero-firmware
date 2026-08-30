@@ -2059,6 +2059,57 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (CADS-DEMO-firmware-lab: WebUSB flash-write - the actual root
+  cause, found and fixed after the entry below turned out to be an
+  intermediate, incomplete conclusion) - The prior Log entry's "isolated to
+  the Node WebUSB test harness, not the algorithm" verdict was wrong: the
+  operator's own real-Chrome click test reproduced the identical
+  FLASH_SR=0xc0 (PGPERR|PGSERR) failure, disproving it outright. Real root
+  cause, found by testing an erase-only operation (via an all-0xFF payload,
+  which webstlink's own write() already skips) and reading the target
+  sector back afterward: the erase was reporting success but never
+  actually taking effect on real silicon. `Flash.unlock()` - called once at
+  the start of every flash operation - was calling `core_reset_halt()`,
+  which is a REAL chip reset (writes AIRCR.SYSRESETREQ), not just a debug
+  halt. That restarts CaDS Zero's own boot sequence, which re-arms its ~2s
+  independent hardware watchdog (IWDG) - a watchdog this project already
+  correctly freezes on debug-halt via DBGMCU_APB1_FZ_DBG_IWDG_STOP, but
+  only once the core actually reaches that halted state again. A WebUSB
+  erase+program sequence is real USB round-trip traffic per register
+  access and can easily outlast that 2s window before the core gets back
+  to a frozen-watchdog state, so the IWDG fires mid-erase and resets the
+  chip a second time, out from under the in-progress operation.
+  FLASH_CR reading back as 0x80000000 immediately after a plain SER write
+  - the anomaly chased through the whole prior investigation - is that
+  register's literal power-on-reset default: direct, on-the-nose evidence
+  of an actual unwanted reset, not a corrupted/stale register read as
+  previously assumed. Fix: `unlock()` now calls `core_halt()` instead -
+  nothing about erasing or programming flash via the debug port requires
+  resetting the target first, only having the core not actively executing.
+  Verified end to end on real hardware after the fix: an erase-only
+  operation reads back as genuinely all-0xFF (not just BSY-clear) before
+  any write; a full erase+program+verify of the real demo firmware
+  completes without error and the target boots and runs correctly
+  afterward (confirmed via GDB, matching stack trace as every other check
+  this session). Patch still lives in a local scratch clone of
+  devanlai/webstlink, not yet vendored into firmware-lab - see the entry
+  below for the plan (vendor directly, no fork, matching the lwip
+  patch-file precedent) and Labor's independent register-level review of
+  the intermediate fixes, both still accurate for the fixes that carried
+  forward into this final version.
+  Also fixed in this pass: `WebStlink.detach()` was missing an `await`
+  before `this._mutex.lock()`, so it never actually waited its turn - a
+  Disconnect click (or the demo's own 200ms polling timer) could tear down
+  the USB connection while a flash()/inspect_cpu() call elsewhere was
+  still mid-transfer, throwing "InvalidStateError: ... An operation that
+  changes the device state is in progress" on real hardware. Found from
+  the operator's own bug report ("I click flash, but nothing happens" -
+  the actual cause of that specific symptom turned out to be simpler still:
+  the demo's Flash button stays disabled until the target is Halted, and
+  its click handler silently no-ops if no file is selected - neither
+  produces any visible error, matching "no error message, nothing happens"
+  exactly).
+
 - 2026-08-30 (CADS-DEMO-firmware-lab: WebUSB flashing/debugging deep-dive on
   `webstlink` - three real bugs found and fixed, one root cause correctly
   isolated to the Node test harness rather than the algorithm) - User
