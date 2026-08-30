@@ -2059,6 +2059,35 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (CADS-DEMO-firmware-lab: tutor-mode LLM wiring found broken,
+  root-caused, fixed - end-to-end student setup now verified working) -
+  User's standing directive: keep driving/testing firmware-lab "bis ein
+  Student wirklich Erfolge... machen kann" (until a student can genuinely
+  succeed with the whole setup). Provided real LiteLLM credentials/endpoint
+  for the tutor extension's "Ask about this step" feature; first live test
+  (Playwright-driven browser IDE, `>review-cli: Start Firmware Tutor`, a
+  real question typed into Step 1) returned "LLM backend returned an error
+  (401 Unauthorized)" on every ask. Root cause, confirmed by curl from
+  inside the `firmware-lab` container: `LITELLM_BASE_URL` was set to
+  `http://llm-34a13a96.bunsenbrenner.org/v1` (plain http); that host
+  force-redirects http->https with a 308, and the Authorization header is
+  dropped across that scheme-changing redirect (curl's own default
+  behavior without `--location-trusted`, and almost certainly what the
+  extension's own HTTP client did too - same request against the https URL
+  directly returns 200 with a real model list). Fix verified working:
+  `LITELLM_BASE_URL=https://...` (https, not http) - recreated the
+  container, re-ran the exact same Ask flow, got a correct real answer back
+  from the model. Reported to Labor with the root cause and suggested fix
+  (default the compose env/README to https - plain http silently 401s
+  instead of failing loudly at startup). Also confirmed while testing: all
+  5 tutor walkthrough steps load and are technically accurate for this
+  exact board (STM32F429ZI Nucleo, LD1/LD2/LD3 correctly on GPIO port B),
+  steps 4-5 are real hands-on exercises not just reading. Combined with the
+  earlier Makefile-path fix, the browser IDE + build + tutor LLM path is
+  now genuinely usable end to end; the one remaining known gap (flashing
+  over USB) is a confirmed Docker-Desktop-for-Mac platform limitation, not
+  something a student on native Linux (or real USB passthrough) would hit.
+
 - 2026-08-30 (superseded by a cleaner fix: the lwip CI fork below is gone -
   a plain patch file instead) — User's own reaction to the fork fix
   ("Ich möchte wirklich ungern ein eigen Fork") was right: a fork was

@@ -17,3 +17,11 @@ __pycache__/
 # CMake's own convention for personal, un-shared preset overrides (a local
 # toolchain path, say) layered on top of the checked-in CMakePresets.json.
 CMakeUserPresets.json
+
+# mkdocs build output (.github/workflows/docs.yml builds and deploys this -
+# never meant to be committed, same as build/ above).
+site/
+
+# Playwright MCP's own screenshot/console-log scratch output (browser-testing
+# tool artifacts, not project content).
+.playwright-mcp/
