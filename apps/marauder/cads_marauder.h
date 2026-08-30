@@ -7,17 +7,39 @@
  * this firmware's margin does not forgive one per tool). Tools split into
  * two kinds:
  *
- *   PASSIVE (Scan, Stop, List) - send the command immediately on selection,
- *   no gate. They observe; they never put a frame on the air that wasn't
- *   already there.
+ *   PASSIVE (Scan, Stop, List, Sniff BT, Sniff PMKID, Sniff SAE, Clear APs) -
+ *   send the command immediately on selection, no gate. They observe; they
+ *   never put a frame on the air that wasn't already there. Sniff PMKID and
+ *   Sniff SAE are exactly this even though they exist to support cracking a
+ *   captured handshake afterward (elsewhere, e.g. hashcat on the Mac) - the
+ *   capture itself is passive, waiting for a handshake that would have
+ *   happened anyway, never forcing one via deauth (that combination exists
+ *   in Marauder's own CLI as sniffpmkid -d and is deliberately NOT wired up
+ *   here; it belongs behind the same ACTIVE gate as Deauth, not this one).
  *
- *   ACTIVE (Deauth, Evil Portal, Beacon Spam, Probe Flood) - transmit-based.
- *   Selecting one always lands in a CONFIRM mode first: an explicit warning
- *   that this sends real 802.11 traffic and is for a network you control or
- *   are authorized to test, Yes/No, Back cancels. Only Yes starts it. This
- *   is not optional per-tool configuration - every active tool goes through
- *   the same gate, the same way apps/active's M9 suite already requires for
- *   its own transmit-based tools.
+ *   ACTIVE (Deauth, Evil Portal, Beacon Spam, Probe Flood, BLE Spam) -
+ *   transmit-based. Selecting one always lands in a CONFIRM mode first: an
+ *   explicit warning that this sends real 802.11/BLE traffic and is for a
+ *   network/area you control or are authorized to test, Yes/No, Back
+ *   cancels. Only Yes starts it. This is not optional per-tool
+ *   configuration - every active tool goes through the same gate, the same
+ *   way apps/active's M9 suite already requires for its own transmit-based
+ *   tools.
+ *
+ *   CONFIG (Select Target) - a third shape, neither of the above. Found
+ *   2026-08-28 reading Marauder's own CommandLine.cpp, not assumed:
+ *   `attack -t deauth` (and the AP-list beacon spam / probe flood variants)
+ *   silently refuse to start at all - "You don't have any targets selected.
+ *   Use select" - unless `wifi_scan_obj.filterActive()` is true, which only
+ *   ever becomes true after a `select -a <index>` marks something in
+ *   Marauder's own scanned access_points list. Every ACTIVE tool this
+ *   module ever sent before this one existed was consequently a silent
+ *   no-op on real hardware. Select Target is a numeric field (Up/Down
+ *   adjusts, Ok sends `select -a <N>`) rather than a target-picker list -
+ *   a full scrollable list of scanned APs would need its own array of
+ *   parsed entries, and this firmware's RAM margin (a few hundred bytes)
+ *   does not forgive that; the index to dial in comes from reading it off
+ *   "List APs"'s own already-working output first.
  *
  * The wire this bridges (CN8 pins 8/9, USART6, 115200 baud - see
  * docs/reference/marauder-coprocessor.md) carries Marauder's plaintext CLI:
@@ -27,6 +49,26 @@
  * PPPoS path (a different protocol for a different, currently unwired,
  * co-processor) is not linked into the default build for exactly this
  * reason - see apps/settings/cads_settings.c's own note on that decision.
+ *
+ * BLUETOOTH TOOLS ARE ALWAYS IN THE MENU, SAME AS THE WIFI ONES
+ * ---------------------------------------------------------------------
+ * 2026-08-28: this module briefly tried to show/hide the two Bluetooth
+ * items based on a software liveness probe (send `stopscan` on every
+ * selector entry, add them if a reply came back within ~2 s, remove them
+ * otherwise - there is no electrical presence-detect line on CN8, just
+ * TX/RX, so that was the only signal available). Reverted the same day:
+ * live testing on real hardware showed the probe's timing was not reliable
+ * enough in practice (UART traffic from an already-running scan, task
+ * scheduling jitter, or just an unlucky 2 s window could all make a
+ * genuinely-connected ESP32 register as absent), and a menu item that
+ * flickers in and out is worse than one that is simply always there. The
+ * Bluetooth tools now behave exactly like the WiFi ones always have: if
+ * the ESP32 is not connected, selecting one just gets no reply - no
+ * special-casing, nothing to get wrong. cads_marauder_selector_enter()
+ * still sends `stopscan` on every entry, unconditionally - that part was
+ * never about presence detection, it is the fix for a real Marauder-
+ * firmware gotcha (see docs/reference/marauder-coprocessor.md's own
+ * section on it) and is worth keeping on its own.
  */
 #ifndef CADS_MARAUDER_H
 #define CADS_MARAUDER_H
@@ -50,6 +92,12 @@
 #define CADS_MARAUDER_TOOL_BEACON      0x0C07u
 #define CADS_MARAUDER_TOOL_PROBE       0x0C08u
 #define CADS_MARAUDER_TOOL_PCAP        0x0C09u
+#define CADS_MARAUDER_TOOL_SNIFFBT     0x0C0Au
+#define CADS_MARAUDER_TOOL_BLESPAM     0x0C0Bu
+#define CADS_MARAUDER_TOOL_SNIFFPMKID  0x0C0Cu /**< passive - WPA2 PMKID/handshake capture */
+#define CADS_MARAUDER_TOOL_SNIFFSAE    0x0C0Du /**< passive - WPA3 SAE handshake capture   */
+#define CADS_MARAUDER_TOOL_CLEARAPS    0x0C0Eu /**< passive - wipes the discovered AP list */
+#define CADS_MARAUDER_TOOL_SELECT      0x0C0Fu /**< own CONFIG mode, not OUTPUT/CONFIRM - see cads_marauder.c */
 
 /** Register the suite's two views. Call once from cads_menu_app_init()'s own
  *  init chain, the same way every other optional app does. No-op when

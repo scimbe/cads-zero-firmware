@@ -51,6 +51,7 @@
 
 #include <string.h>
 
+#include "cads/config/config.h"
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
@@ -71,19 +72,31 @@ typedef struct {
     const char* cmd;   /* CLI command line, no trailing \r\n - the sender adds it */
     const char* help;
     bool active;        /* true = transmits real 802.11 traffic, needs CONFIRM */
+    const char* split_marker; /* NULL for most tools - see cads_marauder_reader.h's
+                                * own note; only Marauder output that runs multiple
+                                * records together with no real newline needs this */
 } cads_marauder_tool_meta_t;
 
 /* Indexed by (selected_tool - CADS_MARAUDER_TOOL_SCAN); order must match
  * cads_marauder_items[] below exactly. */
 static const cads_marauder_tool_meta_t cads_marauder_tools[] = {
-    {"Scan APs",    "scanall",             "APs + stations, live",       false},
-    {"Stop Scan",   "stopscan",            "halts any running action",   false},
-    {"List APs",    "list -a",             "show discovered AP list",    false},
-    {"Deauth",      "attack -t deauth",    "deauth frames vs a target",  true},
-    {"Evil Portal", "evilportal -c start", "rogue AP + phishing page",   true},
-    {"Beacon Spam",  "attack -t beacon -r", "floods random SSIDs",       true},
-    {"Probe Flood", "attack -t probe",     "floods probe requests",      true},
-    {"Sniff (PCAP)", "sniffraw -serial",   "live relay to Wireshark",    false},
+    {"Scan APs",     "scanall",             "APs + stations, live",       false, NULL},
+    {"Stop Scan",    "stopscan",            "halts any running action",   false, NULL},
+    {"List APs",     "list -a",             "show discovered AP list",    false, NULL},
+    {"Deauth",       "attack -t deauth",    "deauth frames vs a target",  true,  NULL},
+    {"Evil Portal",  "evilportal -c start", "rogue AP + phishing page",   true,  NULL},
+    {"Beacon Spam",  "attack -t beacon -r", "floods random SSIDs",        true,  NULL},
+    {"Probe Flood",  "attack -t probe",     "floods probe requests",      true,  NULL},
+    {"Sniff (PCAP)", "sniffraw -serial",    "live relay to Wireshark",    false, NULL},
+    {"Sniff BT",     "sniffbt",             "nearby BLE devices, live",   false, "Device: "},
+    {"BLE Spam",     "blespam -t all",      "floods fake BLE devices",    true,  NULL},
+    {"Sniff PMKID",  "sniffpmkid",          "WPA2 handshake, passive",    false, NULL},
+    {"Sniff SAE",    "sniffsae",            "WPA3 handshake, passive",    false, NULL},
+    {"Clear APs",    "clearlist -a",        "wipes the discovered list",  false, NULL},
+    /* cmd is unused for this one - CADS_MARAUDER_MODE_SELECT builds
+     * "select -a <N>" itself from s_session.select_target_index rather than
+     * sending a fixed string on entry, the way every other tool does. */
+    {"Select Target", NULL,                 "pick index for Deauth/etc.", false, NULL},
 };
 #define CADS_MARAUDER_TOOL_COUNT \
     (sizeof(cads_marauder_tools) / sizeof(cads_marauder_tools[0]))
@@ -94,15 +107,24 @@ typedef enum {
     CADS_MARAUDER_MODE_OUTPUT = 0, /* passive tool ran (or list/help) - just show lines */
     CADS_MARAUDER_MODE_CONFIRM,    /* active tool: warning + Yes/No before it starts */
     CADS_MARAUDER_MODE_RUN,        /* active tool running - Back stops it (sends stopscan) */
+    CADS_MARAUDER_MODE_SELECT,     /* Select Target: numeric field, Up/Down/Ok - see cads_marauder.h */
 } cads_marauder_mode_t;
 
 typedef struct {
     uint32_t selected_tool;
     cads_marauder_mode_t mode;
     bool confirm_yes;
+    bool armed; /* config's active.armed, read fresh on every CONFIRM entry -
+                 * see that field's own doc comment in cads/config/config.h.
+                 * Deliberately NOT cached across tool switches: a config
+                 * reload from Settings must take effect on the very next
+                 * CONFIRM, not require leaving and re-entering Marauder. */
     bool link_active;         /* true briefly around a send/receive burst - see below */
     uint32_t link_active_until_ms;
     cads_marauder_reader_t reader;
+    uint32_t select_target_index; /* CADS_MARAUDER_MODE_SELECT's own state - deliberately NOT
+                                    * reset alongside the reader on every tool switch, so dialing
+                                    * in an index once survives navigating away and back */
 } cads_marauder_session_t;
 
 static cads_marauder_session_t s_session;
@@ -280,6 +302,9 @@ static void cads_marauder_draw_text(cads_rect_t area, uint8_t row, const char* t
 
 /* --- selector --------------------------------------------------------------- */
 
+/* WiFi and Bluetooth tools together, always all shown - see
+ * cads_marauder.h's own "BLUETOOTH TOOLS ARE ALWAYS IN THE MENU" note for
+ * why this used to be conditional and isn't any more. */
 static const cads_menu_item_t cads_marauder_items[] = {
     {"Scan APs",    "passive", CADS_MARAUDER_TOOL_SCAN},
     {"Stop Scan",   "passive", CADS_MARAUDER_TOOL_STOP},
@@ -289,6 +314,12 @@ static const cads_menu_item_t cads_marauder_items[] = {
     {"Beacon Spam", "ACTIVE",  CADS_MARAUDER_TOOL_BEACON},
     {"Probe Flood", "ACTIVE",  CADS_MARAUDER_TOOL_PROBE},
     {"Sniff (PCAP)", "passive", CADS_MARAUDER_TOOL_PCAP},
+    {"Sniff BT",    "passive", CADS_MARAUDER_TOOL_SNIFFBT},
+    {"BLE Spam",    "ACTIVE",  CADS_MARAUDER_TOOL_BLESPAM},
+    {"Sniff PMKID", "passive", CADS_MARAUDER_TOOL_SNIFFPMKID},
+    {"Sniff SAE",   "passive", CADS_MARAUDER_TOOL_SNIFFSAE},
+    {"Clear APs",   "passive", CADS_MARAUDER_TOOL_CLEARAPS},
+    {"Select Target", "config", CADS_MARAUDER_TOOL_SELECT},
 };
 
 static void cads_marauder_select(const cads_menu_item_t* item, size_t index, void* context) {
@@ -308,9 +339,21 @@ static void cads_marauder_select(const cads_menu_item_t* item, size_t index, voi
     cads_marauder_join_arm_reader();
 
     const cads_marauder_tool_meta_t* meta = cads_marauder_meta();
-    if(meta->active) {
+    /* reader_reset() also cleared any split_marker from the previous tool -
+     * re-set it (or leave it NULL) for whichever tool this is now, per
+     * cads_marauder_reader.h's own note on why some Marauder output needs
+     * this and most doesn't. */
+    cads_marauder_reader_set_split_marker(&s_session.reader, meta->split_marker);
+    if(s_session.selected_tool == CADS_MARAUDER_TOOL_SELECT) {
+        /* Deliberately does not touch s_session.select_target_index - see
+         * that field's own comment on why it survives a tool switch. */
+        s_session.mode = CADS_MARAUDER_MODE_SELECT;
+    } else if(meta->active) {
         s_session.mode = CADS_MARAUDER_MODE_CONFIRM;
         s_session.confirm_yes = false;
+        cads_config_t cfg;
+        (void)cads_config_load(&cfg); /* always leaves cfg valid, error or not */
+        s_session.armed = cfg.active_armed;
     } else {
         s_session.mode = CADS_MARAUDER_MODE_OUTPUT;
         cads_marauder_send(meta->cmd, cads_hal_ticks_ms());
@@ -336,6 +379,15 @@ static bool cads_marauder_selector_input(const cads_input_event_t* event, void* 
 static void cads_marauder_selector_enter(void* context) {
     cads_marauder_selector_t* sel = (cads_marauder_selector_t*)context;
     cads_menu_set_area(&sel->menu, cads_view_area(&sel->view));
+
+    /* Fixes a real Marauder-firmware gotcha (2026-08-28, see
+     * docs/reference/marauder-coprocessor.md): a scan left running from
+     * anywhere silently swallows every later scan/attack command
+     * (`wifi_scan_obj.scanning()` gate in Marauder's own CommandLine.cpp).
+     * stopscan's own handler sits outside that gate and always replies, so
+     * entering this menu now always leaves the co-processor idle instead of
+     * occasionally inheriting a stuck scan from an earlier session. */
+    cads_marauder_send("stopscan", cads_hal_ticks_ms());
 }
 
 /* --- shared tool view: draw ------------------------------------------------- */
@@ -371,6 +423,14 @@ static void cads_marauder_draw_pcap_status(cads_rect_t area) {
 }
 
 static void cads_marauder_draw_confirm(cads_rect_t area) {
+    if(!s_session.armed) {
+        cads_marauder_draw_text(area, 2, "BLOCKED: device not armed.", CadsColorRed);
+        cads_marauder_draw_text(area, 4, "Set active.armed = 1 in", CadsColorAmber);
+        cads_marauder_draw_text(area, 5, "config.txt to enable any", CadsColorAmber);
+        cads_marauder_draw_text(area, 6, "active tool on this device.", CadsColorAmber);
+        cads_marauder_draw_text(area, 8, "Back to cancel", CadsColorGray);
+        return;
+    }
     cads_marauder_draw_text(area, 1, "Sends real 802.11 traffic.", CadsColorAmber);
     cads_marauder_draw_text(area, 2, "Use only on a network you", CadsColorAmber);
     cads_marauder_draw_text(area, 3, "own or are authorized to", CadsColorAmber);
@@ -378,6 +438,19 @@ static void cads_marauder_draw_confirm(cads_rect_t area) {
     cads_marauder_draw_text(
         area, 6, s_session.confirm_yes ? "> Yes   No" : "  Yes  >No", CadsColorWhite);
     cads_marauder_draw_text(area, 8, "Up/Down choose, Ok=go", CadsColorGray);
+}
+
+static void cads_marauder_draw_select(cads_rect_t area) {
+    char line[32];
+    char num[12];
+    cads_str_copy(line, sizeof(line), "Index: ");
+    cads_fmt_uint(num, sizeof(num), s_session.select_target_index);
+    cads_str_append(line, sizeof(line), num);
+    cads_marauder_draw_text(area, 1, line, CadsColorWhite);
+    cads_marauder_draw_text(area, 3, "Read the index off \"List", CadsColorGray);
+    cads_marauder_draw_text(area, 4, "APs\" first, then dial it", CadsColorGray);
+    cads_marauder_draw_text(area, 5, "in here.", CadsColorGray);
+    cads_marauder_draw_text(area, 7, "Up/Down adjust, Ok=select", CadsColorGray);
 }
 
 static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
@@ -391,6 +464,7 @@ static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
         case CADS_MARAUDER_MODE_OUTPUT: cads_marauder_draw_output(area); break;
         case CADS_MARAUDER_MODE_CONFIRM: cads_marauder_draw_confirm(area); break;
         case CADS_MARAUDER_MODE_RUN: cads_marauder_draw_output(area); break;
+        case CADS_MARAUDER_MODE_SELECT: cads_marauder_draw_select(area); break;
     }
     if(s_session.selected_tool == CADS_MARAUDER_TOOL_PCAP) cads_marauder_draw_pcap_status(area);
 }
@@ -398,6 +472,13 @@ static void cads_marauder_tool_draw(cads_rect_t area, void* context) {
 /* --- shared tool view: input ------------------------------------------------ */
 
 static bool cads_marauder_confirm_input(const cads_input_event_t* event) {
+    if(!s_session.armed) {
+        /* Blocked view (cads_marauder_draw_confirm) - the only live key is
+         * Back, handled by the default case below returning false. Up/Down/
+         * Ok are deliberately inert here, not just visually hidden: this is
+         * the actual enforcement point, not the drawing. */
+        return event->key == CadsKeyBack ? false : true;
+    }
     switch(event->key) {
         case CadsKeyUp: s_session.confirm_yes = true; break;
         case CadsKeyDown: s_session.confirm_yes = false; break;
@@ -424,6 +505,37 @@ static bool cads_marauder_run_input(const cads_input_event_t* event) {
     return false;
 }
 
+static bool cads_marauder_select_input(const cads_input_event_t* event) {
+    switch(event->key) {
+        case CadsKeyUp: s_session.select_target_index++; break;
+        case CadsKeyDown:
+            if(s_session.select_target_index > 0u) s_session.select_target_index--;
+            break;
+        case CadsKeyOk: {
+            /* "select -a <N>" - marks index N (from a prior scanall, read off
+             * "List APs") as selected in Marauder's own access_points list.
+             * Without this, Deauth/AP-list Beacon Spam/Probe Flood all
+             * silently refuse to start - see cads_marauder.h's own "CONFIG"
+             * note. An out-of-range N is Marauder's own problem to report
+             * ("Index not in range") - shown by switching to OUTPUT so the
+             * reply is visible, same as every other command's response. */
+            char cmd[24];
+            char num[12];
+            cads_str_copy(cmd, sizeof(cmd), "select -a ");
+            cads_fmt_uint(num, sizeof(num), s_session.select_target_index);
+            cads_str_append(cmd, sizeof(cmd), num);
+            cads_marauder_reader_reset(&s_session.reader);
+            cads_marauder_send(cmd, cads_hal_ticks_ms());
+            s_session.mode = CADS_MARAUDER_MODE_OUTPUT;
+            break;
+        }
+        case CadsKeyBack: return false;
+        default: break;
+    }
+    cads_view_dirty(&s_tool_view);
+    return true;
+}
+
 static bool cads_marauder_tool_input(const cads_input_event_t* event, void* context) {
     (void)context;
     if(event->type != CadsInputPress) return false;
@@ -431,6 +543,7 @@ static bool cads_marauder_tool_input(const cads_input_event_t* event, void* cont
         case CADS_MARAUDER_MODE_OUTPUT: return false; /* only Back, unconsumed, pops */
         case CADS_MARAUDER_MODE_CONFIRM: return cads_marauder_confirm_input(event);
         case CADS_MARAUDER_MODE_RUN: return cads_marauder_run_input(event);
+        case CADS_MARAUDER_MODE_SELECT: return cads_marauder_select_input(event);
     }
     return false;
 }

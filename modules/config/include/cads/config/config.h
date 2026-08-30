@@ -34,8 +34,17 @@ extern "C" {
 #define CADS_CONFIG_SSID_MAX    33u  /* 32 + NUL */
 #define CADS_CONFIG_PASS_MAX    64u  /* 63 + NUL */
 #define CADS_CONFIG_UART_MAX    12u  /* "usart6"/"uart4" + slack */
-/* A serialized config is well under this; load/save use it as the I/O bound. */
-#define CADS_CONFIG_TEXT_MAX    512u
+/* load/save use this as the I/O bound - must be >= the longest a fully
+ * populated config can actually serialize to. Found too small once already
+ * (2026-08-29, adding net.mac_random/active.armed): the true worst case -
+ * every field at its default plus a max-length wifi.ssid (32) and
+ * wifi.password (63) - serializes to ~676 bytes, well past the old 512,
+ * which cads_str_append's own bounded writes would have silently
+ * truncated (dropping whatever came after, e.g. wifi.uart/wifi.pcap_target)
+ * rather than erroring - caught by test_serialize_round_trips failing, not
+ * by inspection. Recompute this worst case by hand before trusting any
+ * future headroom claim here; do not just bump it and hope. */
+#define CADS_CONFIG_TEXT_MAX    768u
 
 typedef struct {
     bool boot_autostart;  /**< boot straight into the menu (console key exits) */
@@ -46,6 +55,28 @@ typedef struct {
     uint32_t net_ip;      /**< host byte order                             */
     uint32_t net_netmask; /**< host byte order                             */
     uint32_t net_gateway; /**< host byte order                             */
+    /** Fresh random, locally-administered MAC every boot (via the hardware
+     *  RNG - board-only, see cads_hal_rng_bytes()) instead of the fixed
+     *  firmware default. OPSEC: a field device that always presents the
+     *  same MAC on every engagement's network is a consistent, trackable
+     *  identity across visits; off by default so debugging/ARP-table
+     *  workflows that assume a stable address keep working unless this is
+     *  deliberately turned on. See apps/bringup/explorer_eth.c. */
+    bool net_mac_random;
+
+    /** Device-wide safety catch for every transmit-based tool (Marauder's
+     *  Deauth/Evil Portal/Beacon Spam/Probe Flood/BLE Spam, M9 Active Net
+     *  Tools' forged-frame suite): `false` (the default) blocks the
+     *  CONFIRM step's Yes from actually starting anything, however many
+     *  times someone taps through the menu - only a deliberate config
+     *  change (out of band from the touchscreen) arms it. A field
+     *  engagement's scope boundary is set once here for the whole device,
+     *  not per tool and not re-confirmable by a stray button sequence.
+     *  Independent of M9's own existing per-session dry_run toggle (still
+     *  live/session-only, still useful as a quick in-menu nudge) - this is
+     *  the outer gate, that is the inner one. See apps/marauder/
+     *  cads_marauder.c and apps/active/cads_active.c. */
+    bool active_armed;
 
     bool wifi_enabled;    /**< carried for the coming ESP32 dev board       */
     char wifi_ssid[CADS_CONFIG_SSID_MAX];

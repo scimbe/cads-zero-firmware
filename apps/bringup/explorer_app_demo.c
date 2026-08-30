@@ -128,6 +128,41 @@ static const char* cads_net_indicator_text(void) {
     return net.speed_mbit >= 100u ? "100M" : "10M";
 }
 
+/* Headless key injection, 2026-08-28: there is no way to physically touch
+ * the panel from a Mac terminal, so a plain typed command can't double as a
+ * keypress either. Reserves one byte per logical key, all >= 0x80 so they
+ * can never collide with an ordinary typed ASCII command (0x20-0x7E) or
+ * CR/LF (0x0D/0x0A): sending one of these over the console
+ * (scripts/board_key.py) calls cads_gui_input() directly - the same
+ * function cads_gui_attach_input()'s trampoline calls for a real button or
+ * touch event - and the loop below keeps running instead of exiting, so a
+ * script can drive several keys in a row without ever losing the session. */
+static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
+    switch(byte) {
+        case 0x80u: return CadsKeyUp;
+        case 0x81u: return CadsKeyDown;
+        case 0x82u: return CadsKeyLeft;
+        case 0x83u: return CadsKeyRight;
+        case 0x84u: return CadsKeyOk;
+        case 0x85u: return CadsKeyBack;
+        case 0x86u: return CadsKeyF1;
+        case 0x87u: return CadsKeyF2;
+        default: return CadsKeyNone;
+    }
+}
+
+/* The one byte in the same reserved (>= 0x80) range that is NOT a real
+ * button: "leave the GUI, give the console back" - on request
+ * (2026-08-29), replacing the old rule that ANY plain byte (a real typed
+ * command, or a stray diagnostic like board_cmd.py's 'E') silently ended
+ * whatever session was running. That rule needed a duration (seconds != 0u
+ * below) specifically so a long-running session could survive being
+ * probed - which meant picking a number and eventually running out of it.
+ * One dedicated "exit" byte removes the timer entirely: a session (finite
+ * or, with seconds == 0u, unbounded) now ends only when this byte arrives,
+ * never by accident. scripts/board_key.py's "quit" sends it. */
+#define CADS_APP_DEMO_EXIT_BYTE 0x88u
+
 uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
 
@@ -154,35 +189,50 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 
     if(seconds == 0u) {
         cads_probe_puts(
-            "# app demo: desktop -> menu -> app live on the panel until a "
-            "console key arrives - OK opens the menu, F1 pets Leo, "
-            "every action here is reachable by touch too\r\n");
+            "# app demo: desktop -> menu -> app live on the panel, unbounded - "
+            "OK opens the menu, F1 pets Leo, every action here is reachable by "
+            "touch too; scripts/board_key.py quit returns to the console\r\n");
     } else {
         cads_probe_puts("# app demo: desktop -> menu -> app live on the panel for ");
         cads_probe_put_uint(seconds);
         cads_probe_puts(
-            "s - OK opens the menu, F1 pets Leo, "
-            "every action here is reachable by touch too\r\n");
+            "s (or scripts/board_key.py quit, sooner) - OK opens the menu, F1 "
+            "pets Leo, every action here is reachable by touch too\r\n");
     }
 
     uint32_t start = cads_hal_ticks_ms();
     uint32_t total_pixels = 0u;
     uint32_t frames = 0u;
 
-    /* seconds == 0: interactive session - run until a console byte arrives
-     * (the byte is consumed; any key drops back to the explorer prompt).
-     * This is what boot.autostart uses to hand the panel to the menu at
-     * power-on while keeping the console reachable. */
+    /* Every plain byte - a real typed command, a stray diagnostic like
+     * board_cmd.py's 'E' - is ignored, whether this run is bounded
+     * (seconds != 0u) or not (seconds == 0u, what boot.autostart uses).
+     * The only way out is CADS_APP_DEMO_EXIT_BYTE, checked first so it
+     * always wins even against a byte that also happens to decode as a
+     * key. A bounded run additionally times out on its own below. */
     uint8_t wake_byte = 0u;
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
-        if(seconds == 0u) {
+        {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {
-                wake_byte = byte;
-                break;
+                if(byte == CADS_APP_DEMO_EXIT_BYTE) {
+                    wake_byte = byte;
+                    break;
+                }
+                cads_key_t injected = cads_explorer_app_demo_decode_key(byte);
+                if(injected != CadsKeyNone) {
+                    cads_input_event_t press = {
+                        .type = CadsInputPress, .key = injected, .timestamp = now};
+                    cads_gui_input(&s_gui, &press);
+                    cads_input_event_t release = {
+                        .type = CadsInputRelease, .key = injected, .timestamp = now};
+                    cads_gui_input(&s_gui, &release);
+                }
+                /* any other byte: ignored, loop continues */
             }
-        } else if(now - start >= seconds * 1000u) {
+        }
+        if(seconds != 0u && now - start >= seconds * 1000u) {
             break;
         }
         /* A promiscuous-capture M9 tool (802.1X sniff, TCP RST daemon) owns

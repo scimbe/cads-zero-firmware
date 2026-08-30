@@ -35,6 +35,7 @@
 #include "input/cads_input.h"
 #include "input_probe.h"
 #include "tasks.h"
+#include "cads/toolbox/fmt.h"
 #include "cads/toolbox/pubsub.h"
 #include "cads/toolbox/record.h"
 #include "cads/toolbox/str.h"
@@ -427,7 +428,8 @@ static void cads_help(void) {
         "#   L <hz> [sec]  logic analyzer, IN0..7/INT0..5 -> waveform on panel, default 25Hz/5s\r\n"
         "#   K          continuity test: jumper OUT0 to INT0, drives low then high, reads back\r\n"
         "#   g <sec>    GUI smoke test: apps/gpio live on the panel, default 20s\r\n"
-        "#   d <sec>    app tree live: desktop -> menu -> app, default 30s\r\n"
+        "#   d [sec]    app tree live: desktop -> menu -> app; no argument = unbounded, "
+        "board_key.py quit exits\r\n"
         "#   q <n>      touch soak: n samples untouched, ghost-touch count, default 200\r\n"
         "#   r          toolbox test: cads_pubsub + cads_record\r\n"
         "#   u          M4 hardware gate: format/write, or verify after a reset\r\n"
@@ -435,7 +437,8 @@ static void cads_help(void) {
         "#   y          raw flash driver diagnostic, no littlefs (debug 'u' failures)\r\n"
         "#   z FAULT    trip UsageFault deliberately - HALTS FOR GOOD, needs a reflash\r\n"
         "#   x          kernel test: cads_timer + cads_event under the scheduler\r\n"
-        "#   ~ <sec>    WiFi/Marauder co-processor link bring-up test (raw USART6, no PPP), default 5s\r\n");
+        "#   ~ <sec>    WiFi/Marauder passive scan (scanall) over raw USART6, streamed live - no touchscreen needed, default 8s\r\n"
+        "#   J <n>      hardware RNG live check: n random bytes as hex, default 16, max 64 (board-only)\r\n");
 }
 
 void cads_explorer_run(void) {
@@ -447,21 +450,28 @@ void cads_explorer_run(void) {
 
 #ifdef CADS_APP_SETTINGS_ENABLED
     /* boot.autostart (default on): hand the panel straight to the menu so the
-     * board is usable standalone - no console needed. Any console key drops
-     * back to this prompt. Runs on the console task, the storage owner, and
-     * before the command loop, so the config read has no concurrent storage
-     * user. */
+     * board is usable standalone - no console needed. Runs unbounded
+     * (cads_explorer_app_demo(0u)) - see that function for why the exit
+     * condition is now one dedicated byte (scripts/board_key.py quit)
+     * rather than "any console key", and why: a plain typed command used
+     * to end this session by accident. Runs on the console task, the
+     * storage owner, and before the command loop, so the config read has
+     * no concurrent storage user. */
     {
         cads_config_t boot_cfg;
         (void)cads_config_load(&boot_cfg);
         if(boot_cfg.boot_autostart) {
-            cads_probe_puts("# boot.autostart=1: entering the menu, any console key returns here\r\n");
+            cads_probe_puts(
+                "# boot.autostart=1: entering the menu - scripts/board_key.py quit returns here\r\n");
             uint8_t wake = cads_explorer_app_demo(0u);
             cads_probe_puts("# back at the explorer prompt, '?' for help\r\n");
-            /* The wake byte is the first character of whatever was typed or
-             * scripted - seed the command line with it so a one-shot command
-             * sent to a booted board is not swallowed by the wake-up. */
-            if(wake != 0u && wake != '\r' && wake != '\n') {
+            /* wake is always CADS_APP_DEMO_EXIT_BYTE now (0u only if the
+             * dispatcher itself failed to start) - never a real command
+             * character, so there is nothing worth seeding the command
+             * line with any more; kept as a printable-ASCII guard rather
+             * than deleted outright in case a future caller ever passes a
+             * bounded duration here instead. */
+            if(wake >= 0x20u && wake <= 0x7Eu) {
                 line[0] = (char)wake;
                 length = 1u;
             }
@@ -662,7 +672,13 @@ void cads_explorer_run(void) {
             }
             case 'K': cads_explorer_continuity_demo(); break;
             case 'g': cads_explorer_gui_demo(cads_parse_uint(argument) ?: 20u); break;
-            case 'd': cads_explorer_app_demo(cads_parse_uint(argument) ?: 30u); break;
+            /* No `?: 30u` fallback (unlike this file's other <sec> commands):
+             * an absent argument means unbounded (seconds == 0u), matching
+             * boot.autostart's own call - see explorer_app_demo.c for why
+             * unbounded is now safe to leave running (exit is one dedicated
+             * byte, not "any console key"). Pass a number for the old
+             * bounded behaviour instead, e.g. `d 30`. */
+            case 'd': cads_explorer_app_demo(cads_parse_uint(argument)); break;
             case 'x': cads_explorer_kernel_test(); break;
 #ifdef CADS_TARGET_ITSBOARD
             case 'X': {
@@ -808,29 +824,54 @@ void cads_explorer_run(void) {
             case 'z': cads_explorer_fault_test(argument); break;
 #ifdef CADS_TARGET_ITSBOARD
             case '~': {
-                /* Bring-up diagnostic for the WiFi/Marauder co-processor
-                 * link (CN8 pins 8/9, USART6) - talks to the raw HAL
-                 * directly, bypassing modules/wifi's PPP bootstrap state
-                 * machine entirely, the same "raw hardware, no protocol"
-                 * pattern the 'Q' touch diagnostic already uses. With
-                 * TIM8-1 (PC6/TX) bridged to TIM8-2 (PC7/RX) by a jumper at
-                 * CN8, this proves the USART6 driver itself works -
-                 * independent of whatever is or is not on the far end of
-                 * the ESP32 wiring. Without the jumper (ESP32 attached
-                 * instead), 0 bytes back is simply "nothing echoed it",
-                 * which is expected until real ESP32 firmware exists. */
+                /* Live WiFi/Marauder co-processor recon over the serial
+                 * console (CN8 pins 8/9, USART6) - talks to the raw HAL
+                 * directly, bypassing modules/wifi's PPP bootstrap and
+                 * apps/marauder's touchscreen UI entirely, the same "raw
+                 * hardware, no protocol" pattern the 'Q' touch diagnostic
+                 * uses. Started life 2026-08-28 as a throwaway loopback-
+                 * jumper bring-up test; kept and extended (2026-08-28,
+                 * later that day) once it turned out to be the only way to
+                 * reach the co-processor without a hand on the touchscreen
+                 * - board_cmd.py '~' works from anywhere the console USB is
+                 * reachable. Deliberately sends exactly one fixed, passive
+                 * command ("scanall" - lists nearby APs, transmits nothing
+                 * itself) and nothing else: it cannot be used to reach any
+                 * of apps/marauder's active/transmit tools (Deauth, Evil
+                 * Portal, Beacon, Probe), which stay touchscreen-only
+                 * behind their own mandatory confirm dialog on purpose -
+                 * see apps/marauder/cads_marauder.h's own note on why that
+                 * gate is not optional. This is not a smaller version of
+                 * that gate; it is a different, narrower door that only
+                 * opens onto the passive side of the house.
+                 *
+                 * Streams every byte Marauder sends back live (flushed in
+                 * fixed-size chunks) rather than the original single 64 B
+                 * buffer, so a real multi-AP scan reply is fully visible
+                 * over the console instead of being cut to ~60 characters.
+                 * With TIM8-1 (PC6/TX) bridged to TIM8-2 (PC7/RX) by a
+                 * jumper at CN8 instead of an ESP32, the command echoes
+                 * back byte-for-byte unchanged - the loopback check below
+                 * still catches that case and reports it separately from a
+                 * real reply.
+                 *
+                 * 2026-08-28 gotcha, found live: a bare echo + "> " prompt
+                 * with no "Scanning for APs..." line and no AP data does
+                 * NOT mean the wiring or this command is broken - Marauder
+                 * gates its entire WiFi/BT scan/attack command family
+                 * behind `if (!wifi_scan_obj.scanning())` (CommandLine.cpp),
+                 * so a scan left running from anywhere (this command, an
+                 * earlier apps/marauder touchscreen session, a crash mid-
+                 * scan) silently swallows every later scanall with zero
+                 * error output - `stopscan -f` over the same link clears
+                 * it. This is a real Marauder-firmware property, not
+                 * something apps/marauder's own tool view currently
+                 * detects or recovers from either - a stuck scan would
+                 * look the same way there: press Scan, nothing happens. */
                 uint32_t seconds = cads_parse_uint(argument);
                 if(!seconds) seconds = 8u;
                 cads_hal_wifi_uart_init();
 
-                /* TEMP 2026-08-28: real end-to-end verification against the
-                 * actual ESP32Marauder CLI (not a self-loopback jumper) -
-                 * "scanall" is a real Marauder command, so any recognisable
-                 * reply (its own echo, scan results, the "> " prompt) proves
-                 * the CN8 wiring reaches Marauder's Serial (UART0/TX0-RX0)
-                 * and back. Revert to the plain loopback pattern, or remove
-                 * this command entirely, once modules/wifi's real Marauder
-                 * bridge supersedes it. */
                 static const char test_pattern[] = "scanall\r\n";
                 uint32_t sent = (uint32_t)(sizeof(test_pattern) - 1u);
                 cads_hal_wifi_uart_write(test_pattern, sent);
@@ -841,38 +882,84 @@ void cads_explorer_run(void) {
                 cads_probe_put_uint(seconds);
                 cads_probe_puts("s\r\n");
 
-                char received[64];
-                uint32_t received_len = 0u;
+                /* Only the first `sent` bytes feed the loopback check below;
+                 * everything (including those same bytes) also streams out
+                 * live via `chunk`. */
+                char echo_check[16];
+                uint32_t echo_len = 0u;
+                uint32_t total_received = 0u;
+
+                char chunk[64];
+                uint32_t chunk_len = 0u;
                 uint32_t start_ms = cads_hal_ticks_ms();
                 while((cads_hal_ticks_ms() - start_ms) < seconds * 1000u) {
                     uint8_t byte;
                     while(cads_hal_wifi_uart_read(&byte)) {
-                        if(received_len + 1u < sizeof(received)) {
-                            received[received_len++] = (char)byte;
+                        total_received++;
+                        if(echo_len < sizeof(echo_check)) {
+                            echo_check[echo_len++] = (char)byte;
+                        }
+                        chunk[chunk_len++] = (char)byte;
+                        if(chunk_len == sizeof(chunk) - 1u) {
+                            chunk[chunk_len] = '\0';
+                            cads_probe_puts(chunk);
+                            chunk_len = 0u;
                         }
                     }
                 }
-
-                cads_probe_puts("# wifi-uart: received ");
-                cads_probe_put_uint(received_len);
-                cads_probe_puts(" bytes");
-                if(received_len > 0u) {
-                    received[received_len] = '\0';
-                    cads_probe_puts(": \"");
-                    cads_probe_puts(received);
-                    cads_probe_puts("\"");
+                if(chunk_len > 0u) {
+                    chunk[chunk_len] = '\0';
+                    cads_probe_puts(chunk);
                 }
                 cads_probe_puts("\r\n");
 
-                bool matched = received_len == sent &&
-                               memcmp(received, test_pattern, sent) == 0;
-                cads_probe_puts(matched ? "# wifi-uart: LOOPBACK OK\r\n"
-                                         : "# wifi-uart: no clean loopback (see bytes above)\r\n");
+                cads_probe_puts("# wifi-uart: received ");
+                cads_probe_put_uint(total_received);
+                cads_probe_puts(" bytes total\r\n");
+
+                bool matched = total_received == sent && echo_len == sent &&
+                               memcmp(echo_check, test_pattern, sent) == 0;
+                cads_probe_puts(matched ? "# wifi-uart: LOOPBACK OK (jumper, no ESP32 attached)\r\n"
+                                         : "# wifi-uart: not a clean loopback (real ESP32 reply, or no "
+                                           "reply at all - see bytes above)\r\n");
 
                 cads_probe_puts("# wifi-uart: dropped=");
                 cads_probe_put_uint(cads_hal_wifi_uart_dropped());
                 cads_probe_puts(" overruns=");
                 cads_probe_put_uint(cads_hal_wifi_uart_overruns());
+                cads_probe_puts("\r\n");
+                break;
+            }
+            case 'J': {
+                /* Hardware RNG live check (RM0090 ch. 24, cads_hal_rng_bytes())
+                 * - added 2026-08-28 alongside modules/security's AEAD wrapper,
+                 * which needs a genuine entropy source for its per-message
+                 * nonce. Prints raw bytes as hex so a human (or a script) can
+                 * eyeball "does this look like real noise" - not a statistical
+                 * randomness test, just proof the driver returns success and
+                 * produces *something* off real silicon, which a host build
+                 * can never exercise (there is no RNG peripheral in the
+                 * simulator - this command does not exist there). */
+                uint32_t count = cads_parse_uint(argument);
+                if(!count) count = 16u;
+                if(count > 64u) count = 64u;
+
+                uint8_t bytes[64];
+                bool ok = cads_hal_rng_bytes(bytes, count);
+                if(!ok) {
+                    cads_probe_puts("# rng: FAILED (hardware fault or continuous-test failure - "
+                                     "see cads_hal_rng_bytes()'s own comment)\r\n");
+                    break;
+                }
+                cads_probe_puts("# rng: ");
+                cads_probe_put_uint(count);
+                cads_probe_puts(" bytes: ");
+                for(uint32_t i = 0; i < count; i++) {
+                    char hex[3];
+                    cads_fmt_hex(hex, sizeof(hex), bytes[i], 2u, false);
+                    cads_probe_puts(hex);
+                    cads_probe_puts(" ");
+                }
                 cads_probe_puts("\r\n");
                 break;
             }

@@ -20,4 +20,5 @@ target_link_libraries(cads_app_marauder PUBLIC
     cads_gui_widgets
     cads_toolbox
     cads_net
+    cads_config
     PRIVATE cads_flags)

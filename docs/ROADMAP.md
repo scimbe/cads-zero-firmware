@@ -1959,27 +1959,23 @@ final - re-check against docs/HARDWARE.md/SAFETY.md before assigning.
       codebase's actual existing style (checked against the style already
       used throughout, not a generic default), plus a CI check that fails
       on unformatted diffs. `[swarm-ready]`
-- [ ] clang-tidy integration, cross-platform (Windows/Linux/macOS) and
+- [x] clang-tidy integration, cross-platform (Windows/Linux/macOS) and
       wired so findings surface well in an editor's Problems panel, not
-      just a terminal log - almost certainly means a `compile_commands.json`
-      export from the existing CMake build plus a VS Code task/extension
-      that consumes it, verified on more than one OS before calling it done.
-      `[needs-decision]` - which clang-tidy checks to enable is a real
-      design choice (this project's own conventions - e.g. no dynamic
-      allocation, static assertions, section-attribute placement - will
-      false-positive against several stock checks), not something to
-      pick blind.
-- [ ] A complete VS Code project (`.vscode/` recommendations, tasks,
+      just a terminal log. Done 2026-08-28: curated `.clang-tidy`
+      (evidence-based against real files, not a stock preset - see the
+      file's own header comment) plus `.vscode/settings.json` wiring
+      (`C_Cpp.codeAnalysis.clangTidy.enabled`), `.clang-format` fixed to
+      match the codebase's real, already-consistent style
+      (`IndentCaseLabels: true`), format-on-save wired the same way.
+      Windows coverage documented honestly, not assumed: see the new
+      Windows subsection in `docs/how-to/vscode-setup.md#1-get-a-toolchain-on-path`.
+- [x] A complete VS Code project (`.vscode/` recommendations, tasks,
       launch configs for the existing GDB flow) with genuinely useful
       extensions for someone learning this specific firmware+board,
-      documented for beginners at the project's own published how-to
-      (`docs/how-to/build.md`, published to
-      https://scimbe.github.io/cads-zero/how-to/build/ via `mkdocs.yml`
-      + `.github/workflows/docs.yml`). Cross-platform is a real
-      requirement here too, not an afterthought - the existing
-      `scripts/*.py` tooling is already dependency-free Python for
-      exactly this reason (see `scripts/cads_serial.py`'s own header),
-      the new pieces should hold to the same bar. `[swarm-ready]`
+      documented for beginners at the project's own published how-to.
+      Done 2026-08-28 - see this Log's own "VS Code: high-integration
+      native workflow" entry below for what shipped and how it was
+      actually driven/verified (not just written and assumed working).
 - [x] Decision-rationale documentation: expand `docs/explanation/` and/or
       `docs/how-to/debug.md` with the "why" behind standing choices that
       are currently only explained in scattered code comments and this
@@ -2062,6 +2058,504 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-08-30 (Performance A/B campaign, candidate 1: Debug->Release for the
+  flashed firmware - a real fault found, reverted, NOT shipped) — User
+  asked for proactive, A/B-measured performance work as standing filler
+  whenever nothing else is queued, with an explicit, repeated constraint:
+  never risk functionality/robustness/stability for a performance gain.
+  Candidate 1: the `itsboard` CMake preset has always hardcoded
+  `CMAKE_BUILD_TYPE=Debug` (`-Og -g3`) for the actual flashed firmware - a
+  `Release` config path (`-Os -g`) has existed in the top-level
+  `CMakeLists.txt` the whole time but was never used to build what
+  actually ships. Built it standalone (own `cmake -S . -B <scratch dir>
+  -DCMAKE_BUILD_TYPE=Release`, same toolchain file) to compare.
+  **Measured:** flash usage 327 080 B -> 277 700 B (-15.1%); RAM budget
+  margin unchanged (928 B both - `-Os` mostly affects code size, not the
+  static data layout that budget actually gates).
+  **Then hardware-verified before trusting it - and it failed the check.**
+  Flashed, reset, ran `E` (forensic dump): a real `BusFault`
+  (`BFAR=0x230162C3`, `R3` matches - a live invalid-address dereference,
+  not a garbled/stale-looking record) with a coherent, non-garbage
+  PC/LR that `arm-none-eabi-addr2line` resolved against the *Release*
+  ELF specifically to `cads_text_draw_line`
+  (`gui/widgets/cads_textbox.c:91`) / `cads_net_poll` in the LR slot (the
+  LR value itself looks like leftover register content, not a real
+  caller - the PC match is what matters here). This did **not** reproduce
+  against the Debug ELF's own addresses at all, and the ring's other
+  slots read as genuine garbage (the CCM-content-misread pattern this
+  file already documents elsewhere), so this one record stands out as
+  real, not noise pattern-matched by accident.
+  **Immediately reflashed the known-good Debug build and reset** - verified
+  clean boot (self-test `ok 1`/`ok 2`/`ok 3`...) - rather than leave a
+  build with an unconfirmed crash on the device. This is exactly the
+  scenario the user's own "never risk stability" instruction exists for:
+  an optimization that looked purely mechanical (compiler flags, same
+  source) surfaced what looks like real, previously-latent undefined
+  behavior that `-Og`'s more conservative codegen happens to not trigger -
+  classic "works until you optimize it harder" territory, not something a
+  flash/RAM number alone would ever have caught.
+  **Status: candidate 1 REJECTED as-is, not shipped.** Root cause not
+  found yet - `cads_text_draw_line`'s own bounds handling
+  (`gui/widgets/cads_textbox.c`, the `buffer[i] = text[line.offset + i]`
+  loop and its `cads_canvas_draw_text` call) is the place to start; worth
+  a deliberate, single-purpose reproduction attempt (flash Release again,
+  exercise every text-rendering screen deliberately, watch for the same
+  fault) as a follow-up, but not folded into this campaign until that
+  reproduction is done and the actual UB is found and fixed. Candidates
+  2-5 (see this session's earlier plan) unstarted, pending user direction
+  after this result.
+
+- 2026-08-29 (Expert pentest gap review + three built: net.mac_random,
+  active.armed, screencast-viewer verified; `cads_config.py` push/pull
+  correlates with real vector-table corruption - open) — User asked, as a
+  penetration tester, what this firmware is still missing that matters for
+  field engagements. Answered with a verified (not guessed) list: checked
+  the actual repo before claiming anything absent - `docs/HARDWARE.md`
+  itself already flags USB OTG FS as "present, unused" (BadUSB/HID
+  injection - the biggest real gap), WPA2/WPA3 handshake capture already
+  exists (`sniffpmkid`/`sniffsae`, confirmed in `cads_marauder.h`, so NOT
+  a gap), no loot/case-evidence concept, a single fixed hardcoded MAC
+  (`apps/bringup/explorer_eth.c`), and no scope/arm safety gate on any
+  active tool. User picked: build `net.mac_random` and `active.armed` now,
+  improve (don't necessarily rebuild) the MAC point, BadUSB discussed but
+  not started, loot/case concept and a wipe-on-seizure feature deferred.
+  **`net.mac_random`** (`modules/config`, `apps/bringup/explorer_eth.c`):
+  opt-in config bool: `cads_explorer_net_mac()` draws a fresh, correctly-
+  flagged (unicast + locally-administered bits forced) MAC from the
+  hardware RNG once per boot instead of the fixed `02:CA:D5:5E:00:01`
+  default - OPSEC against a field device presenting the same trackable
+  identity on every engagement's network. Board only (needs
+  `cads_hal_rng_bytes()`); simulator always uses the fixed value.
+  Hardware-verified: two resets produced two different, correctly-flagged
+  addresses (`02:B5:CC:97:61:56`, then `9E:C7:98:DA:A4:8F`). Left enabled
+  on the actual board as the delivered improvement, not just built.
+  **`active.armed`** (same config module, `apps/marauder/cads_marauder.c`,
+  `apps/active/cads_active.c`): device-wide safety catch gating every
+  transmit-based tool's CONFIRM step (Marauder's Deauth/Evil
+  Portal/Beacon Spam/Probe Flood/BLE Spam; M9's forged-frame suite) -
+  default off, blocks Yes from ever starting anything until a deliberate,
+  out-of-band config change arms it; independent of M9's own pre-existing
+  session-only `dry_run` toggle (kept, still useful, just not a hard
+  gate). Hardware-verified both states: unarmed shows "BLOCKED: device not
+  armed" with only Back live; armed shows the original Yes/No confirm
+  screen unchanged. Found and fixed a real latent bug sizing this: the
+  config serialize buffer was already too small for a fully-populated
+  config (~676 B needed vs. 512 B available) - `cads_str_append`'s bounded
+  writes would silently truncate the tail rather than error. Fixed by
+  raising the limit *and* merging load()/save()'s two separate static
+  buffers into one - net RAM effect was a 256 B *saving* despite the
+  larger buffer (672 B margin -> 928 B).
+  **Screencast viewer (Maintainer labor's PR #70)**: verified end-to-end
+  against real hardware (live frames, correct 480x320/4bpp/palette, in an
+  actual browser via Playwright) - see that PR's own thread; not a
+  firmware change, noted here for the day's full record. Install/usage
+  docs written (`docs/how-to/screencast-viewer.md`).
+  **Open, found while hardware-verifying the above, not yet root-caused:
+  `scripts/cads_config.py` push/pull operations correlate with real,
+  reproducible flash corruption at the firmware region** - the exact same
+  single-bit vector-table corruption pattern as issue #57
+  (`0x10010000 -> 0x00010000`, word 0 of the vector table at
+  `0x08000000`), confirmed via `st-util --no-reset` + live GDB register
+  reads multiple times this session, each time shortly after a
+  `cads_config.py push`/`pull` cycle (which only nominally touches
+  `0x08120000`, the filesystem region - not `0x08000000`) even with
+  `NOD_F429ZI` never observed mounted at the time. Recovered each time by
+  a plain firmware reflash + explicit `st-flash reset` (also learned: a
+  bare `st-flash write` with no following `reset` left the core genuinely
+  halted, not crashed - which produced its own separate round of "board
+  unresponsive" false alarms this session before the pattern was
+  understood; always follow a `write` with an explicit `reset` unless
+  chaining into another `write`). Root cause not found - candidates not
+  yet checked: whether `cads_config.py`'s two separate `st-flash`
+  subprocess invocations (read, then write) each do their own reset-for-
+  programming sequence that could race with a background client, or a
+  possible `st-flash`/ST-Link erratum specific to writing right up to the
+  2 MB flash ceiling (`0x08120000 + 896 KB = 0x08200000` exactly). Until
+  root-caused: after any `cads_config.py push` or `pull`, verify the board
+  actually boots (console or a photo, not just the script's own success
+  message) before trusting it, and reflash firmware if anything looks off
+  - a plain reflash has fixed it cleanly every time so far.
+
+- 2026-08-29 (GUI session: explicit quit byte replaces the 30-minute
+  timeout) — User's own proposal, after the earlier boot-loop recovery
+  above led to sending `d 1800` to keep the panel usable, which then
+  expired an hour later ("warum kann ich die gui wieder nicht bedienen?" -
+  a real, mundane timeout, not another crash, confirmed via a plain `k`
+  probe answering normally). Rather than pick a bigger arbitrary duration
+  (considered and rejected - still just delays the same problem), the user
+  asked for an explicit on/off: enter GUI mode by command, leave only via
+  one dedicated "button" that does not physically exist. Implemented
+  exactly that: `apps/bringup/explorer_app_demo.c`'s session (both `d` with
+  no argument and `boot.autostart`'s own call, both `seconds == 0u`) now
+  runs unbounded and ignores every plain console byte, same protection a
+  bounded `d <n>` already had; the only exit, at any point, is one new
+  reserved byte (`CADS_APP_DEMO_EXIT_BYTE = 0x88`, in the same `>= 0x80`
+  range as the existing button-injection bytes) sent via
+  `scripts/board_key.py quit`. This removes the old `seconds == 0` special
+  case ("exits on any byte") entirely rather than adding a third mode -
+  bounded and unbounded sessions now share one byte-handling rule, which
+  is simpler code than before, not more. `d [sec]` help text and
+  `docs/reference/explorer-console.md` updated to match.
+  Hardware-verified: boot.autostart's unbounded session survived an `E`
+  probe untouched (confirmed live on camera - Leo still on screen after
+  the probe), `board_key.py quit` handed the console back immediately, a
+  plain command worked right after. Host suite: 34/36 (same 2 pre-existing
+  golden-image failures as the entry above, unrelated - not caused by this
+  change, `explorer_app_demo.c`/`explorer.c` have nothing to do with
+  splash/desktop rendering).
+
+- 2026-08-29 (Real root cause of the silent boot-loop above: `bkpt` with no
+  debugger attached re-faults instead of halting - fixed) — The reflash
+  documented in the entry directly below got the panel back once, but the
+  same silence recurred twice more the same session even after a verified-
+  clean reflash and a filesystem-region-only config change (`net.dhcp`
+  0->1), which should never touch code. `st-util --no-reset` + live GDB
+  caught the actual live PC parked inside `cads_fault_dump` itself
+  (`targets/itsboard/startup/fault_handlers.c`) on two separate attaches,
+  and `arm-none-eabi-addr2line` against `build/itsboard/cads-zero.elf`
+  confirmed it: the fault handler was faulting *on itself*. Reading the
+  function found why - its last step before an intentional `for(;;) {}`
+  halt is `bkpt #0`, meant to trap into a live debugger and leave the
+  ordinary loop as the "nothing attached" fallback (the function's own
+  header comment says exactly that). On this part, executing `bkpt` with
+  `DHCSR.C_DEBUGEN` clear does not fall through quietly - PM0214 confirms
+  it escalates straight back into HardFault, so the *fault handler itself*
+  re-entered on its own bkpt, over and over, each cycle ended only by the
+  IWDG timing out and resetting the board - which booted clean, ran until
+  whatever the *original* bug was fired again, and repeated. This is why
+  the forensic ring held four records from two genuinely different fault
+  types (`BusFault`/`HardFault` at one boot, `MemManage`/`HardFault` at
+  another) instead of the one clean record the ring is designed to
+  capture - and why nothing was visible on console for hours: every
+  individual boot's diagnostic output was real, just never reaching a
+  listener, and the design that was specifically supposed to survive that
+  ("still readable by a debugger at the next reboot even if nothing is
+  attached right now") was exactly what the missing guard broke.
+  Fix: gate the `bkpt` on `DCB->DHCSR & DCB_DHCSR_C_DEBUGEN_Msk` (CMSIS_6
+  naming; `core_cm4.h` also aliases the legacy `CoreDebug_DHCSR_*` names to
+  the same bits) - a debugger still gets the trap it's built for, an
+  unattended board now gets the clean, quiet halt the loop was always
+  meant to be. Rebuilt (RAM margin unchanged, 672 B - this is flash-only
+  code), reflashed, reboot verified clean via console + a live webcam
+  photo of the Home screen.
+  **Not yet found: the original bug that faults in the first place.**
+  Left running on `net.dhcp = 0` (the known-stable config all session) as
+  the safe default rather than immediately flipping back to `net.dhcp = 1`
+  to chase it further, right after finally getting the panel back for the
+  user - circumstantial timing points at `net.dhcp = 1` (a previously-
+  fixed 2026-08-28 stack-overflow class, see that Log entry - possibly
+  under new pressure from everything added since: the AEAD/crypto module,
+  screencast, Marauder features) but this was never confirmed against a
+  clean single fault record, only inferred from a chaotic multi-fault
+  ring produced *before* today's bkpt fix existed. With the fault handler
+  now safe to trigger unattended, the next occurrence (deliberately
+  reproduced with `net.dhcp = 1`, or naturally) will finally give one
+  clean, readable record instead of a multi-hour mystery - worth a
+  dedicated session rather than reopening it at the tail of this one.
+  **Also found, unrelated, while running the full host suite as part of
+  verifying this fix (host itself did not rebuild - this is pre-existing,
+  not caused by this fix): `golden_splash` and `golden_boot_desktop` now
+  fail** (`golden_splash`: 18866/153600 pixels differ from
+  `targets/sim/golden/splash.png` - the diff image shows nearly the whole
+  splash screen, not a rounding-error sliver). Not investigated further
+  this session - flagged here so it is not silently rediscovered from
+  scratch next time `ctest` runs clean is assumed.
+
+- 2026-08-29 (Silent boot-loop, found live and fixed by a plain reflash) —
+  User reported "Ich kann taster und gui nicht nutzen" (buttons/GUI
+  unusable). First response sent `d 1800` on the console per the
+  established app_demo fix - it printed the normal success line, which
+  turned out to be misleading: the console was answering, but a fresh
+  webcam photo taken ~7 hours later (09:33 vs 16:56 the same day) showed
+  the panel had gone from a correctly-rendered Home screen to blank/grey,
+  and every subsequent console command (`h`, `E`) got zero bytes back
+  even at a 15-18s timeout. That combination - console dead, panel blank -
+  is the real-crash signature this project has previously only produced
+  as a false alarm (the app_demo any-byte-exit bug, long since fixed);
+  this time it wasn't one.
+  Diagnosed the correct way per this file's own standing lesson: `st-util
+  --no-reset` (never plain `st-util`, which resets on connect and would
+  have destroyed the exact state being inspected) + a live GDB register
+  read. Found the CPU sitting at PC=0x0800020c/0x080006e6 (a few hundred
+  bytes into flash), every general-purpose register zero, LR=0xFFFFFFFF
+  (the CPU's hardware power-on-reset default, never overwritten by a real
+  call), SP=MSP=0x10010000 unchanged from the vector table's initial-SP
+  word, PSP=0 - textbook "spending nearly all its time re-entering
+  Reset_Handler", i.e. a fast reset loop, not a live hang.
+  Detached without incident this time (past sessions have wedged the
+  ST-Link doing this): sent `continue` from a non-batch, non-interactive
+  GDB with stdin on `/dev/null`, then `kill -INT` (not `-9`) on the GDB
+  *process* once it was blocked waiting on the target - GDB caught the
+  interrupt, printed the stop, and exited cleanly on the immediate stdin
+  EOF that followed. New gotcha for next time: `python3 scripts/swd_lock.py
+  st-util --no-reset &` backgrounded from a shell - the PID bash's `$!`
+  hands back is the Python wrapper's, not `st-util`'s own (the wrapper
+  runs it via `subprocess.run`, a child process) - killing only the
+  wrapper PID leaves the real `st-util` holding the ST-Link open
+  (confirmed via `st-info --probe` reporting "Found 0 stlink programmers"
+  / "another process has device opened for exclusive access" until the
+  actual `st-util` PID, found via `ps aux | grep st-util`, was also
+  terminated).
+  Root cause left unconfirmed but circumstantial evidence points at the
+  already-documented issue #57 mechanism (macOS auto-mounting
+  `NOD_F429ZI` and writing metadata that a live ST-Link interprets as
+  firmware at 0x08000000), not a firmware defect in HEAD: `cmake --build
+  build/itsboard` against the unmodified working tree reported "no work
+  to do" (the on-disk `.elf` already matched HEAD exactly, and HEAD had
+  already been hardware-verified booting clean that same morning, see the
+  screencast-viewer photo taken at 09:33 the same day), and the
+  boot-after-reflash forensic ring (read once, from the *previous*,
+  now-overwritten boot) showed `reset cause: IWDG watchdog` plus a
+  BusFault/HardFault pair with `BFAR=0x1EE7CF84` - not a valid address in
+  any real memory region on this part - and general-purpose registers
+  holding what looks like stray ASCII bytes, consistent with a stray
+  external write landing somewhere it shouldn't and being read back as
+  code or a pointer, not with any logic bug in this session's own recent
+  commits. `NOD_F429ZI` was not mounted at diagnosis time, so the
+  fstab-based permanent fix from issue #57 (offered to, never confirmed
+  by, the user) is still worth doing.
+  Fix was simply: rebuild (no-op, already current), re-verify RAM budget
+  (672 B margin, unchanged), `st-flash write` the identical known-good
+  `.bin` back to 0x08000000, confirm boot self-test 6/6 + scheduler start
+  + explorer ready over the console, restart the app_demo GUI session
+  (`d 1800`), and confirm on camera - Home screen, Leo mascot, Menu/Pet
+  buttons, fully live again. Total unattended downtime unknown (found
+  retroactively via the forensic ring's timestamp, `t=14488ms` into
+  *that* boot, not against wall-clock) but likely spanned most of the
+  gap between the two photos.
+
+- 2026-08-28 (Board<->Mac secure link, primitive layer - cross-session
+  design and build) — Sparked by a user question about extending the
+  ESP32Marauder use case further: could an embedded `ct-agent`/`ct-client`
+  (the user's separate tunnel-agent project, run by another Claude session,
+  "Maintainer Tunnel ct-agent") run on this board? Real cross-session
+  collaboration, not solved alone - the other session read its own actual
+  crate (`~3.6k`-`17.7k` lines, `tokio`/`quinn`/`rustls`, all
+  heap-allocating) and gave a precise, evidence-based "no": TLS 1.3 itself
+  needs low-to-mid kilobytes of handshake state, inherent to the protocol,
+  not an artifact of any one implementation - nowhere close to this
+  firmware's ~670 B margin, even for a from-scratch reimplementation.
+  Landed on a cleaner shape instead: this Mac (already running the ST-Link/
+  tester/board_key.py all session) is the "companion device", speaking
+  real QUIC/TLS out to `ct-agent`'s tunnel, while the board<->Mac leg over
+  the existing local LAN either stays plaintext or gets a much cheaper
+  encryption layer - fixed pre-shared key, no TLS handshake at all.
+  ct-agent's session reviewed that specific design (a second dedicated
+  question) and found it structurally sound (same shape as WireGuard's or
+  IPsec-ESP's static-SA mode) with one real, non-optional gap: a counter
+  nonce resets to 0 on reboot and reuses under a fixed key on the very
+  first post-boot message, which is catastrophic (recoverable auth key),
+  not merely weak. Fix: this board's confirmed hardware RNG (checked
+  against the project's own vendored SVD) generates a genuinely random
+  24-byte XChaCha20-Poly1305 nonce per message instead, sidestepping
+  cross-reboot counter persistence entirely.
+  Built the primitive layer this same session, hardware-verified, not
+  just designed: vendored Monocypher (hash-verified byte-for-byte against
+  an independent re-fetch before committing - this is crypto source, a
+  transcription error would be a security bug, not a build break),
+  `modules/security`'s `cads_secure_link_seal/open()` wrapper (found and
+  fixed a real gap while writing it: Monocypher's own `crypto_aead_unlock`
+  leaves its output buffer completely untouched, not wiped, on an auth
+  failure - verified by reading the actual implementation, not the header
+  comment - so the wrapper now wipes it explicitly), a host-testable test
+  suite including a known-answer vector cross-checked against an
+  independent reference (PyNaCl/libsodium), and a real STM32F429 hardware
+  RNG driver (`cads_hal_rng_bytes()`, RM0090 ch. 24's full documented
+  procedure - continuous-RNG self-test on every word, live SECS/CECS error
+  checking) exercised live on real silicon via a new `J <n>` explorer
+  command - two runs, different high-entropy output each time, confirmed
+  via `board_cmd.py`. Not yet wired into any actual wire protocol; see
+  `docs/reference/secure-link.md` for exactly what exists today versus
+  what's still open. Companion piece: the host-side bridge (talks to a
+  litellm-proxied LLM demo, "Maintainer labor") is being packaged as an
+  installable manifest by that same collaborating session, a separate,
+  parallel thread from this one.
+
+- 2026-08-28 (Select Target - Deauth was silently a no-op this whole
+  project's history) — Found reading Marauder's own `CommandLine.cpp`
+  directly, prompted by the user asking whether the ESP32's real
+  capability was actually being made usable: `attack -t deauth` (and the
+  AP-list Beacon Spam / Probe Flood variants) refuse to start at all -
+  `"You don't have any targets selected. Use select"` - unless
+  `wifi_scan_obj.filterActive()` is true, which only ever becomes true
+  after a `select -a <index>` marks something in Marauder's own scanned
+  `access_points` list. Nothing in this project has ever sent `select`.
+  **Every active WiFi tool this project has ever built was consequently a
+  silent no-op on real hardware, discoverable only by reading Marauder's
+  own source, not from the UI** (the confirm dialog runs fine, Marauder
+  just quietly declines to transmit anything afterward - no error shown).
+  Fixed with a new "Select Target" tool - a third interaction shape beyond
+  the existing passive/active ones, a numeric field (Up/Down adjusts, Ok
+  sends `select -a <N>`) rather than a scrollable target-picker list (which
+  would need its own parsed-AP array this firmware's RAM margin, ~670 B,
+  does not afford). Hardware-verified end to end via the same day's
+  headless key-injection tooling: navigated to it, dialed in index 3,
+  confirmed via webcam that Marauder replied `1 selected, 0 unselected` -
+  the real `showCounts()` success reply. See
+  `docs/reference/marauder-coprocessor.md`'s own section on this.
+
+- 2026-08-28 (Bluetooth in the touchscreen menu, headless key injection, and
+  a night-long "touch stopped working" mystery finally explained) — Long,
+  eventful continuation of the same day's Marauder work. In rough order:
+
+  **The recurring "touch/buttons dead" panic, explained.** Multiple times
+  this session the user reported the panel frozen and unresponsive. First
+  suspected as a real hang; live GDB attaches (`st-util --no-reset`) each
+  time found the CPU perfectly healthy - idling normally, zero fault
+  registers set, scheduler running fine. The actual cause: `apps/bringup/
+  explorer_app_demo.c`'s interactive session (`d` with `seconds==0`, what
+  `boot.autostart` uses to hand the panel to the GUI at boot) ends and
+  drops back to the bare console prompt on **any** console byte - and
+  nearly every diagnostic command sent this whole session
+  (`board_cmd.py`'s `s`/`k`/`i`/`~`/`E`, all of it) is exactly such a byte.
+  The panel wasn't crashed; the loop that ticks `cads_gui_tick()` had
+  simply exited and nothing was driving the screen any more, silently,
+  every single time. `docs/reference/explorer-console.md` now says this
+  explicitly on the `d` row - this should never cost debugging time again.
+
+  **A real, separate self-inflicted mistake, owned rather than glossed
+  over:** mid-investigation, an `arm-none-eabi-gdb --batch` session was
+  torn down with `kill -9` instead of a clean detach, desyncing the
+  ST-Link's USB protocol state (`Failed to enter SWD mode`, chipid
+  `0x000`) - the documented issue #57 wedge pattern, this time self-caused
+  rather than hardware-caused. Fixed the same way: physical USB replug,
+  then (once, when a *second* wedge didn't fully clear on replug alone)
+  `--connect-under-reset` to recover without another physical cycle.
+
+  **Bluetooth touchscreen menu: built, made dynamic, found unreliable live,
+  reverted to always-shown.** Four new Marauder tools (Sniff BT, BLE Spam,
+  Sniff PMKID, Sniff SAE, Clear APs - see the same-day Marauder log entry
+  below for the earlier two). First shipped with the two Bluetooth items
+  conditionally hidden until a `stopscan` liveness probe got a reply within
+  2 s (no electrical presence line exists on CN8's TX/RX pair, so this was
+  the only signal available). Real hardware testing found the timing
+  unreliable in practice - items appeared, then vanished again on a later
+  visit with the ESP32 still demonstrably connected and answering. Reverted
+  same session: Bluetooth tools now behave exactly like the WiFi ones
+  always have, always in the menu, no special-casing. A working, honestly
+  reported "this idea didn't hold up live" beats a nicer-sounding design
+  that flickers.
+
+  **A real BLE formatting bug, found and fixed via a live webcam capture.**
+  Marauder's `sniffbt` output has no real newline between devices
+  (`Serial.print()`, not `println()`), so a scan burst arrived as one run
+  and CADS_MARAUDER_LINE_LEN's hard wrap cut mid-MAC-address. Fixed with a
+  new, generic "split marker" mechanism in `cads_marauder_reader.h` (not
+  Bluetooth-specific in the reader itself - just configurable per tool);
+  confirmed via two webcam photos, wrapped-mid-address before, clean
+  one-device-per-row after (one row legibly showing "Galaxy Watch6
+  (SEEP)"). A second, superficially similar case - a real AP whose ESSID
+  happens to be its own MAC address, long enough to split across two
+  display rows - was investigated, root-caused via the same live-photo
+  method, and deliberately left as-is: the reader's own header comment
+  already documents accepting this exact class of degradation to keep
+  `CADS_MARAUDER_LINE_LEN` small, so "fixing" it would mean re-opening a
+  tradeoff already made on purpose, not fixing a defect.
+
+  **Headless GUI key injection - the tool that made the rest of tonight's
+  verification possible at all.** There was no way to touch the panel from
+  a Mac terminal, and `d`'s own exit-on-any-byte rule (above) meant a typed
+  command couldn't double as a keypress either. `apps/bringup/
+  explorer_app_demo.c` now reserves one byte per logical key (`>=0x80`,
+  never colliding with typed ASCII or CR/LF); receiving one calls
+  `cads_gui_input()` directly - the same function a real button/touch event
+  reaches - and the interactive session keeps running instead of exiting.
+  `scripts/board_key.py <key> [<key>...]` sends these bytes. Verified live:
+  navigated Desktop → Menu → Marauder → Sniff BT purely via injected keys,
+  confirmed via webcam at each step, then used the same tool to sweep
+  Settings/About/GPIO/Network/Active Net Tools/Files/Arcade for a
+  representative check of the rest of the firmware's GUI - all found
+  functioning correctly, nothing else broken.
+
+  **Tooling lesson, worth remembering:** the webcam used for these captures
+  (`ffmpeg -f avfoundation`) does not have a stable device index across
+  invocations on this Mac - it silently shifted between calls, several
+  times producing photos of the wrong (virtual/placeholder) camera instead
+  of the one pointed at the board. The fix: look the device up by name
+  (`ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "HD Pro
+  Webcam C920"`) fresh before every single capture, never cache the index.
+
+- 2026-08-28 (Marauder recon over serial, no touchscreen needed - and a
+  real Marauder-firmware gotcha found live) — User was away from the board
+  ("nicht vor Ort") and asked whether WiFi recon (weak-password/vulnerability
+  survey) was possible anyway; wanted the actual capture to run on the
+  existing ITSboard+ESP32 setup (not the Mac's own WiFi chip, which cannot
+  do monitor mode/injection under macOS regardless of tooling - verified by
+  checking: no aircrack-ng/hashcat/hcxtools installed, and Apple's own
+  `airport` utility is gone from modern macOS). Installed `hashcat` +
+  `hcxtools` on the Mac for the offline-cracking half once a real capture
+  exists.
+  Found the explorer's WiFi-UART bring-up diagnostic (`~`, added
+  2026-08-28 morning as a throwaway loopback test - see this Log's own
+  Marauder co-processor entry) was the *only* serial-reachable path into
+  the co-processor at all - `apps/marauder`'s real bridge is touchscreen-
+  menu-only with no CLI trigger, deliberately so for its active/transmit
+  tools (Deauth etc. stay behind their own mandatory confirm dialog, not
+  bypassable). Extended `~` into a real, permanent, safe recon command
+  rather than reverting it as originally planned: streams Marauder's full
+  reply live in chunks instead of truncating to the original 64 B buffer,
+  and is hard-coded to send exactly one fixed command (`scanall` - lists
+  nearby APs, transmits nothing) so it cannot reach any active tool -
+  narrower door, not a smaller version of the touchscreen confirm gate.
+  Hardware-verified end to end, and found a real, reproducible Marauder
+  behavior along the way: a first live run returned only the command's own
+  echo + prompt, no scan data, no error - traced (via the pinned commit's
+  `CommandLine.cpp`, not guessing) to `if (!wifi_scan_obj.scanning())`
+  gating the *entire* WiFi/BT scan/attack command family; a scan left
+  running from anywhere (this command, an earlier touchscreen session, a
+  crash mid-scan) silently swallows every later `scanall` with zero error
+  output. `stopscan -f` over the same link cleared it; a fresh `scanall`
+  then returned real APs from the live RF environment (`persepolis-II`,
+  `persepolis-XI`, `FTTH_UX9399`, ...). This is a genuine Marauder-firmware
+  property, not a bug in this repo's own code - and `apps/marauder`'s
+  touchscreen tool view has no visibility into it either: a stuck scan
+  would look identical there (press Scan, nothing happens, no error). Left
+  as a documented gotcha in `~`'s own comment rather than a silent fix,
+  since fixing it in `apps/marauder` (e.g. always `stopscan -f` before
+  `scanall`) is a real, separate change to the touchscreen app's behavior
+  that should get its own hardware-verified pass, not ride in on a serial
+  diagnostic's fix.
+  `board_cmd.py '~' <seconds>` is now the answer to "can we survey WiFi
+  networks without being at the board" - yes, headlessly, from wherever the
+  console USB is reachable.
+
+- 2026-08-28 (VS Code: high-integration native workflow, build/flash/debug/
+  registers) — User wanted VS Code driven entirely through its own classic
+  UI (status bar, Activity Bar, Run and Debug panel), explicitly not
+  Command-Palette/task-menu-driven, without touching the existing toolchain
+  or any other installed extension (Keil Studio Pack stays, used for a
+  different project in the same VS Code instance). Delivered and personally
+  verified live (real build → real flash → real breakpoint stop → real
+  register/peripheral inspection, screenshotted at each step, not just
+  described): a genuine `flash` CMake custom target (`USES_TERMINAL`, shows
+  up in CMake Tools' own target picker, not just `tasks.json`); a vendored
+  Apache-2.0 STM32F429 SVD file wired into `cortex-debug` via `svdFile` for
+  a real named-peripheral XPeripherals tree, plus the recommended
+  `mcu-debug.peripheral-viewer` extension (the actively-maintained
+  standalone successor to cortex-debug's own bundled SVD view - 1.4M+
+  installs); `.clang-format`/`.clang-tidy` wired into format-on-save and
+  live linting. Two real bugs found and fixed along the way, both via
+  actually running things rather than reading the config and assuming: (1)
+  `code .` reuses an already-running VS Code process's stale environment -
+  a `PATH` fix needs a full quit (`Cmd+Q`), not just a new window; (2) a
+  `llvm-vs-code-extensions.vscode-clangd` install (present because it's
+  what the *other* project, ITS-BRD-VSC, recommends, in the same VS Code
+  instance) runs blind against this repo with no `compile_commands.json`
+  wiring of its own, producing false "file not found" errors and spurious
+  warnings from its own bundled clang-tidy checks - marked
+  `unwantedRecommendations` for this workspace, cpptools is this project's
+  real IntelliSense engine. Rewrote `docs/how-to/vscode-setup.md` with 7
+  real screenshots and an honest Windows section (WSL2 vs. native - the
+  console tooling imports the POSIX-only `termios` module and cannot run on
+  native Windows Python at all, verified by reading the import, not
+  assumed) and a much more explicit ITS-BRD-VSC comparison: this project
+  deliberately uses VS Code's own default tooling plus mainstream
+  extensions over one vendor's bundled toolchain, trading Keil Studio
+  Pack's out-of-the-box polish for portability (works identically from any
+  CI/IDE/terminal) and capabilities ITS-BRD-VSC's setup doesn't have at all
+  (a host-only build+test with zero hardware attached, two independent
+  toolchains - STM32 and ESP32/Marauder - in one repo).
 
 - 2026-08-28 (net.dhcp crash: console-task stack overflow, found and fixed
   on real hardware) — User request: real internet to the board via a Mac

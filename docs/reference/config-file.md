@@ -19,13 +19,14 @@ parsed", never a garbage state.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `boot.autostart` | bool | `1` | Boot straight into the menu (the panel is usable standalone). Any console key drops back to the explorer prompt; that key is not lost — it becomes the first character of the next command. `0` boots to the console prompt, the pre-autostart behavior. |
+| `boot.autostart` | bool | `1` | Boot straight into the menu (the panel is usable standalone), running unbounded — see [Driving the GUI headlessly](explorer-console.md#driving-the-gui-headlessly) for how it's ended (`scripts/board_key.py quit`, not a plain console key — as of 2026-08-29 a normal typed command no longer ends this session). `0` boots to the console prompt, the pre-autostart behavior. |
 | `display.brightness` | 0–100 | `80` | Backlight percent. Values above 100 clamp to 100. |
 | `display.fast_clock` | bool | `0` | Display SPI divider: `1` = fast (/8), `0` = safe (/16). |
 | `net.dhcp` | bool | `0` | `1` requests a DHCP lease; `0` uses the static fields below. |
 | `net.ip` | IPv4 | `192.168.33.99` | Static host address (ignored when `net.dhcp = 1`). |
 | `net.netmask` | IPv4 | `255.255.255.0` | Static subnet mask. |
 | `net.gateway` | IPv4 | `192.168.33.1` | Static default gateway. |
+| `net.mac_random` | bool | `0` | `1` = draw a fresh, locally-administered MAC from the hardware RNG every boot instead of the fixed firmware default — field-use OPSEC, so the device doesn't present the same trackable identity on every engagement's network. Board only (needs `cads_hal_rng_bytes()`; the simulator always uses the fixed address). |
 | `wifi.enabled` | bool | `0` | Gates Settings → **Join WiFi**: `1` and a non-empty `wifi.ssid` let that row start a join against the ESP32Marauder co-processor (see [marauder-coprocessor.md](marauder-coprocessor.md)). |
 | `wifi.ssid` | string ≤32 | *(empty)* | The SSID Settings → Join WiFi scans for and joins via Marauder's `join -a` (index-based — there is no CLI command to set an SSID by name, see `cads_marauder_join()`'s own doc comment). |
 | `wifi.password` | string ≤63 | *(empty)* | Password for `wifi.ssid`. |
@@ -54,6 +55,7 @@ net.dhcp = 0
 net.ip = 192.168.33.99
 net.netmask = 255.255.255.0
 net.gateway = 192.168.33.1
+net.mac_random = 0
 
 # wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)
 wifi.enabled = 0

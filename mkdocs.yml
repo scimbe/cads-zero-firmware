@@ -89,6 +89,7 @@ nav:
       - Flash the board: how-to/flash.md
       - Run the hardware gate: how-to/board-test.md
       - Debug with GDB: how-to/debug.md
+      - Watch the screen live in a browser: how-to/screencast-viewer.md
       - Configure the firmware: how-to/configure.md
       - Port to different hardware: how-to/port-to-new-board.md
       - Work an issue as an agent: how-to/agent-workflow.md
@@ -107,6 +108,7 @@ nav:
       - WiFi co-processor wiring: reference/wifi-coprocessor.md
       - ESP32Marauder co-processor: reference/marauder-coprocessor.md
       - Marauder PCAP-over-TZSP stream: reference/marauder-pcap-stream.md
+      - Board-Mac secure link: reference/secure-link.md
   - Explanation:
       - explanation/index.md
       - What ports from a Flipper, and what cannot: explanation/what-ports.md

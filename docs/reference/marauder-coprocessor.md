@@ -105,7 +105,7 @@ channel, AP-to-station associations) from the real RF environment, and
 `stopscan` halts cleanly. WiFi capture/injection is genuinely working, not
 just booting.
 
-## Bluetooth (2026-08-28: fixed, build-verified, not yet flashed)
+## Bluetooth (2026-08-28: fixed, flashed, hardware-verified, in the touchscreen menu)
 
 Bluetooth was disabled in earlier builds after enabling `HAS_BT` threw
 roughly 15 NimBLE compile errors, on the assumption that Marauder's BLE
@@ -127,10 +127,84 @@ gone. No manual call-site porting was needed - confirmed by an actual
 zero errors, first attempt, byte-identical output size across two
 independent runs of the updated script from a pristine checkout.
 
-**Not yet flashed to real hardware or CLI-verified** (`sniffbt`, `blespam`,
-etc.) - no ESP32 was connected to this Mac during this pass. Every WiFi
-capability (scanning, deauth, evil portal, packet sniffing, the full CLI)
-remains unaffected either way.
+**Flashed to real hardware and CLI-verified same day**, once the ESP32 was
+physically connected via its own USB port (needed for the upload itself -
+CN8's UART wiring alone isn't enough to flash new firmware) and someone was
+at the board to hold BOOT during the upload (this DevKit clone has no
+auto-reset circuit). `sniffbt` (bare, no `-t` filter - passive BLE scan)
+returned real nearby devices over the raw serial link
+(`board_cmd.py ~ <sec>`, temporarily pointed at `sniffbt` for this one
+verification pass, then reverted - see that command's own comment in
+`apps/bringup/explorer.c`) - MAC addresses, RSSI, and at least one
+recognisable device name (`TUYA_...`) came back, proving the BLE stack
+itself, not just the build, actually works.
+
+**In `apps/marauder`'s touchscreen menu, always shown, same as WiFi.** Four
+new tools alongside the original eight WiFi ones: "Sniff BT" (passive, bare
+`sniffbt` - every nearby BLE device, live), "BLE Spam" (ACTIVE, `blespam -t
+all` - behind the same mandatory confirm dialog every other transmit-based
+tool already uses, no exception for Bluetooth), "Sniff PMKID" (passive,
+bare `sniffpmkid` - WPA2 handshake capture, waits for one to happen rather
+than forcing it; the `-d`/deauth-assisted variant is deliberately *not*
+wired up here, since forcing a handshake is exactly the kind of active
+transmission that belongs behind the ACTIVE gate, not a passive tool),
+"Sniff SAE" (passive, bare `sniffsae` - the WPA3 equivalent), and "Clear
+APs" (passive, `clearlist -a` - wipes the discovered AP list).
+
+**This was conditionally hidden earlier the same day, then reverted.** A
+first version sent a `stopscan` liveness probe on every selector entry and
+spliced the Bluetooth items in or out of the menu (`cads_menu_set_items()`)
+based on whether anything replied within 2 s - the idea being that CN8 has
+no electrical presence-detect line (just TX/RX), so software liveness was
+the only signal available. Live testing on real hardware found the timing
+wasn't reliable enough in practice (UART traffic from an already-running
+scan, task scheduling jitter, or just an unlucky 2 s window could all make
+a genuinely-connected ESP32 register as absent) - a menu that flickers
+items in and out is worse than one that's simply always there. Reverted:
+the Bluetooth tools now behave exactly like the WiFi ones always have - if
+the ESP32 isn't connected, selecting one just gets no reply, no special
+handling needed. `cads_marauder_selector_enter()` still sends `stopscan` on
+every entry - not for presence detection any more, just the fix for the
+gotcha below, which is worth keeping on its own.
+
+**Formatting fix, found and confirmed live on the panel.** `sniffbt`'s real
+output arrives as one unbroken run - Marauder prints every device with
+`Serial.print()`, not `println()` - so without help, the reader's per-line
+length cap wrapped mid-MAC-address wherever the buffer happened to fill.
+`cads_marauder_reader_set_split_marker()` (new in `cads_marauder_reader.h`)
+treats `"Device: "` as an additional line-break trigger for this one tool,
+turning the run-on burst into one device per row - confirmed via webcam,
+before (mid-MAC-address wrapping) and after (clean rows, one showing a
+readable device name like `Galaxy Watch6 (SEEP)`).
+
+## Select Target - fixes Deauth, which was silently broken
+
+Found reading Marauder's own `CommandLine.cpp` directly, not assumed:
+`attack -t deauth` (and the AP-list Beacon Spam / Probe Flood variants)
+refuse to start at all - `"You don't have any targets selected. Use
+select"` - unless `wifi_scan_obj.filterActive()` is true, which only ever
+becomes true after a `select -a <index>` marks something in Marauder's own
+scanned `access_points` list as selected. There was no way to do that
+anywhere in the touchscreen UI until now - **every active WiFi tool this
+project has ever sent was consequently a silent no-op on real hardware**,
+this whole project's history, and nobody could have known from the UI
+alone (no error is shown; the confirm dialog still runs, Marauder just
+quietly declines to actually transmit anything).
+
+"Select Target" (new tool, `apps/marauder/cads_marauder.c`) is a third
+interaction shape alongside the existing passive (send-and-show) and
+active (warn-then-go) ones: a numeric field, Up/Down adjusts, Ok sends
+`select -a <N>`. Deliberately not a scrollable target-picker list - that
+needs its own array of parsed AP entries, and this firmware's RAM margin
+(currently ~670 B) does not forgive that. The workflow: run "List APs"
+first, read the index off its output, then dial that same number into
+"Select Target".
+
+Hardware-verified end to end via headless key injection
+(`scripts/board_key.py`, see `docs/reference/explorer-console.md`):
+navigated Marauder → Select Target → dialed index 3 → Ok, confirmed via
+webcam - Marauder replied `#select -a 3` / `1 selected, 0 unselected`, the
+same real `showCounts()` reply its own CLI produces on success.
 
 ## The CLI itself
 
@@ -142,3 +216,34 @@ and, more reliably, directly in the pinned commit's
 `esp32_marauder/CommandLine.h` - the wiki page's detailed argument syntax
 failed to render via automated fetch; the header's `HELP_*` string constants
 are the authoritative, always-current source.
+
+### Gotcha: a scan left running silently swallows every later scan/attack command
+
+Found live 2026-08-28 while building the headless recon path
+(`board_cmd.py ~`, see `apps/bringup/explorer.c`): sending `scanall` (or any
+other scan/attack command) sometimes returns nothing but its own echo and
+the `> ` prompt - no "Scanning for..." line, no data, no error either.
+Traced to the pinned commit's `CommandLine.cpp`, not guessed:
+
+```cpp
+if (!wifi_scan_obj.scanning()) {
+    // the entire WiFi/BT scan/attack command family lives inside this if
+}
+```
+
+Every scan/attack command (`scanall`, `sniffbt`, `attack -t ...`,
+`blespam`, ...) sits inside this one guard. If Marauder already believes a
+scan is running - from this session, an earlier touchscreen session, or a
+scan that got interrupted mid-flight - every later command in that whole
+family is silently dropped, with zero indication why. `stopscan -f` clears
+it unconditionally (its own handler sits outside the guard, so it always
+works) and a fresh command then goes through normally.
+
+This is a real Marauder-firmware property, not a bug anywhere in this
+repo's own code, and it affects the touchscreen tool view exactly the same
+way the raw serial link showed it: press "Scan APs", nothing happens, no
+error anywhere to look at. `apps/marauder/cads_marauder.c`'s selector now
+sends `stopscan` every time its menu is (re)entered specifically to keep
+this from ever being reachable through the touchscreen (see this doc's own
+Bluetooth section above) - but any tool invoked directly over the raw
+`~` diagnostic still needs this in mind.

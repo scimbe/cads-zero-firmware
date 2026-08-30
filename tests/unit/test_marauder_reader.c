@@ -131,6 +131,48 @@ static void test_very_overlong_run_flushes_multiple_segments(void) {
     TEST_ASSERT_EQUAL_STRING("short", cads_marauder_reader_line(&r, 2));
 }
 
+/* Real BLE sniff bug, found live on the panel 2026-08-28: Marauder prints
+ * every discovered device with Serial.print() (not println()), so a whole
+ * burst arrives as one unbroken run and the plain LINE_LEN hard-wrap cuts
+ * mid-MAC-address wherever the buffer happens to fill. With the split
+ * marker set to "Device: ", each device gets its own line instead. */
+static void test_split_marker_breaks_run_on_device_burst(void) {
+    cads_marauder_reader_t r;
+    cads_marauder_reader_reset(&r);
+    cads_marauder_reader_set_split_marker(&r, "Device: ");
+    feed_str(&r, "-54 Device: aa:bb:cc:dd:ee:ff-88 Device: TUYA_-91 Device: 11:22:33:44:55:66");
+    TEST_ASSERT_EQUAL_UINT8(3u, r.count);
+    TEST_ASSERT_EQUAL_STRING("-54 ", cads_marauder_reader_line(&r, 0));
+    TEST_ASSERT_EQUAL_STRING("Device: aa:bb:cc:dd:ee:ff-88 ", cads_marauder_reader_line(&r, 1));
+    TEST_ASSERT_EQUAL_STRING("Device: TUYA_-91 ", cads_marauder_reader_line(&r, 2));
+    /* the final, still-unterminated "Device: 11:22:33:44:55:66" stays
+     * buffered in partial until a '\n' or the next "Device: " arrives -
+     * exactly like any other in-progress line. */
+}
+
+/* Without a split marker set (the default, and every tool except Sniff BT),
+ * behavior is completely unchanged from before this feature existed - a
+ * run with no real newline just accumulates/overflow-flushes as always. */
+static void test_no_split_marker_is_a_no_op(void) {
+    cads_marauder_reader_t r;
+    cads_marauder_reader_reset(&r);
+    feed_str(&r, "-54 Device: aa:bb Device: TUYA_-91\n");
+    TEST_ASSERT_EQUAL_UINT8(1u, r.count);
+    TEST_ASSERT_EQUAL_STRING("-54 Device: aa:bb Device: TUYA_-91", cads_marauder_reader_line(&r, 0));
+}
+
+/* cads_marauder_reader_reset() clears split_marker along with everything
+ * else - a caller must re-set it after every reset, the same discipline
+ * line_cb already requires (see cads_marauder.c's cads_marauder_select()). */
+static void test_reset_clears_split_marker(void) {
+    cads_marauder_reader_t r;
+    cads_marauder_reader_reset(&r);
+    cads_marauder_reader_set_split_marker(&r, "Device: ");
+    cads_marauder_reader_reset(&r);
+    feed_str(&r, "-54 Device: aa:bb Device: TUYA_-91\n");
+    TEST_ASSERT_EQUAL_UINT8(1u, r.count);
+}
+
 static void test_lines_total_counts_every_line_ever(void) {
     cads_marauder_reader_t r;
     cads_marauder_reader_reset(&r);
@@ -150,6 +192,9 @@ int main(void) {
     RUN_TEST(test_ring_drops_oldest_past_capacity);
     RUN_TEST(test_overlong_line_is_truncated_not_lost);
     RUN_TEST(test_very_overlong_run_flushes_multiple_segments);
+    RUN_TEST(test_split_marker_breaks_run_on_device_burst);
+    RUN_TEST(test_no_split_marker_is_a_no_op);
+    RUN_TEST(test_reset_clears_split_marker);
     RUN_TEST(test_lines_total_counts_every_line_ever);
     return UNITY_END();
 }

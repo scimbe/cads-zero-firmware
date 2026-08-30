@@ -46,7 +46,10 @@ void cads_explorer_net_test(uint32_t seconds) {
  * whatever cads_net_init() was called with, and apps/bringup/
  * explorer_app_demo.c (portable, built for both targets) calls this
  * unconditionally. Keeping the value identical means that reflection matches
- * across targets instead of depending on which one happens to be running. */
+ * across targets instead of depending on which one happens to be running.
+ * Always the fixed default, never randomized - `net.mac_random` (see the
+ * board copy) needs cads_hal_rng_bytes(), which is board-only; the
+ * simulator has no RNG peripheral to draw from. */
 static const uint8_t cads_net_mac_value[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
 
 const uint8_t* cads_explorer_net_mac(void) {

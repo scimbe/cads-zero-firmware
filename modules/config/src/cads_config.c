@@ -18,6 +18,8 @@ void cads_config_defaults(cads_config_t* cfg) {
     cfg->net_ip = CADS_IP4(192, 168, 33, 99);
     cfg->net_netmask = CADS_IP4(255, 255, 255, 0);
     cfg->net_gateway = CADS_IP4(192, 168, 33, 1);
+    cfg->net_mac_random = false;
+    cfg->active_armed = false;
     cfg->wifi_enabled = false;
     cfg->wifi_ssid[0] = '\0';
     cfg->wifi_password[0] = '\0';
@@ -143,6 +145,10 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                     if(parse_ipv4(v, line_end, &cfg->net_netmask)) applied++;
                 } else if(key_is(s, kend, "net.gateway")) {
                     if(parse_ipv4(v, line_end, &cfg->net_gateway)) applied++;
+                } else if(key_is(s, kend, "net.mac_random")) {
+                    cfg->net_mac_random = parse_bool(v, line_end); applied++;
+                } else if(key_is(s, kend, "active.armed")) {
+                    cfg->active_armed = parse_bool(v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.enabled")) {
                     cfg->wifi_enabled = parse_bool(v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.ssid")) {
@@ -205,6 +211,9 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_ip(out, size, "net.ip", cfg->net_ip);
     append_kv_ip(out, size, "net.netmask", cfg->net_netmask);
     append_kv_ip(out, size, "net.gateway", cfg->net_gateway);
+    append_kv_uint(out, size, "net.mac_random", cfg->net_mac_random ? 1u : 0u);
+    cads_str_append(out, size, "\n# active tools (Marauder attacks, M9 forged traffic) - device-wide safety\n");
+    append_kv_uint(out, size, "active.armed", cfg->active_armed ? 1u : 0u);
     cads_str_append(out, size, "\n# wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)\n");
     append_kv_uint(out, size, "wifi.enabled", cfg->wifi_enabled ? 1u : 0u);
     append_kv_str(out, size, "wifi.ssid", cfg->wifi_ssid);
@@ -216,26 +225,32 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
 
 /* --- storage-backed load/save ---------------------------------------------- */
 
+/* Static, not on the stack: on a fresh board the first config write nests
+ * cads_config_save() inside cads_config_load() and both used to carry their
+ * own 512 B stack buffer, which - plus littlefs's own erase/commit call
+ * depth - overflowed the task stack below its CCM allocation (a BusFault
+ * seen live, review-2 #4). Both accessors run only on the console task (the
+ * single storage owner), so one shared static buffer is safe without a
+ * lock - and, unlike a separate static per function, costs
+ * CADS_CONFIG_TEXT_MAX once, not twice: load() only ever calls save() (the
+ * missing-file and empty-file self-heal branches) before it has put
+ * anything meaningful of its own into this buffer, and never reads the
+ * buffer again afterward, so there is no real overlap to protect against by
+ * duplicating it. */
+static char s_config_text[CADS_CONFIG_TEXT_MAX];
+
 int cads_config_save(const cads_config_t* cfg) {
     int mrc = cads_storage_mount();
     if(mrc != CADS_STORAGE_OK) return mrc;
 
-    /* Static, not on the stack: on a fresh board the first config write nests
-     * cads_config_save() inside cads_config_load() and both used to carry a
-     * 512 B stack buffer, which - plus littlefs's own erase/commit call depth -
-     * overflowed the task stack below its CCM allocation (a BusFault seen live,
-     * review-2 #4). Both accessors run only on the console task (the single
-     * storage owner), so one static buffer per function is safe without a
-     * lock. Costs 512 B of .bss each; RAM margin covers it. */
-    static char text[CADS_CONFIG_TEXT_MAX];
-    size_t n = cads_config_serialize(cfg, text, sizeof(text));
+    size_t n = cads_config_serialize(cfg, s_config_text, sizeof(s_config_text));
     if(n == 0u) return CADS_STORAGE_ERR_INVAL;
 
     cads_storage_file_t* file = NULL;
     int rc = cads_storage_open(&file, CADS_CONFIG_PATH,
         CADS_STORAGE_WRONLY | CADS_STORAGE_CREAT | CADS_STORAGE_TRUNC);
     if(rc != CADS_STORAGE_OK) return rc;
-    int32_t w = cads_storage_write(file, text, (uint32_t)n);
+    int32_t w = cads_storage_write(file, s_config_text, (uint32_t)n);
     int cl = cads_storage_close(file);
     if(w != (int32_t)n) return (w < 0) ? (int)w : CADS_STORAGE_ERR_IO;
     return cl;
@@ -257,8 +272,8 @@ int cads_config_load(cads_config_t* cfg) {
     }
     if(rc != CADS_STORAGE_OK) return rc;
 
-    static char text[CADS_CONFIG_TEXT_MAX]; /* static: see cads_config_save (review-2 #4) */
-    int32_t n = cads_storage_read(file, text, sizeof(text) - 1u);
+    char* text = s_config_text;
+    int32_t n = cads_storage_read(file, text, sizeof(s_config_text) - 1u);
     (void)cads_storage_close(file);
     if(n < 0) return (int)n;
 
@@ -275,7 +290,7 @@ int cads_config_load(cads_config_t* cfg) {
      * (e.g. "net.ip = 192.168.1." or a half-typed number). Drop everything
      * after the last newline so only complete lines are parsed. */
     size_t len = (size_t)n;
-    if(len == sizeof(text) - 1u) {
+    if(len == sizeof(s_config_text) - 1u) {
         while(len > 0u && text[len - 1u] != '\n') len--;
     }
 

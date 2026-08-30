@@ -194,6 +194,13 @@ For the full command set, arguments, and defaults, see
 command non-interactively from a host shell rather than an open terminal, use
 `scripts/board_cmd.py <letter> [arg] --timeout N`.
 
+To drive the *touchscreen GUI itself* non-interactively - navigate menus,
+open an app, confirm an active tool's dialog - from a host shell with
+nobody at the board, use `scripts/board_key.py <key> [<key>...]` (see the
+console reference's "Driving the GUI headlessly" section). Combine it with
+a webcam pointed at the panel, or `board_cmd.py S <sec>`'s TCP framebuffer
+stream, to verify what actually rendered rather than assuming.
+
 ## Debugging the tooling itself
 
 The host-side tools are dependency-free Python 3 on purpose — the hardware gate
