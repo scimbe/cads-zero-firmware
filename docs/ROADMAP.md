@@ -2059,6 +2059,35 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (Performance A/B campaign, candidate 2: `-O2` measured,
+  hardware verification deliberately deferred) — `-O2` (via a scratch
+  build using an unrecognized `CMAKE_BUILD_TYPE` name so none of
+  `cads_flags`' own `-Og`/`-Os` generator-expression flags apply and only
+  the intended `-O2` reaches the compiler - the first attempt silently
+  built `-Os` anyway because target-level `target_compile_options` always
+  wins the "last flag on the command line" tie-break over
+  `CMAKE_C_FLAGS`/`CMAKE_C_FLAGS_RELEASE`, caught by checking
+  `compile_commands.json` directly rather than trusting the configure
+  step alone) measured smaller than `-Os`: 269 044 B vs. 277 700 B flash
+  (candidate 1's own number) - counter to the usual `-O2`-trades-size-for-
+  speed expectation, plausible here given `-ffunction-sections
+  -fdata-sections` + linker gc-sections are already on, which changes how
+  the two optimizers' inlining/duplication trade-offs land. RAM margin
+  identical (928 B) to every other optimization level tried so far.
+  **Hardware verification deliberately NOT done for this candidate right
+  now.** Candidate 1 (`-Os`) already has a real, unresolved BusFault
+  (previous two Log entries) - testing whether `-O2` also crashes (or
+  crashes differently) would not currently distinguish "a new `-O2`-
+  specific problem" from "the same latent bug `-Os` already exposed",
+  since the underlying UB in `cads_text_draw_line`/`cads_canvas_draw_text`
+  has not been found and fixed yet. Spending another full hardware-
+  verification cycle (and this session's SWD reliability has been
+  degrading with length, see the entry above) on an ambiguous result
+  isn't worth it before that's resolved. Next real step for the whole
+  optimization-level track is finding that bug, not adding a third
+  unverified candidate on top of it - candidates 3-5 (LTO, DMA2D, timing)
+  are on hold for the same reason.
+
 - 2026-08-30 (Board<->Mac secure link: wire framing built) — User's
   explicit follow-up to the crypto primitive layer (2026-08-28): "treibe
   das Framing voran". `modules/security/include/cads/security/
