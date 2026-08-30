@@ -135,8 +135,19 @@ __attribute__((noreturn)) void cads_hal_panic(const char* reason) {
         reason, NULL, cfsr, SCB->HFSR, mmfar_valid, SCB->MMFAR, bfar_valid, SCB->BFAR,
         msp_now, psp_now);
 
-    /* Stop with everything intact so the attached ST-Link can inspect it. */
-    __asm volatile("bkpt #0" ::: "memory");
+    /* Stop with everything intact so the attached ST-Link can inspect it -
+     * but only if a debugger is actually there to catch it. A bkpt with
+     * DHCSR.C_DEBUGEN clear traps straight into another HardFault instead
+     * of falling through cleanly (PM0214-documented Cortex-M behavior);
+     * fault_handlers.c's own cads_fault_dump() already gates on this for
+     * the hardware-fault-entry path, and this software-panic path needs
+     * the same guard for the same reason - found live: a stack-guard
+     * panic("input") during normal (undebugged) Marauder menu navigation
+     * escalated through this bkpt into a second HardFault, unrecovered,
+     * until the independent watchdog reset the board. */
+    if((DCB->DHCSR & DCB_DHCSR_C_DEBUGEN_Msk) != 0u) {
+        __asm volatile("bkpt #0" ::: "memory");
+    }
     for(;;) {
     }
 }

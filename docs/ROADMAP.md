@@ -2059,6 +2059,44 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (Marauder menu: real crash-and-reboot found live, one real bug
+  fixed - the underlying stack overflow is NOT yet fixed, still open) -
+  User hit a real, reproducible crash navigating the Marauder menu on
+  actual hardware, unrelated to any of the day's WebUSB/firmware-lab work
+  (confirmed: no flash/SWD action had touched the board since the last
+  verified-good reflash). `E`'s forensic ring (`this boot's reset cause:
+  IWDG watchdog`) showed the real sequence: a `reason=input` record (the
+  project's own stack-guard sentinel, `apps/bringup/tasks.c`'s
+  `vApplicationIdleHook()`, catching `cads_input_stack` overflowing) 22ms
+  before a `reason=HardFault` record with `HFSR=0x80000000` (DEBUGEVT) -
+  the exact same "`bkpt` with no debugger attached escalates into a second
+  HardFault instead of falling through cleanly" bug already found and
+  fixed in `fault_handlers.c`'s `cads_fault_dump()` on 2026-08-26, but
+  `hal_io.c`'s `cads_hal_panic()` (a separate function, same PM0214-
+  documented Cortex-M behavior, same fix shape) never got the same
+  `DHCSR.C_DEBUGEN` guard. Fixed here, hardware-verified (built, RAM budget
+  unchanged at 928B margin - a code-path guard, no new state - flashed,
+  reset, GDB-confirmed booting and running normally).
+  What this fix actually buys: with no debugger attached (the normal case),
+  the observable outcome is still "board freezes then IWDG-resets a couple
+  seconds later" either way, since `cads_hal_panic()` disables IRQs before
+  reaching this point regardless - nothing feeds the watchdog whether the
+  `bkpt` escalates or not. The real improvement is diagnostic quality: a
+  debugger attached during/after the freeze now sees one clean panic
+  record instead of a second, confusing fault stacked on top of it. **The
+  actual root cause - `cads_input_stack` overflowing during Marauder menu
+  navigation - is NOT fixed and remains open.** This is the same class of
+  problem as the 2026-08-28 `net.dhcp` stack-overflow incident (see that
+  Log entry), which was fixed then by doubling the console stack; whether
+  `cads_input_stack` needs a similar bump, and how much RAM budget that
+  costs given the current razor-thin margin, needs its own investigation -
+  not done this session. Two host-only golden-image tests
+  (`golden_splash`, `golden_boot_desktop`) are currently failing
+  (pixel-diff, not a crash) - confirmed unrelated to this fix (it only
+  touches `targets/itsboard/hal/hal_io.c`, which the host/sim build never
+  compiles) and not otherwise investigated this session; flagged, not
+  fixed.
+
 - 2026-08-30 (CADS-DEMO-firmware-lab: WebUSB flash-write - the actual root
   cause, found and fixed after the entry below turned out to be an
   intermediate, incomplete conclusion) - The prior Log entry's "isolated to
