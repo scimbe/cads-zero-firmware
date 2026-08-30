@@ -2059,6 +2059,69 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (CADS-DEMO-firmware-lab: WebUSB flashing/debugging deep-dive on
+  `webstlink` - three real bugs found and fixed, one root cause correctly
+  isolated to the Node test harness rather than the algorithm) - User
+  wanted this made "primaerer Weg" (primary path) for the demo's
+  multi-user architecture (see the earlier Log entry on why the
+  shared-container-behind-a-tunnel model can't reach per-student hardware
+  directly; WebUSB, running client-side in each student's own browser,
+  sidesteps that entirely). Testing against the real Nucleo-F429ZI via
+  Node + the `usb` npm package's WebUSB polyfill (the native browser
+  device-chooser dialog can't be automated - confirmed via a CDP
+  `DeviceAccess` domain attempt that never fired, so real end-to-end
+  browser verification still needs one human click) found:
+  1. `erase_sector()`'s busy-wait timeout looked up `max_erase_time` by
+     erase size in BYTES (16384/65536/131072, from the device's own
+     erase_sizes list) against a table keyed in KB (16/64/128) -
+     `undefined` lookup -> `NaN` end_time -> the wait loop's condition was
+     false before the first iteration, so `wait_busy()` never polled
+     FLASH_SR even once and threw "Operation timeout" immediately, on
+     every single erase. This driver (`stm32fs.js`, the sector-based "FS"
+     flash driver used for F4/F7/L4) is a different code path from the
+     page-based "FP" driver F1/F3 boards use - the repo's own "tested on
+     STM32F103 only" claim never actually exercised this code at all.
+  2. `end_of_operation()` treated ANY nonzero FLASH_SR as a fatal error,
+     including EOP (bit0, set by hardware on ordinary successful
+     completion) - fixed to check only the real error bits
+     (WRPERR/PGAERR/PGPERR/PGSERR), matching pystlink's own
+     `FLASH_SR_ERROR_MASK` (webstlink's own stated upstream, which this
+     divergence had drifted from).
+  3. The whole flash-*write* step used to upload a hand-assembled ARM
+     Thumb copy-loop into SRAM and have the target CPU execute it - not
+     what pystlink actually does for F2/F4 (direct writes through the
+     debug probe's own memory-access port, `set_mem32`, the same mechanism
+     st-flash/OpenOCD use). Rewritten to match, removing an entire
+     untested, hand-assembled-opcode code path.
+  Diffing against st-flash's own C source (`common_flash.c`) surfaced one
+  more real behavioral gap: st-flash sets FLASH_CR's PSIZE/PG (for
+  programming) and SER/SNB/STRT (for erase) as separate
+  read-modify-write transactions, not one blind combined-value write -
+  matched in the fix even though the final register value comes out the
+  same either way, since it's what the known-working reference actually
+  does.
+  After all four fixes, real-hardware testing still hit an intermittent,
+  hard-to-explain symptom: reading FLASH_CR immediately after a plain SER
+  write sometimes returned 0x80000000 (LOCK) instead of the value just
+  written, stable across repeated reads (an explicit flush-read ruled out
+  a simple DAP read-pipeline race). The decisive check: replaying the
+  *exact same* register sequence (unlock, clear SR, write SER, read back
+  x3) over `st-util`'s GDB remote stub instead of Node/webstlink - a
+  completely different, mature software stack talking to the same
+  physical ST-Link - read back the correct value every time. That
+  isolates the remaining symptom to the Node `usb` package's WebUSB
+  polyfill (v3.1.0) used for testing, not this algorithm or the silicon:
+  the register sequence itself is verified correct on real hardware.
+  Board safety throughout: every real erase/write test cycle was followed
+  by a full reflash-and-GDB-verify of the actual CaDS Zero image before
+  moving on - confirmed clean and running correctly at every checkpoint,
+  including after a real ST-Link USB wedge mid-investigation (recovered
+  via unplug/replug + `st-flash --connect-under-reset`, no data loss - the
+  wedge is the same class of issue as the maintainer's own ST-Link
+  wedge notes above, not something new). Patched `webstlink` source lives
+  in a local scratch clone, not yet committed/pushed anywhere - the fixes
+  need one more real-browser (not Node) end-to-end pass before shipping.
+
 - 2026-08-30 (CADS-DEMO-firmware-lab: tutor-mode LLM wiring found broken,
   root-caused, fixed - end-to-end student setup now verified working) -
   User's standing directive: keep driving/testing firmware-lab "bis ein
