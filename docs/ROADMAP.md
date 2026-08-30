@@ -2083,14 +2083,30 @@ _None outstanding._
   reaching this point regardless - nothing feeds the watchdog whether the
   `bkpt` escalates or not. The real improvement is diagnostic quality: a
   debugger attached during/after the freeze now sees one clean panic
-  record instead of a second, confusing fault stacked on top of it. **The
-  actual root cause - `cads_input_stack` overflowing during Marauder menu
-  navigation - is NOT fixed and remains open.** This is the same class of
-  problem as the 2026-08-28 `net.dhcp` stack-overflow incident (see that
-  Log entry), which was fixed then by doubling the console stack; whether
-  `cads_input_stack` needs a similar bump, and how much RAM budget that
-  costs given the current razor-thin margin, needs its own investigation -
-  not done this session. Two host-only golden-image tests
+  record instead of a second, confusing fault stacked on top of it.
+  **Follow-up, same session:** the actual root cause is now also fixed.
+  User asked explicitly to hold off on a git tag until it was ("Fehler
+  ausgemerzt" - eradicated, not just made cleaner to diagnose), so this
+  didn't stop at the escalation fix. `CADS_INPUT_STACK` (`apps/bringup/
+  tasks.c`) was 256 words (1 KB) - smaller than even the UI task's 512
+  words, despite carrying arbitrary app-specific call depth (every app's
+  input handler runs synchronously on this task's own stack via
+  `cads_input_tick()` -> `cads_input_set_callback()`), not just its own
+  shallow polling loop, which is what the file's own "the others are
+  shallow" comment had assumed. Same class of problem, same fix shape, as
+  the 2026-08-28 `net.dhcp`/console-stack incident: quadrupled to 1024
+  words, matching the console stack's own post-fix size, costing 3 KB of
+  CCM (task stacks live there, ~54.7 KB still free of 64 KB afterward -
+  not a single byte of the tight SRAM heap margin, unaffected at 928 B).
+  Hardware-verified: builds clean, boots and runs correctly (GDB-confirmed,
+  matching stack trace as every other check this session). Not
+  independently re-reproduced live in the exact same Marauder menu
+  navigation that originally triggered it (would need the physical
+  Marauder co-processor session replayed step for step) - the fix directly
+  targets the exact stack the forensic ring proved was overflowing, with a
+  4x margin bump matching an already-proven-effective precedent, but real
+  field use is the final word, same as any stack-sizing fix. Two host-only
+  golden-image tests
   (`golden_splash`, `golden_boot_desktop`) are currently failing
   (pixel-diff, not a crash) - confirmed unrelated to this fix (it only
   touches `targets/itsboard/hal/hal_io.c`, which the host/sim build never

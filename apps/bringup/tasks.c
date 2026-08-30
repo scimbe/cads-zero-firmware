@@ -28,7 +28,8 @@
 #include "input_probe.h"
 
 /* Stack sizes in words. The UI task carries the canvas call chain, which is
- * the deepest; the others are shallow.
+ * the deepest; the console task got its own overflow fix below. The input
+ * task was long assumed shallow too - wrong, see its own comment below.
  *
  * CADS_CONSOLE_STACK doubled 512->1024 (2026-08-28): a real, hardware-
  * confirmed stack overflow. This task's own app-tree loop
@@ -48,9 +49,28 @@
  * SRAM heap this scripts/check_ram_budget.py's 256 B floor actually
  * guards, task stacks live in CCM (CADS_CCM_SECTION below), which had
  * ~59 KB free out of 64 KB before this change - doubling costs 2 KB of
- * that, not a single byte of the tight SRAM margin. */
+ * that, not a single byte of the tight SRAM margin.
+ *
+ * CADS_INPUT_STACK quadrupled 256->1024 (2026-08-30): another real,
+ * hardware-confirmed stack overflow, same class as the console one above -
+ * this task's cads_input_tick() calls straight into whatever app's input
+ * handler is currently active (cads_input_set_callback()), synchronously,
+ * on this task's own stack, and the Marauder app's menu navigation
+ * (command formatting, state tracking for the co-processor UART protocol)
+ * turned out to be deep enough to overflow the original 256-word (1KB)
+ * budget - the smallest of the three task stacks despite carrying
+ * arbitrary app-specific call depth, not just its own shallow input-
+ * polling loop, which is what the "shallow" assumption above had missed.
+ * Caught live via vApplicationIdleHook()'s stack-guard sentinel
+ * (reason="input" in the CCM-resident forensic ring, `E` console command),
+ * which itself then hit an unrelated, now-also-fixed bug: cads_hal_panic()
+ * escalating into a second HardFault via an unguarded bkpt with no
+ * debugger attached (see hal_io.c). Same CCM-budget reasoning as the
+ * console fix above applies - matched to console's current 1024-word size
+ * for a generous, consistent margin rather than picking a smaller number
+ * that might just move the same failure a few menu levels deeper. */
 #define CADS_UI_STACK      512
-#define CADS_INPUT_STACK   256
+#define CADS_INPUT_STACK   1024
 #define CADS_CONSOLE_STACK 1024
 
 CADS_CCM_SECTION __attribute__((aligned(8))) static uint32_t cads_ui_stack[CADS_UI_STACK];
