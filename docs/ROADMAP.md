@@ -2059,6 +2059,49 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (Deliberate reproduction attempt on the Release-build BusFault
+  - not reproduced; separately, new evidence that flaky `st-flash write`
+  verification is NOT specific to `cads_config.py`) — Follow-up to the
+  entry below, per the user's explicit "jagen" (hunt it). Reflashed the
+  Release build, attached `st-util --no-reset` + GDB with `continue`
+  *before* touching anything (so this time a real fault would trap
+  cleanly into the live debugger, per this session's own bkpt/DHCSR fix,
+  instead of escalating into the fault-loop that fix closed), then drove
+  `scripts/board_key.py` through essentially every text-rendering screen
+  in the app tree - Settings, About, GPIO, Network, Active Net Tools'
+  full list, Marauder's full tool list, the file browser, the Reflex Test
+  entry screen. No trap in ~15 minutes of deliberate, focused navigation.
+  **Conclusion: not reproduced, not exonerated.** The original forensic-
+  ring record (previous entry) still stands as real evidence - a coherent,
+  non-garbage PC/LR resolving specifically against the Release ELF's
+  `cads_text_draw_line`, not the Debug build's addresses - so this is
+  logged as "rare or state-dependent, trigger condition still unknown",
+  not "false alarm". Immediately reflashed the known-good Debug build
+  afterward per the same safety-first discipline. **Release remains
+  NOT shipped** until either the trigger is found (a longer unattended
+  soak, or a `-Os`-with-better-debug-info build to get a live trace
+  without needing to catch it by chance) or the code path is audited by
+  hand for UB that `-Og` happens not to expose.
+  **Separately, real new evidence for the open `cads_config.py`
+  corruption-correlation item**: reverting the flashed firmware back to
+  Debug afterward needed **five consecutive plain `st-flash write`
+  attempts** before one verified successfully (offsets 43008/30720/0/0/
+  success) - `st-info --probe` and NOD_F429ZI-mount checks came back
+  clean between every attempt, and critically, **no `cads_config.py` call
+  was anywhere in this sequence** - just repeated `st-flash write` of the
+  same firmware image. This weakens the earlier hypothesis that
+  `cads_config.py`'s specific two-call (read, then write) pattern is what
+  triggers the flakiness, and points instead at something more general
+  about this host/cable/ST-Link's SWD reliability under sustained,
+  extended use (this session had already been running for many hours of
+  near-continuous SWD traffic by this point) - worth checking USB power
+  management, cable/hub quality, or simply session length/thermal state
+  as the next hypothesis rather than anything specific to the config
+  script. The very next `st-flash reset` in the same sequence also failed
+  once ("Can not connect to target") and succeeded on a bare retry with
+  no other action taken - same flavor of transient flakiness, not a wedge
+  (ST-Link stayed healthy and responsive to `st-info --probe` throughout).
+
 - 2026-08-30 (Performance A/B campaign, candidate 1: Debug->Release for the
   flashed firmware - a real fault found, reverted, NOT shipped) — User
   asked for proactive, A/B-measured performance work as standing filler
