@@ -28,6 +28,41 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
         message(FATAL_ERROR "lib/lwip is empty. Run: git submodule update --init lib/lwip")
     endif()
 
+    # A real fix (lib/patches/lwip-lwiperf-abort-fix.patch - see that file's
+    # own commit-message-turned-comment for the two actual bugs: a dangling
+    # list head that corrupted lwIP's heap, and a leaked tcp_pcb) that used
+    # to live only as a commit on this vendored copy - 2026-08-30, moved to
+    # a plain patch applied here instead of depending on a fork/mirror to
+    # host that commit, at the maintainer's own request (one fewer external
+    # repo to keep in sync). Idempotent: checks for the fix's own marker
+    # line before applying, so a re-configure after the patch already
+    # landed is a no-op rather than a "does not apply" failure - same
+    # pattern tools/marauder-build/build_and_flash.sh's own source patches
+    # already use for exactly this reason.
+    set(LWIPERF_C ${CADS_ROOT}/lib/lwip/src/apps/lwiperf/lwiperf.c)
+    file(STRINGS ${LWIPERF_C} LWIPERF_FIX_MARKER REGEX "lwiperf_all_connections = i;")
+    if(NOT LWIPERF_FIX_MARKER)
+        message(STATUS "Applying lib/patches/lwip-lwiperf-abort-fix.patch to lib/lwip")
+        execute_process(
+            COMMAND git apply ${CADS_ROOT}/lib/patches/lwip-lwiperf-abort-fix.patch
+            WORKING_DIRECTORY ${CADS_ROOT}/lib/lwip
+            RESULT_VARIABLE LWIPERF_PATCH_RESULT
+            ERROR_VARIABLE LWIPERF_PATCH_ERROR
+        )
+        if(NOT LWIPERF_PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "lib/patches/lwip-lwiperf-abort-fix.patch failed to apply "
+                "(lib/lwip's pinned commit probably moved) - re-check by hand:\n"
+                "${LWIPERF_PATCH_ERROR}")
+        endif()
+        file(STRINGS ${LWIPERF_C} LWIPERF_FIX_MARKER REGEX "lwiperf_all_connections = i;")
+        if(NOT LWIPERF_FIX_MARKER)
+            message(FATAL_ERROR
+                "lib/patches/lwip-lwiperf-abort-fix.patch applied cleanly but its own "
+                "fix marker is still missing from ${LWIPERF_C} - the patch itself needs a look")
+        endif()
+    endif()
+
     # lwIP's own file lists (lwipcore/lwipcore4/lwipnetif) - only the pieces
     # this build actually turns on in lwipopts.h: core + IPv4 + the Ethernet
     # netif glue (ethernet.c). No lwipcore6 (LWIP_IPV6=0), no lwipapi

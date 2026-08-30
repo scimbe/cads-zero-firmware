@@ -1,0 +1,116 @@
+From f412212e697c1bddb32cacf0b6d5571f961a5924 Mon Sep 17 00:00:00 2001
+From: scimbe <scimbe@gmail.com>
+Date: Wed, 26 Aug 2026 15:01:48 +0200
+Subject: [PATCH] fix: lwiperf_abort() heap corruption (dangling list head) and
+ pcb leak
+
+Found running real hardware for the first time with both an iperf server
+and client active in the same boot (CaDS Zero's own apps/netiperf and
+apps/bringup/explorer_iperf_demo.c's new client command): a server
+aborted after its own timeout, followed by any client whose connection
+attempt fails or completes, corrupted lwIP's small malloc heap -
+"mem_free: illegal memory: double free".
+
+Two real bugs in lwiperf_abort(), confirmed still present in
+lwip-tcpip/lwip's master branch as of 2026-08-26 (fetched and read
+directly), not something specific to this vendored copy:
+
+1. When the freed item is the head of lwiperf_all_connections (the common
+   single-session case), the global head pointer was never updated - it
+   kept pointing at freed memory. The next list operation on any
+   subsequent session corrupts the heap. lwiperf_list_remove() (used by
+   the normal lwiperf_tcp_close() teardown path a few lines above this
+   function) already gets this right; lwiperf_abort() had its own
+   separate, buggy list-walk instead of reusing it.
+
+2. The underlying tcp_pcb (server_pcb or conn_pcb) was never actually
+   closed, only the bookkeeping struct freed - a pcb leak. A second
+   lwiperf_start_tcp_server_default() call after aborting the first
+   failed ("failed to start server") because the port was still bound to
+   the leaked listener.
+
+Fix: update the head pointer on every removal, and close the real pcb
+before freeing, mirroring lwiperf_tcp_close()'s own teardown exactly.
+Verified on real hardware: the server-then-client sequence that crashed
+now completes cleanly, and a second server start after an abort succeeds
+(no more leaked port).
+---
+ src/apps/lwiperf/lwiperf.c | 51 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+
+diff --git a/src/apps/lwiperf/lwiperf.c b/src/apps/lwiperf/lwiperf.c
+index 144c8bd..2b1845e 100644
+--- a/src/apps/lwiperf/lwiperf.c
++++ b/src/apps/lwiperf/lwiperf.c
+@@ -822,6 +822,41 @@ void* lwiperf_start_tcp_client(const ip_addr_t* remote_addr, u16_t remote_port,
+  * @ingroup iperf
+  * Abort an iperf session (handle returned by lwiperf_start_tcp_server*())
+  */
++/*
++ * CaDS Zero LOCAL PATCH, 2026-08-26 - two real bugs found running this
++ * function for the first time in a session that used both a server and a
++ * client in the same boot (apps/netiperf, apps/bringup/explorer_iperf_demo.c's
++ * new 'Y' client command): confirmed still present in lwIP upstream master
++ * as of this date (fetched and read directly, not assumed from an old
++ * vendored copy), so this is not a version-lag issue to wait out - it is a
++ * genuine bug in the function as published.
++ *
++ * Bug 1 (heap corruption): when the freed item is the HEAD of
++ * lwiperf_all_connections (last == NULL on the first match, which is every
++ * single-session case - the common one), the global head pointer was never
++ * updated to the new head. It kept pointing at freed memory. The very next
++ * lwiperf_list_add()/lwiperf_list_remove() call (lwiperf_tcp_close(), on
++ * ANY subsequent session, e.g. a client started after a server was
++ * aborted) walks that list starting from the dangling head and corrupts
++ * lwIP's small malloc heap - observed on real hardware as
++ * "mem_free: illegal memory: double free", reproduced in exactly two
++ * commands: an iperf server aborted after its own timeout, then any iperf
++ * client whose connect fails or completes. lwiperf_list_remove() (used by
++ * the normal lwiperf_tcp_close() teardown path, a few lines above this
++ * function) already gets this right - this function had its own separate,
++ * buggy list-walk instead of reusing it.
++ *
++ * Bug 2 (pcb leak): this function only ever freed the bookkeeping struct,
++ * never actually closing the underlying tcp_pcb (server_pcb for a listener,
++ * conn_pcb for a connection) the way lwiperf_tcp_close() does. A second
++ * lwiperf_start_tcp_server_default() call after aborting the first
++ * observably failed ("failed to start server") because port 5001 was still
++ * bound to the leaked, never-closed listening pcb.
++ *
++ * Fix: update the head pointer on every removal (not just when a
++ * predecessor exists), and close the real pcb before freeing, mirroring
++ * lwiperf_tcp_close()'s own teardown sequence exactly.
++ */
+ void
+ lwiperf_abort(void *lwiperf_session)
+ {
+@@ -831,10 +866,26 @@ lwiperf_abort(void *lwiperf_session)
+ 
+   for (i = lwiperf_all_connections; i != NULL; ) {
+     if ((i == lwiperf_session) || (i->related_master_state == lwiperf_session)) {
++      lwiperf_state_tcp_t *tcp_dealloc;
+       dealloc = i;
+       i = i->next;
+       if (last != NULL) {
+         last->next = i;
++      } else {
++        lwiperf_all_connections = i;
++      }
++      tcp_dealloc = (lwiperf_state_tcp_t *)dealloc;
++      if (tcp_dealloc->conn_pcb != NULL) {
++        tcp_arg(tcp_dealloc->conn_pcb, NULL);
++        tcp_poll(tcp_dealloc->conn_pcb, NULL, 0);
++        tcp_sent(tcp_dealloc->conn_pcb, NULL);
++        tcp_recv(tcp_dealloc->conn_pcb, NULL);
++        tcp_err(tcp_dealloc->conn_pcb, NULL);
++        if (tcp_close(tcp_dealloc->conn_pcb) != ERR_OK) {
++          tcp_abort(tcp_dealloc->conn_pcb);
++        }
++      } else if (tcp_dealloc->server_pcb != NULL) {
++        tcp_close(tcp_dealloc->server_pcb);
+       }
+       LWIPERF_FREE(lwiperf_state_tcp_t, dealloc); /* @todo: type? */
+     } else {
+-- 
+2.53.0
+

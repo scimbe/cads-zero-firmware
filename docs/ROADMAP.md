@@ -2059,6 +2059,34 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-30 (superseded by a cleaner fix: the lwip CI fork below is gone -
+  a plain patch file instead) — User's own reaction to the fork fix
+  ("Ich möchte wirklich ungern ein eigen Fork") was right: a fork was
+  never actually necessary, just the fastest fix in the moment. Real fix:
+  reset `lib/lwip`'s pin back to plain upstream `lwip-tcpip/lwip.git`, at
+  the fix commit's own real parent (`3d896ba`, upstream master's actual
+  tip - always reachable, no special hosting needed), and moved the
+  lwiperf fix itself to `lib/patches/lwip-lwiperf-abort-fix.patch`,
+  applied automatically at CMake configure time
+  (`modules/net/CMakeLists.txt`, board target only) - idempotent (checks
+  for the fix's own marker line before applying, matches the pattern
+  `tools/marauder-build/build_and_flash.sh`'s own source patches already
+  use), fails loudly if the patch no longer applies cleanly rather than
+  silently skipping a real fix.
+  Verified end to end, not just configured: reset the submodule checkout
+  to the real unpatched upstream commit, confirmed the fix marker was
+  genuinely absent, ran a fresh `cmake --preset itsboard` and watched the
+  patch actually apply (`-- Applying lib/patches/lwip-lwiperf-abort-fix.
+  patch to lib/lwip`), reconfigured again and confirmed it was silently
+  skipped (idempotent, no error), then a full board rebuild produced the
+  byte-identical flash image (327 080 B, same as every other build today)
+  and unchanged RAM margin (928 B) - the patch-file path produces exactly
+  the same compiled result as the commit-pin path did, as it should.
+  `scimbe/lwip` (the fork from the entry below) is no longer referenced
+  anywhere in this repo; left the fork itself on GitHub rather than
+  deleting it (a repo deletion is the kind of action worth a separate,
+  explicit ask, not bundled into this cleanup).
+
 - 2026-08-30 (Performance A/B campaign, candidate 2: `-O2` measured,
   hardware verification deliberately deferred) — `-O2` (via a scratch
   build using an unrecognized `CMAKE_BUILD_TYPE` name so none of
