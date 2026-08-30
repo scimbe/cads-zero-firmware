@@ -15,4 +15,20 @@
 	url = https://github.com/ThrowTheSwitch/Unity.git
 [submodule "lib/lwip"]
 	path = lib/lwip
-	url = https://github.com/lwip-tcpip/lwip.git
+	# Pinned to a commit on scimbe/lwip (a fork), not lwip-tcpip/lwip
+	# directly, 2026-08-30: the pinned commit (a real lwiperf_abort() fix,
+	# see that commit's own message) started failing every CI checkout
+	# ("not our ref", "did not contain <sha>") for hours - re-verified by
+	# hand at the time from a genuinely fresh clone, not just trusting
+	# CI's own log. A later re-check the same day found the same commit
+	# fetchable from upstream again (fetch, and a --depth 1 fetch matching
+	# actions/checkout's own default, both succeeded cleanly) - so this
+	# was most likely transient (the commit lived on a personal PR/branch
+	# ref at the org repo, replication/GC timing on GitHub's end, not
+	# something wrong with the commit itself). Kept pointed at this fork
+	# anyway rather than reverting: it removes the dependency on wherever
+	# a personal branch happens to currently live on someone else's repo,
+	# which is more robust regardless of whether the original symptom
+	# recurs. The commit SHA pinned below is unchanged either way, only
+	# the remote it's fetched from moved.
+	url = https://github.com/scimbe/lwip.git
