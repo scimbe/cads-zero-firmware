@@ -2059,6 +2059,42 @@ _None outstanding._
 
 ## Log
 
+- 2026-08-31 (new tutorial: `docs/tutorials/lwip-udp-hello.md`, sending a real UDP
+  datagram from the board with `cads_net_udp_send()` - hardware-verified end to
+  end, `nc -ul` on this Mac actually received `hello from cads-zero` sent by the
+  real STM32F429ZI's lwIP stack). Written by a multi-agent research+draft pass
+  grounded in the real API (`modules/net/include/cads/net/net.h`) and the one
+  existing real caller (`apps/marauder`'s PCAP-over-TZSP relay), then verified
+  by hand rather than trusted on read-through - and the verification pass
+  caught two real bugs in the draft before it was ever published:
+  1. `scripts/board_cmd.py P <hex-ip> <count>` needs the ip+count as ONE quoted
+     shell argument (the board's own console parses `"<hex> <count>"` out of a
+     single string; `board_cmd.py` itself only accepts one positional
+     `argument`) - the drafted command passed them as two separate CLI args,
+     which `argparse` rejects outright.
+  2. **A real, previously-undocumented gotcha, cost real debugging time to
+     find**: a freshly-flashed board's `boot.autostart=1` drops straight into
+     the touchscreen app-tree menu (`cads_explorer_app_demo`), and - unlike
+     what an earlier CLAUDE.md lesson about the interactive `d`-session
+     implied - that loop does not exit on an arbitrary console byte. It
+     ignores plain ASCII entirely, by design (`board_key.py --help`'s own
+     docstring: the reserved key-bytes are all `>= 0x80` specifically so they
+     can never collide with, or be confused with, an ordinary typed command).
+     A `board_cmd.py` command sent while the board is in that state produces
+     *zero output, not even an error* - looks exactly like a hung/crashed
+     board. Live GDB attach (twice, both proper non-batch `continue`+`SIGINT`
+     detaches, not batch-mode halts) proved the board was fine both times,
+     just idling in `cads_explorer_app_demo`'s own delay loop. The actual fix:
+     `scripts/board_key.py quit` first, *then* the real command. Added to the
+     tutorial's own troubleshooting table so a student hits this once, not
+     blind. This refines (does not contradict) the earlier `d`-session lesson
+     below - a version-specific detail worth knowing rather than a case where
+     that lesson was wrong.
+  Also hit, and resolved on retry (matching the already-documented pattern,
+  not a new phenomenon): one `st-flash write` verification failure at offset
+  30720, resolved on the very next retry - see the 2026-08-29/30 entries for
+  the established pattern this matches.
+
 - 2026-08-30 (Marauder menu: real crash-and-reboot found live, one real bug
   fixed - the underlying stack overflow is NOT yet fixed, still open) -
   User hit a real, reproducible crash navigating the Marauder menu on

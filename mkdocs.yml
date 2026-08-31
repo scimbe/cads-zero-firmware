@@ -81,6 +81,7 @@ nav:
       - tutorials/index.md
       - Build and flash your first image: tutorials/first-build.md
       - Read the on-target test: tutorials/first-gate.md
+      - Send your first UDP packet: tutorials/lwip-udp-hello.md
       - WiFi recon and live capture in Wireshark: tutorials/wifi-wireshark.md
   - How-to:
       - how-to/index.md

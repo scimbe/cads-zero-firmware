@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "purpose": "TutorStep entries for CADS-DEMO-codereview's firmware tutor extension (tutor.ts FIRMWARE_TUTOR_CURRICULUM array), adapted from docs/tutorials/lwip-udp-hello.md.",
+    "sourceDoc": "docs/tutorials/lwip-udp-hello.md",
+    "idNumbering": "Continues the existing curriculum's 5 steps (e.g. \"1. Memory-mapped I/O, in one page\") starting at 6.",
+    "format": "Each step is { id, lang: { en: { title, bodyHtml }, de: { title, bodyHtml } | null } }. bodyHtml uses only <p>/<pre><code>/<ul>/<ol>/<li>/<table>/<strong>/<a> — no markdown syntax.",
+    "languageNote": "No German translation of docs/tutorials/lwip-udp-hello.md exists in this repo (checked docs/tutorials/*.de.md, docs/de/, and any i18n/locale directory — none found). Per the task's conditional instruction, only English bodies are populated; each step's \"de\" field is left null rather than machine-translated, so a real German pass can fill it in later without guessing at terms the project hasn't coined yet (e.g. whether 'link-wait loop' gets a German name at all).",
+    "wiring": "Intended shape: FIRMWARE_TUTOR_CURRICULUM.push(...steps.map(s => ({ id: s.id, title: s.lang.en.title, bodyHtml: s.lang.en.bodyHtml }))) for the current English-only array, or keyed off s.lang[currentLocale] once de is filled in and tutor.ts has locale switching."
+  },
+  "steps": [
+    {
+      "id": 6,
+      "lang": {
+        "en": {
+          "title": "6. Wire your laptop into the board's subnet",
+          "bodyHtml": "<p>Everything from here needs an ITSboard already built and flashed, an Ethernet cable from the board's jack straight to your laptop (or through a switch — no DHCP server needed either way), and <code>nc</code> (netcat), which ships by default on macOS and most Linux distributions.</p><p>Out of the box the board's addressing is <strong>static</strong>, not DHCP — <code>cads_net_board.c</code>'s built-in default is <code>192.168.33.99/24</code>, gateway <code>192.168.33.1</code>. Zero config changes needed. Your laptop just needs an address in that same <code>/24</code> on whichever interface is wired to the board.</p><p>On macOS, a temporary alias on top of whatever <code>en0</code> already has:</p><pre><code>sudo ifconfig en0 alias 192.168.33.10 255.255.255.0</code></pre><p>Any free address in <code>192.168.33.0/24</code> works — this walkthrough uses <code>.10</code> throughout. Exact steps differ on Windows/Linux; the requirement is the same: one address, reachable from your NIC.</p><p>Then start listening, in its own terminal:</p><pre><code>nc -ul 41234</code></pre><p>It prints nothing and blocks — that's correct, it's waiting. <code>41234</code> is an arbitrary high port, picked to stay clear of <code>37008</code>, which the Marauder PCAP relay already uses for something else in this codebase. Leave this terminal running; everything else happens in a second one.</p>"
+        },
+        "de": null
+      }
+    },
+    {
+      "id": 7,
+      "lang": {
+        "en": {
+          "title": "7. One call: cads_net_udp_send",
+          "bodyHtml": "<p>There's no built-in \"send one packet\" command, but <code>apps/bringup/explorer_ping_demo.c</code> already does everything except the send: <code>cads_net_init()</code>, then the link-wait loop every real caller in this codebase uses — <code>cads_net_status()</code> only reports the last poll's cached result, nothing detects link-up on its own, you have to poll for it:</p><pre><code>uint32_t link_wait_start = cads_hal_ticks_ms();\nwhile (cads_hal_ticks_ms() - link_wait_start &lt; 3000u) {\n    cads_net_poll();\n    cads_net_status_t status;\n    cads_net_status(&amp;status);\n    if (status.link_up) break;\n    cads_hal_delay_ms(10u);\n}</code></pre><p>Open the file. Right after that link-wait loop, before <code>char target_text[16];</code>, add:</p><pre><code>/* lwip-udp-hello: one UDP datagram to the laptop from step 6 */\nuint32_t laptop_ip = (192u &lt;&lt; 24) | (168u &lt;&lt; 16) | (33u &lt;&lt; 8) | 10u; /* 192.168.33.10 */\nstatic const uint8_t hello_payload[] = \"hello from cads-zero\\n\";\ncads_net_udp_send(laptop_ip, 41234u, hello_payload, sizeof(hello_payload) - 1u);</code></pre><p>That's the entire lesson: <code>dst_ip</code>/<code>dst_port</code> in host byte order, no socket object, no return value to check. Per <code>modules/net/include/cads/net/net.h</code>'s own doc comment on <code>cads_net_udp_send()</code>, it silently no-ops if the link isn't up or <code>dst_ip</code> is 0 — the same fire-and-forget shape <code>apps/marauder</code>'s PCAP relay already relies on for its one real call site in this codebase. If your laptop isn't <code>.10</code>, change the last octet to match step 6.</p>"
+        },
+        "de": null
+      }
+    },
+    {
+      "id": 8,
+      "lang": {
+        "en": {
+          "title": "8. Build for both targets, flash, and fire it",
+          "bodyHtml": "<p>Everything above the HAL has to build for the board and the simulator. <code>cads_net_udp_send()</code> has a host stub (<code>cads_net_sim.c</code>) that compiles and links but never actually sends, since the simulator has no link to send over:</p><pre><code>cmake --build build/itsboard\ncmake --build build/host</code></pre><p>Both should finish clean. The host build won't send anything when run — that's expected, not a bug to chase.</p><p>Flash the board:</p><pre><code>scripts/flash.sh</code></pre><pre><code>Flashing build/itsboard/cads-zero.bin (... bytes) to 0x08000000\nEraseFlash - Sector:0x0 Size:0x4000 -&gt; Flash page at 0x8000000 erased\n...\nDone.</code></pre><p>If this is a fresh flash, the board booted straight into the touchscreen app-tree menu (<code>boot.autostart=1</code>) — that session ignores plain typed bytes on purpose, so a console command sent into it does nothing and prints nothing, not even an error. One-time fix if you haven't already left that screen:</p><pre><code>scripts/board_key.py quit</code></pre><p>Then fire it — note the ping target and count are one quoted argument, not two:</p><pre><code>scripts/board_cmd.py P \"c0a8210a 1\" --timeout 5</code></pre><p><code>P</code> is the existing ping command; <code>c0a8210a</code> is <code>192.168.33.10</code> in hex, <code>1</code> is the ping count. The UDP hello fires once the link-wait loop breaks — before the ping loop even starts — so it goes out regardless of whether your OS answers the ping that follows it.</p>"
+        },
+        "de": null
+      }
+    },
+    {
+      "id": 9,
+      "lang": {
+        "en": {
+          "title": "9. Read the datagram (and what to check if it doesn't arrive)",
+          "bodyHtml": "<p>Check the <code>nc</code> terminal from step 6:</p><pre><code>hello from cads-zero</code></pre><p>That line arriving is the whole exercise: a real datagram, built by lwIP on the board, crossed the wire, and a plain socket on your machine read it with no decoding step in between.</p><p><strong>If the ping itself reads <code>request timed out</code></strong>, that's fine — most consumer firewalls, or a laptop that just doesn't answer ICMP, will do that. It says nothing about the UDP hello, which already left before that loop ran.</p><p>If nothing arrives at all:</p><table><tr><th>Symptom</th><th>Likely cause</th></tr><tr><td><code>nc</code> prints nothing at all</td><td>Laptop's alias isn't actually on the wire the board is plugged into, or is on the wrong subnet — recheck step 6</td></tr><tr><td>Console shows the demo ran, still nothing in <code>nc</code></td><td><code>laptop_ip</code>'s last octet doesn't match the alias you set</td></tr><tr><td>Console never gets past the link-wait (3 s, no output at all)</td><td>Cable, or the board came up with <code>net.dhcp = 1</code> from a prior session — check <code>/config.txt</code></td></tr><tr><td><code>nc: Address already in use</code></td><td>Something else already owns port 41234 — pick a different one in both places</td></tr></table><p>None of these are board-side bugs to debug over SWD — every one is either a laptop-networking mismatch or a typo in the previous step. Debugging with GDB is the next move only if the board itself looks wrong: crashes, resets, no console at all.</p>"
+        },
+        "de": null
+      }
+    }
+  ]
+}
