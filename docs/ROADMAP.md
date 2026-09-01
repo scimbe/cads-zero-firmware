@@ -2070,6 +2070,43 @@ _None outstanding._
 
 ## Log
 
+- 2026-09-01 (Marauder Bluetooth: independently re-verified live, real BLE
+  devices found) - The operator pointed out this was already flashed and
+  hardware-verified (2026-08-28 entry, `docs/reference/marauder-coprocessor.md`)
+  and invited a fresh webcam check rather than trusting the doc. Did that:
+  navigated the real touchscreen menu via `board_key.py` (Menu -> Marauder ->
+  Sniff BT, matching `apps/marauder/cads_marauder.c`'s tool table), photographed
+  the panel live. Real result: 5 real nearby BLE devices populated the screen,
+  MAC addresses plus one named device ("JBL Wave FLEX"), matching the
+  documented output format exactly - confirms the ESP32 co-processor's BLE
+  stack still works end to end, independently of the original verification.
+  Exited cleanly (Back x3 to desktop) afterward, board left in a normal
+  resting state.
+  **Real friction hit and not fully root-caused, worth flagging**: plain
+  `board_cmd.py` commands ('E', first 'k') worked cleanly at the very start
+  of this session, then started silently hanging (no output, no error) after
+  the first `board_key.py ok`/`quit` sends - consistent with the documented
+  "app-tree ignores plain ASCII" behavior, but `board_key.py quit` sent alone,
+  with nothing else touching the port, did not visibly restore plain-command
+  responsiveness either. Compounded by a real self-inflicted mistake:
+  repeatedly re-issuing `board_cmd.py` after a premature per-call Bash-tool
+  timeout auto-backgrounded the previous attempt, instead of waiting for or
+  killing it first, left up to 4 `board_cmd.py` processes reading the same
+  UART concurrently at one point (confirmed via `ps aux`, killed cleanly).
+  That pile-up definitely produced some of the garbled output seen, but a
+  clean single `k` call still hung afterward, well after all stray processes
+  were killed - so a real "how does the console recover to plain-command mode
+  after `board_key.py` has been used" question remains open, sidestepped this
+  session by driving navigation entirely through `board_key.py` + webcam
+  photos instead of chasing it further. A live GDB attach along the way
+  (`st-util --no-reset`) also produced one false alarm worth recording: PC
+  parked inside `cads_stackguard_breached()` looked like a caught crash at
+  first glance, but is actually normal - that function is `vApplicationIdleHook`'s
+  own continuous health-check poll, and all four sentinels read the correct
+  canary value at the time. Detached cleanly (non-batch `continue` + `SIGINT`,
+  per the established recipe); `st-info --probe` confirmed the ST-Link was
+  never wedged.
+
 - 2026-09-01 (HARDWARE GATES M3 and M6: touch walkthrough closed on the
   operator's own confirmation) - Both gates' one remaining open item was
   the same physical-presence gap neither this agent nor a photograph could
