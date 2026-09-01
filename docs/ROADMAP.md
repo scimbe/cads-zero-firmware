@@ -2059,6 +2059,31 @@ _None outstanding._
 
 ## Log
 
+- 2026-09-01 (`golden_splash`/`golden_boot_desktop`: fixed, root cause was
+  environmental, not a code regression) - The two host golden-image tests
+  flagged-not-fixed in the 2026-08-30 entry below were investigated fresh
+  rather than trusted stale. Confirmed still failing (18866/153600 and
+  14273/153600 pixels), then root-caused with a per-pixel delta histogram
+  instead of eyeballing the diff PNGs: every differing pixel across BOTH
+  images was off by exactly +1 in one or more of R/G/B - deltas were only
+  ever `(1,1,0)`, `(1,1,1)`, or `(1,0,1)`, confined entirely to
+  anti-aliased edges (flat indexed-palette regions matched exactly). That
+  is the signature of SDL's RGB565->24bpp BMP upconversion rounding
+  slightly differently on this host than whatever SDL2 build last captured
+  the goldens (`golden_check.py`'s own docstring already documents that
+  SDL, not this project's rendering code, does that conversion) - not a
+  rendering regression. Confirmed no rendering-relevant commit landed since
+  the goldens were last regenerated (`06b9f12`): the only rendering-adjacent
+  commit since then (`a8f8c76`, touch calibration) doesn't touch color
+  output. Side-by-side visual comparison of old vs. regenerated goldens:
+  identical. Regenerated both via the project's own `update_golden` CMake
+  target (the documented, reviewed path for exactly this situation - not a
+  one-off script hack), verified 37/37 host tests now pass
+  (`cmake --build build/host && ctest`), confirmed the board build is
+  untouched (`cmake --build build/itsboard` reports no work to do - only
+  PNG assets changed) and RAM margin unchanged at 928 B. Committed as
+  `3c038cb`.
+
 - 2026-08-31 (new tutorial: `docs/tutorials/lwip-udp-hello.md`, sending a real UDP
   datagram from the board with `cads_net_udp_send()` - hardware-verified end to
   end, `nc -ul` on this Mac actually received `hello from cads-zero` sent by the
