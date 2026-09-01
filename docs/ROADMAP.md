@@ -239,7 +239,7 @@ Prove the toolchain, the boot path and the display path on real silicon.
       stack, which is what a submenu actually is in this framework - see
       apps/settings, whose "Factory reset" row opens exactly that pattern one
       level deeper as a confirm dialog.
-- [~] **HARDWARE GATE M3**: navigate a three-level menu by touch, no ghost
+- [x] **HARDWARE GATE M3**: navigate a three-level menu by touch, no ghost
       touches over 200 interactions. Split into what can and cannot be
       verified without a human, same as the M0 gate's visual-confirmation
       item:
@@ -270,10 +270,12 @@ Prove the toolchain, the boot path and the display path on real silicon.
             2026-08-22 via `scripts/board_photo.py`, an external
             photograph this agent could take and inspect itself), an
             actual fingertip on the glass is not something a photograph or
-            any other remote tooling can substitute for. Left open for the
-            user to either run the touch walkthrough by hand and report
-            back, or accept the ghost-touch soak and the tree wiring above
-            as sufficient evidence on their own.
+            any other remote tooling can substitute for. UPDATE 2026-09-01:
+            closed - operator confirmed direct, hands-on touch-navigation
+            testing on real hardware ("Ich habe schon ordentlich
+            getestet"), the fingertip-on-glass evidence this line always
+            deferred to the user for. See M6's matching update for the
+            same confirmation and the likely (not re-traced) fix.
 
 ## M4 — Storage  `[x]`
 
@@ -1476,16 +1478,25 @@ does not yet use" for the full table and sourcing.
       minimal apps)` green, distinct `firmware-default`/`firmware-minimal`
       artifacts uploaded without the name collision an unmodified
       `name: firmware` would have hit.
-- [~] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
+- [x] **HARDWARE GATE M6**: full walkthrough of every app on the board. All
       five apps below the menu build, flash, and run without fault; a human
       walkthrough of each one by touch and by button is the same open item
       as the M3 gate's touch-navigation line, not a separate one. UPDATE
       2026-08-25: the BUTTON half is now done - live on hardware with the
       user actually pressing, OK/Up/Down/Back all confirmed correct (see
-      that date's Log entry). Still open: TOUCH specifically, blocked on a
-      real, precisely isolated XPT2046 SPI data bug (same Log entry) -
-      not a "someone needs to go press it" gap anymore, a "someone needs a
-      scope or a systematic bring-up session" gap.
+      that date's Log entry). TOUCH was blocked on a real, precisely
+      isolated XPT2046 SPI data bug (same Log entry) - a "someone needs a
+      scope or a systematic bring-up session" gap, not a "someone needs to
+      go press it" one. UPDATE 2026-09-01: closed. Operator confirmed
+      direct, hands-on testing of the full touch walkthrough on real
+      hardware ("Ich habe schon ordentlich getestet") - taken as the human
+      walkthrough this gate has always required, not re-verified
+      independently this session. Most likely fixed by the SPI-bus mutex
+      commit (`9506a46`, shared bus between the ui and input/console
+      tasks) landing between the XPT2046 bug being isolated and this
+      confirmation, though that causal link itself wasn't re-traced here -
+      recorded as the operator's own gate-closing call, which is what this
+      gate has always deferred to.
 
 ### The GPIO Swiss-army-knife
 
@@ -2058,6 +2069,19 @@ _None outstanding._
       448 ms frame.
 
 ## Log
+
+- 2026-09-01 (HARDWARE GATES M3 and M6: touch walkthrough closed on the
+  operator's own confirmation) - Both gates' one remaining open item was
+  the same physical-presence gap neither this agent nor a photograph could
+  close: a real human touching the XPT2046 panel, previously blocked on a
+  precisely-isolated SPI data bug (2026-08-19/25 Log entries). The operator
+  confirmed directly, this session, having "schon ordentlich getestet"
+  (already tested it properly) - taken as the human walkthrough both gates
+  have always deferred to, not independently re-verified here. Most likely
+  explanation, not re-traced: the shared-SPI-bus mutex fix (`9506a46`,
+  present at session start, fixing the ui/input/console task race
+  documented in this file's own crash-family entries) landing between the
+  XPT2046 bug's isolation and this confirmation. Both gates marked `[x]`.
 
 - 2026-09-01 (`golden_splash`/`golden_boot_desktop`: fixed, root cause was
   environmental, not a code regression) - The two host golden-image tests
