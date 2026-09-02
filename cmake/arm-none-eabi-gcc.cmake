@@ -26,13 +26,25 @@ else()
     set(_cads_prefix "arm-none-eabi-")   # rely on PATH
 endif()
 
-set(CMAKE_C_COMPILER   "${_cads_prefix}gcc")
-set(CMAKE_CXX_COMPILER "${_cads_prefix}g++")
-set(CMAKE_ASM_COMPILER "${_cads_prefix}gcc")
-set(CMAKE_OBJCOPY      "${_cads_prefix}objcopy" CACHE FILEPATH "objcopy")
-set(CMAKE_OBJDUMP      "${_cads_prefix}objdump" CACHE FILEPATH "objdump")
-set(CMAKE_SIZE         "${_cads_prefix}size"    CACHE FILEPATH "size")
-set(CMAKE_GDB          "${_cads_prefix}gdb"     CACHE FILEPATH "gdb")
+# A full path (the CADS_ARM_TOOLCHAIN_BIN branch) needs the platform's real
+# executable suffix -- CMake's own project()-time compiler-path check does a
+# literal file-existence test on this exact string on Windows, and does not
+# apply PATHEXT the way running the command directly does. Plain "arm-none-eabi-"
+# (rely on PATH) does not need this: that string is resolved via PATH search,
+# which already handles PATHEXT.
+if(CADS_ARM_TOOLCHAIN_BIN AND CMAKE_HOST_WIN32)
+    set(_cads_exe_suffix ".exe")
+else()
+    set(_cads_exe_suffix "")
+endif()
+
+set(CMAKE_C_COMPILER   "${_cads_prefix}gcc${_cads_exe_suffix}")
+set(CMAKE_CXX_COMPILER "${_cads_prefix}g++${_cads_exe_suffix}")
+set(CMAKE_ASM_COMPILER "${_cads_prefix}gcc${_cads_exe_suffix}")
+set(CMAKE_OBJCOPY      "${_cads_prefix}objcopy${_cads_exe_suffix}" CACHE FILEPATH "objcopy")
+set(CMAKE_OBJDUMP      "${_cads_prefix}objdump${_cads_exe_suffix}" CACHE FILEPATH "objdump")
+set(CMAKE_SIZE         "${_cads_prefix}size${_cads_exe_suffix}"    CACHE FILEPATH "size")
+set(CMAKE_GDB          "${_cads_prefix}gdb${_cads_exe_suffix}"     CACHE FILEPATH "gdb")
 
 # Do not try to run the produced binaries on the host during compiler checks.
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
