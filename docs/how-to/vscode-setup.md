@@ -67,12 +67,29 @@ extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.
 run against the Linux toolchain and the Linux `st-util`/`st-flash` — mixing
 a Windows-side VS Code with a WSL-side toolchain is where this stops working.
 
-**Native Windows — build and debug only, not flash or console.** If you'd
-rather not use WSL: install the [Arm GNU
+**Native Windows — build, flash, and debug all work; only the console
+scripts don't.** If you'd rather not use WSL: install the [Arm GNU
 Toolchain](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads)
-Windows installer (adds `arm-none-eabi-gcc` to `PATH` for you), `cmake` and
-`ninja` (via their own installers, `winget`, or `choco`), and the [ST-Link
-Windows tools](https://www.st.com/en/development-tools/stsw-link009.html).
+Windows installer (adds `arm-none-eabi-gcc` to `PATH` for you; also
+installable via `winget install Arm.ArmGnuToolchain`, though that package
+currently only offers machine-wide install — no `--scope user`, so it needs
+an admin/UAC prompt once), `cmake` and `ninja` (via their own installers,
+`winget`, or `choco`), and the ST-Link Windows tools. The [official ST-Link
+Windows tools](https://www.st.com/en/development-tools/stsw-link009.html)
+work; so does the open-source
+[stlink-org/stlink](https://github.com/stlink-org/stlink/releases) Windows
+build (`st-flash`/`st-info`/`st-util` in one zip) if you'd rather not
+install ST's own package — that build needs `libusb-1.0.dll` next to the
+`.exe`s, which the zip does not include (the `libusb` PyPI package
+bundles a working one:
+`pip install libusb`, then copy
+`Lib\site-packages\libusb\_platform\windows\x86_64\libusb-1.0.dll`
+alongside `st-flash.exe`/`st-info.exe`/`st-util.exe`), and it looks for its
+chip database at a hardcoded `C:\Program Files (x86)\stlink\config` — copy
+the zip's own `config\` folder there (needs the same one-time admin
+elevation) or `st-info --probe`/`st-flash` still run but report
+`flash: 0 (pagesize: 0)` instead of the real chip's size.
+
 CMake Tools' `itsboard`/`host` presets, cpptools, and cortex-debug (§5) all
 work natively this way — none of them shell out to a `.sh` script. What
 doesn't: the two `tasks.json` entries that do (build via
@@ -81,7 +98,35 @@ instead, which is exactly what `build.sh` itself wraps), the `flash` CMake
 target (use `st-flash --serial <id> --reset write build\itsboard\cads-
 zero.bin 0x08000000` by hand instead, or install Git for Windows and point
 VS Code's default shell at its bundled `bash.exe` so the scripts resolve),
-and anything under `scripts/*.py` that touches the serial console.
+and anything under `scripts/*.py` that touches the serial console. Debugging
+by hand works the same way as [Debug with GDB](debug.md) describes, with
+`st-util.exe`/`arm-none-eabi-gdb.exe` in place of the Unix names — including
+its `detach`/`quit` gotcha: `st-util`'s GDB stub doesn't implement `detach`
+("Remote doesn't know how to detach"), and on Windows specifically, if GDB's
+stdin is redirected from a closed/empty source (a non-interactive script
+runner rather than a real terminal), a bare `quit` after that re-prompts
+"Quit anyway?" in a loop it can never answer — send GDB itself a `kill`
+(not `-9`) instead of `detach`+`quit` in that situation. Verified end to
+end on real hardware (NUCLEO-F429ZI + ITS adapter, native Windows 11, no
+WSL): build → `st-flash write` → `st-util` + `arm-none-eabi-gdb` stopped
+exactly at `main()`, backtrace and register read both correct, ST-Link left
+in a clean, non-wedged state afterward.
+
+**A pre-existing toolchain-resolution bug, Windows-only, fixed as of this
+PR:** when `CADS_ARM_TOOLCHAIN_BIN` points at a real toolchain (the winget
+one above, or any full-path install), `cmake/arm-none-eabi-gcc.cmake` used
+to set `CMAKE_C_COMPILER` etc. to `<bin>/arm-none-eabi-gcc` with no `.exe`
+suffix. CMake's compiler-identification step still ran the command fine
+(Windows resolves `PATHEXT` for a *launched* command either way) and printed
+`The C compiler identification is GNU 12.2.1` — but its later, stricter
+literal-path check then failed with `is not a full path to an existing
+compiler tool`, because that check does not apply `PATHEXT` the way running
+the command does. Plain `arm-none-eabi-gcc` with no `CADS_ARM_TOOLCHAIN_BIN`
+(rely on `PATH`) never hit this — `PATH` search already handles the
+extension. Never surfaced before because this project's own reference
+machine is a Mac; the fix appends `.exe` to every tool path, but only in the
+`CADS_ARM_TOOLCHAIN_BIN` branch and only when `CMAKE_HOST_WIN32`, so
+nothing changes on macOS/Linux or on the plain-PATH branch.
 
 If you'd rather use the exact toolchain version this project's own reference
 machine has (installed via the vcpkg-artifacts mechanism the Arm Keil Studio
