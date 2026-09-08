@@ -21,10 +21,34 @@ which is what open_console() does.
 
 from __future__ import annotations
 
+import glob
+import json
 import os
 import selectors
+import sys
 import termios
 import time
+import urllib.error
+import urllib.request
+
+# The firmware-lab course container's board-bridge extension (a separate
+# repo/extension, not this one) exposes the board over a browser WebUSB/
+# WebSerial connection instead of a host /dev/cu.usbmodem* device. It relays
+# that connection to two loopback-only endpoints inside the container:
+#   - a real PTY at DEFAULT_BRIDGE_CONSOLE_LINK (socat links it to the
+#     bridge's own TCP serial server), so it behaves exactly like a real
+#     tty - open_console()/termios/read_lines() below need no changes to use
+#     it, only the path differs from a real VCP.
+#   - an HTTP status/control shim on DEFAULT_BRIDGE_HTTP_PORT, whose
+#     GET /status tells you whether a browser tab actually has the board
+#     connected. This matters because the bridge's serial write path accepts
+#     bytes and reports success even with no board attached (the rejection is
+#     only logged, not surfaced) - so silence on the console does not by
+#     itself mean the write failed, and resolve_console_port() below checks
+#     /status specifically so a script doesn't misread "PTY exists" as
+#     "board is there and listening".
+DEFAULT_BRIDGE_CONSOLE_LINK = "/home/coder/board-console"
+DEFAULT_BRIDGE_HTTP_PORT = 3335
 
 
 class SerialTimeout(Exception):
@@ -94,3 +118,80 @@ def read_lines(fd: int, timeout: float, stop_when=None, echo: bool = True):
     finally:
         selector.unregister(fd)
         selector.close()
+
+
+def find_local_vcp() -> str | None:
+    """First numeric /dev/cu.usbmodem* device, or None if there isn't one.
+
+    The ST-Link VCP enumerates with a purely numeric suffix; other CDC
+    devices (an LG monitor's control interface, say) carry letters.
+    """
+    candidates = [c for c in sorted(glob.glob("/dev/cu.usbmodem*"))
+                  if c.rsplit("usbmodem", 1)[1].isdigit()]
+    return candidates[0] if candidates else None
+
+
+def bridge_status(http_port: int = DEFAULT_BRIDGE_HTTP_PORT, timeout: float = 2.0) -> dict | None:
+    """GET /status from the board-bridge's HTTP shim, or None if unreachable.
+
+    Only meaningful inside the firmware-lab course container - a bare
+    checkout with a directly-attached board has no bridge to ask, and that
+    is not an error, just "not applicable here".
+    """
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{http_port}/status", timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def resolve_console_port(explicit: str | None = None,
+                          bridge_console_link: str = DEFAULT_BRIDGE_CONSOLE_LINK,
+                          bridge_http_port: int = DEFAULT_BRIDGE_HTTP_PORT) -> str:
+    """Pick the serial device to open, in priority order, or exit with a clear reason.
+
+    1. `explicit` (a --port flag) or $CADS_CONSOLE_PORT - always wins, no checks.
+    2. A local ST-Link VCP (/dev/cu.usbmodem*, numeric suffix) - the case for
+       a Mac with the board plugged in directly.
+    3. The board-bridge's PTY link - the case inside the firmware-lab course
+       container, where the board is reached through the browser's WebUSB/
+       WebSerial connection instead of a host serial device. socat links this
+       path to a real tty, so everything downstream (open_console(), termios,
+       read_lines()) works completely unchanged; only the path differs.
+
+    Before trusting the PTY, this checks the bridge's own GET /status: the
+    bridge accepts a /serial write and reports success even with no board
+    connected (the rejection is only logged on their side, never surfaced),
+    so a script that just opened the PTY and started writing could easily
+    mistake "the escape hatch exists" for "the escape hatch reaches a board".
+    If /status says no board is connected, this fails loudly with the
+    reported reason instead of returning a PTY that will eat commands
+    silently - that silent-eating is exactly the failure PB-03 was about.
+    """
+    port = explicit or os.environ.get("CADS_CONSOLE_PORT")
+    if port:
+        return port
+
+    local = find_local_vcp()
+    if local:
+        return local
+
+    if os.path.exists(bridge_console_link):
+        status = bridge_status(bridge_http_port)
+        if status is not None and not status.get("connected", False):
+            reason = (status.get("probe") or {}).get("blockReason") or "no board connected"
+            sys.exit(
+                f"board-bridge console PTY exists ({bridge_console_link}) but the bridge "
+                f"reports no board connected: {reason} - use 'CaDS Board: Verbinden "
+                "(USB/Serial freigeben)' in this course's IDE first."
+            )
+        return bridge_console_link
+
+    sys.exit(
+        "no ST-Link VCP found (no numeric /dev/cu.usbmodem*) and no board-bridge "
+        f"console PTY at {bridge_console_link} - pass --port or set CADS_CONSOLE_PORT. "
+        "Inside the firmware-lab course container this usually means socat hasn't "
+        "created the link yet (it restarts with up to 30s backoff; check the "
+        "'CaDS Board' output channel for 'socat not found' if it never appears) "
+        "or no browser tab has connected the board yet."
+    )

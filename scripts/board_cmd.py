@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cads_serial import open_console, read_lines  # noqa: E402
+from cads_serial import open_console, read_lines, resolve_console_port  # noqa: E402
 
 
 def main() -> int:
@@ -34,24 +34,16 @@ def main() -> int:
     parser.add_argument("letter", help="explorer command letter, e.g. q, d, k")
     parser.add_argument("argument", nargs="?", default="", help="optional numeric argument")
     parser.add_argument("--port", default=None,
-                        help="serial device; default: $CADS_CONSOLE_PORT or the "
+                        help="serial device; default: $CADS_CONSOLE_PORT, the "
                              "first numeric /dev/cu.usbmodem* (the ST-Link VCP's "
-                             "name shifts with the USB port, e.g. 11303 vs 1303)")
+                             "name shifts with the USB port, e.g. 11303 vs 1303), "
+                             "or (inside the firmware-lab course container) the "
+                             "board-bridge's console PTY")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--timeout", type=float, default=60.0, help="hard wall-clock deadline")
     args = parser.parse_args()
 
-    port = args.port or os.environ.get("CADS_CONSOLE_PORT")
-    if port is None:
-        import glob
-        # the ST-Link VCP enumerates with a purely numeric suffix; other CDC
-        # devices (an LG monitor's control interface, say) carry letters
-        candidates = [c for c in sorted(glob.glob("/dev/cu.usbmodem*"))
-                      if c.rsplit("usbmodem", 1)[1].isdigit()]
-        if not candidates:
-            sys.exit("no ST-Link VCP found (no numeric /dev/cu.usbmodem*) - "
-                     "pass --port or set CADS_CONSOLE_PORT")
-        port = candidates[0]
+    port = resolve_console_port(args.port)
     fd = open_console(port, args.baud)
     try:
         command = f"{args.letter} {args.argument}".strip() + "\r\n"

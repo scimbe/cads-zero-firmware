@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from cads_serial import open_console  # noqa: E402
+from cads_serial import open_console, resolve_console_port  # noqa: E402
 
 # Must match cads_explorer_app_demo_decode_key() and CADS_APP_DEMO_EXIT_BYTE
 # in apps/bringup/explorer_app_demo.c exactly.
@@ -62,23 +62,17 @@ def main() -> int:
     parser.add_argument("keys", nargs="+", choices=sorted(KEY_BYTES),
                         help="one or more logical keys, sent in order")
     parser.add_argument("--port", default=None,
-                        help="serial device; default: $CADS_CONSOLE_PORT or the "
-                             "first numeric /dev/cu.usbmodem*")
+                        help="serial device; default: $CADS_CONSOLE_PORT, the "
+                             "first numeric /dev/cu.usbmodem*, or (inside the "
+                             "firmware-lab course container) the board-bridge's "
+                             "console PTY")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--delay", type=float, default=0.15,
                         help="seconds between keys, so the GUI has a tick to "
                              "redraw before the next one lands (default 0.15)")
     args = parser.parse_args()
 
-    port = args.port or os.environ.get("CADS_CONSOLE_PORT")
-    if port is None:
-        import glob
-        candidates = [c for c in sorted(glob.glob("/dev/cu.usbmodem*"))
-                      if c.rsplit("usbmodem", 1)[1].isdigit()]
-        if not candidates:
-            sys.exit("no ST-Link VCP found (no numeric /dev/cu.usbmodem*) - "
-                     "pass --port or set CADS_CONSOLE_PORT")
-        port = candidates[0]
+    port = resolve_console_port(args.port)
 
     fd = open_console(port, args.baud)
     try:
