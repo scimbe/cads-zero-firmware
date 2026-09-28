@@ -60,6 +60,10 @@ foreach(nn 01 02 03 04 05 06 07 08 09 10 11)
     add_test(NAME test_rnlab_l${nn} COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_SOURCE_DIR}/solved/l${nn})
     set_tests_properties(test_rnlab_l${nn} PROPERTIES LABELS rnlab-L${nn})
 endforeach()
+# L10 has optional deep-dive tests with their own label, green once the
+# solution also ships solved/l10v.
+add_test(NAME test_rnlab_l10_v COMMAND ${CMAKE_COMMAND} -E cat ${CMAKE_SOURCE_DIR}/solved/l10v)
+set_tests_properties(test_rnlab_l10_v PROPERTIES LABELS rnlab-L10-vertiefung)
 """
 PRESETS = """{
   "version": 3,
@@ -142,7 +146,7 @@ class IntegrateSolutionsTest(unittest.TestCase):
         return next(line for line in out.splitlines() if line.startswith(f"L{nn} "))
 
     def test_order_missing_and_deltas(self):
-        self.solution("10", "http", ram=400)
+        self.solution("10", "http", ram=400, extra={"solved/l10v": "ok\n"})
         self.solution("02", "arp", ram=96)
         self.solution("01", "layers", ram=0)
         r = self.run_script()
@@ -208,6 +212,23 @@ class IntegrateSolutionsTest(unittest.TestCase):
         self.assertIn("512/1024 B", self.row(r.stdout, "01"))    # the 4 KB CCM entry did not count
         self.assertIn("WARNING L03 has 2000 B static SRAM, guideline 512 B", r.stdout)
         self.assertNotIn("WARNING L01", r.stdout)
+
+    def test_vertiefung_label_is_run_and_reported_separately(self):
+        self.solution("10", "http", extra={"solved/l10v": "ok\n"})
+        self.solution("03", "subnetting")
+        r = self.run_script("--quick")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        row10 = self.row(r.stdout, "10").split()
+        self.assertEqual(row10[2:4], ["green", "green"])
+        self.assertEqual(self.row(r.stdout, "03").split()[3], "-")   # L03 has no deep dive
+        self.assertIn("RED (stub)", self.row(r.stdout, "05"))
+
+    def test_red_vertiefung_of_a_merged_lesson_fails(self):
+        self.solution("10", "http")   # required tests green, deep dive not solved
+        r = self.run_script("--quick")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.row(r.stdout, "10").split()[2:4], ["green", "RED"])
+        self.assertIn("integration: FAILED", r.stdout)
 
     def test_rerun_reuses_the_worktree(self):
         self.solution("01", "layers")
