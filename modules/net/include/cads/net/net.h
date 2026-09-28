@@ -36,6 +36,7 @@ typedef struct {
     uint32_t rx_dropped; /**< frames the MAC handed up but this layer discarded */
     uint32_t rx_ring_overruns; /**< frames the MAC dropped for want of a free RX descriptor (DMAMFBOCR.MFC, since boot) */
     uint32_t rx_fifo_overruns; /**< frames lost to MAC receive FIFO overflow (DMAMFBOCR.MFA, since boot) */
+    uint32_t rand_fallbacks; /**< lwIP random numbers that could not come from the hardware RNG (cads/net/rand.h) */
     uint32_t poll_nested; /**< cads_net_poll() calls refused because they came from inside lwIP (see cads_net_poll()) */
 } cads_net_status_t;
 

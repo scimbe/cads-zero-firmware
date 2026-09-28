@@ -102,7 +102,9 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     cads_cli_write_uint(session, status.rx_ring_overruns);
     cads_cli_write(session, " (FIFO: ");
     cads_cli_write_uint(session, status.rx_fifo_overruns);
-    cads_cli_write(session, ")\r\nnested: ");
+    cads_cli_write(session, ")\r\nrand_fallbacks: ");
+    cads_cli_write_uint(session, status.rand_fallbacks);
+    cads_cli_write(session, "\r\nnested: ");
     cads_cli_write_uint(session, status.poll_nested);
     cads_cli_write(session, " verschachtelte Polls abgewiesen\r\npoll:   ");
     cads_cli_write_uint(session, rnlab_poll_ms);

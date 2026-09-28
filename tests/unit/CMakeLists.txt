@@ -238,6 +238,10 @@ if(CADS_APP_RNLAB)
     endforeach()
 endif()
 
+# --- net: lwIP's random source (cads/net/rand.h) ------------------------------
+cads_add_unit_test(test_net_rand test_net_rand.c)
+target_link_libraries(test_net_rand PRIVATE cads_net)
+
 # --- lwIP DHCP (vendored, patched) ---------------------------------------------
 # The real lwIP core on the host - only here, the simulator itself has no
 # stack - to test lib/patches/lwip-dhcp-nak-backoff.patch (applied by

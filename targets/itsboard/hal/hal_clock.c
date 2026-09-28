@@ -54,9 +54,14 @@ void cads_hal_early_init(void) {
     RCC->CR &= ~RCC_CR_PLLON;
     while(RCC->CR & RCC_CR_PLLRDY) {
     }
+    /* PLLQ /8: VCO 360 MHz / 8 = 45 MHz on the 48 MHz domain. Only the
+     * hardware RNG uses it here (no USB OTG, no SDIO), and RM0090 caps the
+     * RNG clock at 48 MHz - the previous /7 ran it at 51.4 MHz, out of spec,
+     * now that lwIP draws every random number from it (modules/net,
+     * cads_net_rand). */
     RCC->PLLCFGR = (8u << RCC_PLLCFGR_PLLM_Pos) | (360u << RCC_PLLCFGR_PLLN_Pos) |
                    (0u << RCC_PLLCFGR_PLLP_Pos) /* 00 = /2 */ |
-                   (7u << RCC_PLLCFGR_PLLQ_Pos) | RCC_PLLCFGR_PLLSRC_HSE;
+                   (8u << RCC_PLLCFGR_PLLQ_Pos) | RCC_PLLCFGR_PLLSRC_HSE;
     RCC->CR |= RCC_CR_PLLON;
     for(uint32_t guard = 0;; guard++) {
         if(RCC->CR & RCC_CR_PLLRDY) break;

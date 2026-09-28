@@ -253,6 +253,11 @@
 #endif
 #define LWIP_DEBUG                  0
 
+/* TCP initial sequence numbers per RFC 6528 instead of lwIP's counter, which
+ * restarted identically on every boot - cads/net/rand.h. */
+#define LWIP_HOOK_FILENAME          "cads/net/lwip_hooks.h"
+#define LWIP_HOOK_TCP_ISN           cads_lwip_tcp_isn
+
 /* Timer headroom for the lessons (sys_timeout(): L04, L08's 10 ms tick, L09's
  * 1 ms tick, L10/L11 refresh). lwIP's default pool holds exactly its own
  * cyclic timers plus PPP's slots, so a lesson timer only fits while PPP is
