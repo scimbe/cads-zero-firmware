@@ -106,6 +106,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # includes lwIP's headers must see the same value.
     if(CADS_APP_RNLAB)
         target_compile_definitions(cads_lwip PUBLIC CADS_APP_RNLAB_ENABLED)
+        # The hook dispatcher (apps/rnlab, defined later in the top-level
+        # configure - CMake resolves the name at generate time). Linked from
+        # cads_lwip so it lands after both ip4.o and cads_net_board.o on the
+        # link line: they are its only referrers.
+        target_link_libraries(cads_lwip PUBLIC cads_rnlab_hooks)
         if(CADS_RNLAB_LWIP_STATS)
             target_compile_definitions(cads_lwip PUBLIC CADS_RNLAB_LWIP_STATS=1)
         endif()

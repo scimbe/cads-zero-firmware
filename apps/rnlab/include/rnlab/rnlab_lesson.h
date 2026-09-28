@@ -16,6 +16,10 @@
 #ifndef RNLAB_LESSON_H
 #define RNLAB_LESSON_H
 
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 #include "cads/cli/cli.h"
 
 #ifdef __cplusplus
@@ -46,6 +50,44 @@ void rnlab_l08_command(cads_cli_session_t* session, int argc, char* argv[]);
 void rnlab_l09_command(cads_cli_session_t* session, int argc, char* argv[]);
 void rnlab_l10_command(cads_cli_session_t* session, int argc, char* argv[]);
 void rnlab_l11_command(cads_cli_session_t* session, int argc, char* argv[]);
+
+/*
+ * Per-lesson network hooks. The framework's dispatcher (src/rnlab_hooks.c)
+ * implements the driver's rnlab_hook_*() (cads/net/rnlab_hooks.h) by calling
+ * these for lesson 01..11 in order; each has a weak no-op default there. A
+ * lesson implements only the ones it needs, in its own lNN_<slug>.c, with
+ * exactly these signatures and without `weak`:
+ *
+ *   rx_frame  every received Ethernet frame (from the destination MAC, no FCS)
+ *   rx_drop   true = discard it before lwIP; ORed over all lessons
+ *   tx_frame  every frame lwIP hands to the driver
+ *   tx_drop   true = do not send it (lwIP thinks it was); ORed over all lessons
+ *   ip4_input LWIP_HOOK_IP4_INPUT; non-zero = consumed (you pbuf_free(p)),
+ *             the first lesson returning non-zero wins
+ *
+ * Board only, called from inside cads_net_poll()/lwIP: keep them short.
+ */
+struct pbuf;
+struct netif;
+
+#define RNLAB_DECLARE_LESSON_HOOKS(nn)                                           \
+    void rnlab_l##nn##_hook_rx_frame(const uint8_t* frame, size_t len);          \
+    bool rnlab_l##nn##_hook_rx_drop(const uint8_t* frame, size_t len);           \
+    void rnlab_l##nn##_hook_tx_frame(const uint8_t* frame, size_t len);          \
+    bool rnlab_l##nn##_hook_tx_drop(const uint8_t* frame, size_t len);           \
+    int rnlab_l##nn##_hook_ip4_input(struct pbuf* p, struct netif* inp);
+
+RNLAB_DECLARE_LESSON_HOOKS(01)
+RNLAB_DECLARE_LESSON_HOOKS(02)
+RNLAB_DECLARE_LESSON_HOOKS(03)
+RNLAB_DECLARE_LESSON_HOOKS(04)
+RNLAB_DECLARE_LESSON_HOOKS(05)
+RNLAB_DECLARE_LESSON_HOOKS(06)
+RNLAB_DECLARE_LESSON_HOOKS(07)
+RNLAB_DECLARE_LESSON_HOOKS(08)
+RNLAB_DECLARE_LESSON_HOOKS(09)
+RNLAB_DECLARE_LESSON_HOOKS(10)
+RNLAB_DECLARE_LESSON_HOOKS(11)
 
 #ifdef __cplusplus
 }

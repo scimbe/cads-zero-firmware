@@ -37,40 +37,9 @@
 #include "netif/ethernet.h"
 
 #ifdef CADS_APP_RNLAB_ENABLED
+/* The lab's hook points - defined (strongly) by apps/rnlab's dispatcher,
+ * which fans each call out to the lessons (cads/net/rnlab_hooks.h). */
 #include "cads/net/rnlab_hooks.h"
-
-/* Weak no-op defaults for the lab's hook points - a lesson overrides one by
- * defining it in its own apps/rnlab/src/lNN_<slug>.c (see rnlab_hooks.h).
- * Living in this file, not in apps/rnlab, keeps the dependency direction
- * intact: lwIP's ip4.c and this driver reference them, and this object is
- * always linked, so the weak definition is always there to resolve against. */
-__attribute__((weak)) void rnlab_hook_rx_frame(const uint8_t* frame, size_t len) {
-    (void)frame;
-    (void)len;
-}
-
-__attribute__((weak)) bool rnlab_hook_rx_drop(const uint8_t* frame, size_t len) {
-    (void)frame;
-    (void)len;
-    return false;
-}
-
-__attribute__((weak)) void rnlab_hook_tx_frame(const uint8_t* frame, size_t len) {
-    (void)frame;
-    (void)len;
-}
-
-__attribute__((weak)) bool rnlab_hook_tx_drop(const uint8_t* frame, size_t len) {
-    (void)frame;
-    (void)len;
-    return false;
-}
-
-__attribute__((weak)) int rnlab_hook_ip4_input(struct pbuf* p, struct netif* inp) {
-    (void)p;
-    (void)inp;
-    return 0;
-}
 #endif
 
 static struct netif cads_netif;

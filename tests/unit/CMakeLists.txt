@@ -223,6 +223,11 @@ if(CADS_APP_RNLAB)
     target_link_libraries(test_rnlab_args PRIVATE cads_rnlab_logic)
     set_tests_properties(test_rnlab_args PROPERTIES LABELS rnlab)
 
+    # The hook dispatcher with two lessons' hooks linked at once.
+    cads_add_unit_test(test_rnlab_hooks test_rnlab_hooks.c)
+    target_link_libraries(test_rnlab_hooks PRIVATE cads_rnlab_hooks)
+    set_tests_properties(test_rnlab_hooks PROPERTIES LABELS rnlab)
+
     foreach(nn 01 02 03 04 05 06 07 08 09 10 11)
         cads_add_unit_test(test_rnlab_l${nn} test_rnlab_l${nn}.c)
         target_link_libraries(test_rnlab_l${nn} PRIVATE cads_rnlab_logic)

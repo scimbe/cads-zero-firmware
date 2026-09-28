@@ -90,24 +90,26 @@ verfügbar“).
 
 ## Hook-Punkte im Netztreiber
 
-Deklariert in `modules/net/include/cads/net/rnlab_hooks.h`, Default ist
-jeweils ein schwaches (`weak`) No-op in `modules/net/src/cads_net_board.c`.
-Eine Lektion überschreibt einen Hook, indem sie die Funktion (ohne `weak`)
-in **ihrer** `src/lNN_<slug>.c` definiert — nicht in der `_logic.c`, denn
-nur die Board-Datei wird garantiert gelinkt.
+Der Netztreiber ruft fünf Hook-Punkte auf (`modules/net/include/cads/net/rnlab_hooks.h`).
+Der Rahmen (`src/rnlab_hooks.c`) definiert sie und verteilt jeden Aufruf der
+Reihe nach an die Lektionen 01 … 11. Jede Lektion hat dafür eigene Funktionen
+mit schwachem (`weak`) No-op-Default; eine Lektion implementiert nur die, die
+sie braucht — **in ihrer `src/lNN_<slug>.c`** (nicht in der `_logic.c`), mit
+genau dieser Signatur und ohne `weak`. So können mehrere Lektionen denselben
+Punkt gleichzeitig nutzen (z. B. L01 und L02 beide `rx_frame`).
 
-| Hook | Wann | Rückgabe |
+| Lektions-Funktion (NN = 01 … 11) | Wann | Rückgabe / Verknüpfung |
 |---|---|---|
-| `void rnlab_hook_rx_frame(const uint8_t* frame, size_t len)` | jeder empfangene Ethernet-Frame (ab Ziel-MAC, ohne FCS) | — |
-| `bool rnlab_hook_rx_drop(const uint8_t* frame, size_t len)` | danach, vor lwIP | `true` = Frame verwerfen (zählt in `rx_dropped`) |
-| `void rnlab_hook_tx_frame(const uint8_t* frame, size_t len)` | jeder Frame, den lwIP senden will | — |
-| `bool rnlab_hook_tx_drop(const uint8_t* frame, size_t len)` | danach, vor dem MAC | `true` = nicht senden; lwIP hält ihn für gesendet |
-| `int rnlab_hook_ip4_input(struct pbuf* p, struct netif* inp)` | `LWIP_HOOK_IP4_INPUT`, jedes empfangene IPv4-Paket, `p->payload` am IP-Header | `0` = normal weiter; sonst verbraucht (dann selbst `pbuf_free(p)`) |
+| `void rnlab_lNN_hook_rx_frame(const uint8_t* frame, size_t len)` | jeder empfangene Ethernet-Frame (ab Ziel-MAC, ohne FCS) | — |
+| `bool rnlab_lNN_hook_rx_drop(const uint8_t* frame, size_t len)` | danach, vor lwIP | `true` = verwerfen; ODER über alle Lektionen, jede wird gefragt; zählt in `rx_dropped` |
+| `void rnlab_lNN_hook_tx_frame(const uint8_t* frame, size_t len)` | jeder Frame, den lwIP senden will | — |
+| `bool rnlab_lNN_hook_tx_drop(const uint8_t* frame, size_t len)` | danach, vor dem MAC | `true` = nicht senden (lwIP hält ihn für gesendet); ODER über alle |
+| `int rnlab_lNN_hook_ip4_input(struct pbuf* p, struct netif* inp)` | `LWIP_HOOK_IP4_INPUT`, jedes empfangene IPv4-Paket, `p->payload` am IP-Header | `0` = weiter; sonst verbraucht (dann selbst `pbuf_free(p)`); die erste Lektion mit `!= 0` gewinnt, spätere sehen das Paket nicht |
 
-Hooks laufen mitten im Empfangs-/Sendepfad: kurz halten, nichts blockieren,
-kein `cads_net_poll()` darin aufrufen. Jeder Hook kann im gelinkten Image
-nur **einmal** stark definiert sein — brauchen zwei Lektionen denselben
-Hook, muss eine Lektion ihn übernehmen und an die andere weiterreichen.
+Die Prototypen stehen in `rnlab/rnlab_lesson.h`. Die Rahmen-Funktionen
+`rnlab_hook_*` definiert eine Lektion **nie** selbst (das gäbe einen
+Linkfehler). Hooks laufen mitten im Empfangs-/Sendepfad: kurz halten, nichts
+blockieren, kein `cads_net_poll()` darin aufrufen.
 
 **lwIP-Statistik:** mit `CADS_RNLAB_LWIP_STATS=ON` (Default) ist
 `LWIP_STATS` aktiv; die Zähler stehen in `lwip_stats` (`#include
