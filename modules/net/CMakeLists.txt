@@ -123,7 +123,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
         if(CADS_RNLAB_TCP_SND_BUF_MSS LESS 2 OR CADS_RNLAB_TCP_SND_BUF_MSS GREATER 8)
             message(FATAL_ERROR "CADS_RNLAB_TCP_SND_BUF_MSS must be 2..8, got ${CADS_RNLAB_TCP_SND_BUF_MSS}")
         endif()
+        if(NOT CADS_RNLAB_TCP_MSS STREQUAL "536" AND NOT CADS_RNLAB_TCP_MSS STREQUAL "1460")
+            message(FATAL_ERROR "CADS_RNLAB_TCP_MSS must be 536 or 1460, got ${CADS_RNLAB_TCP_MSS}")
+        endif()
         target_compile_definitions(cads_lwip PUBLIC
+            CADS_RNLAB_TCP_MSS=${CADS_RNLAB_TCP_MSS}
             CADS_RNLAB_TCP_WND_MSS=${CADS_RNLAB_TCP_WND_MSS}
             CADS_RNLAB_TCP_SND_BUF_MSS=${CADS_RNLAB_TCP_SND_BUF_MSS})
     endif()

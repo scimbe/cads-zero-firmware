@@ -30,8 +30,8 @@ extern "C" {
  */
 void rnlab_init(const uint8_t mac[6]);
 
-/** Pump the network while the explorer's command loop is idle - the app
- *  tree's own loop already calls cads_net_poll() itself. */
+/** Pump the network and run pending TCP CLI commands while the explorer's
+ *  command loop is idle - the app tree's own loop does both itself. */
 void rnlab_poll(void);
 
 /** Feed one byte of the serial console into the lab's serial CLI session

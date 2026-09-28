@@ -212,6 +212,9 @@ target_link_libraries(test_config PRIVATE cads_config)
 cads_add_unit_test(test_cli test_cli.c)
 target_link_libraries(test_cli PRIVATE cads_cli cads_fake_hal)
 
+cads_add_unit_test(test_cli_stream test_cli_stream.c)
+target_link_libraries(test_cli_stream PRIVATE cads_cli cads_fake_hal)
+
 # --- rnlab (computer-networks lab) ---------------------------------------------
 # test_rnlab_args covers the framework's own `lab` argument parsing (label
 # rnlab). test_rnlab_lNN are the lessons' tests (label rnlab-LNN, run one with

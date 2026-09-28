@@ -143,10 +143,17 @@ up `cads_cli_session_init()` internally.
 - **One TCP connection at a time, board only.** `cads_cli_tcp_start()` always
   returns `false` on the simulator (`cads_cli_tcp_sim.c`) — there is no
   network stack there to bind a socket on.
-- **No flow control on writes.** `cads_cli_write_fn` never blocks and never
-  retries; a full TCP send buffer or a transport that just isn't ready drops
-  the output rather than stalling the caller. A long `help` listing to a slow
-  telnet client can lose its tail with no signal to the operator that it did.
+- **Bounded output buffering on TCP.** `cads_cli_write_fn` still never
+  blocks. What `tcp_sndbuf()` cannot take right now waits in a 1 KB queue
+  (`cads/cli/cli_stream.h`, storage in CCM) and is sent from `tcp_sent` as
+  ACKs free room; only when that queue is full too is the rest dropped, and
+  the operator then gets `? Ausgabe gekuerzt` once the queue has drained.
+  Waiting in place is impossible: commands run inside `cads_net_poll()`,
+  which is also what processes the ACKs.
+- **Line ends and telnet.** CR LF and CR NUL count as one line end (one
+  prompt per line from PuTTY, Windows telnet, `nc`); telnet IAC command
+  sequences are filtered out of the TCP input and never answered, so a real
+  telnet client's option negotiation does not reach the command parser.
 - **`cads_cli_write()` only takes NUL-terminated C strings**, and only
   examines the first `CADS_CLI_LINE_MAX * 4` (384) bytes of one — there is no
   variant that takes an explicit length or writes binary data.

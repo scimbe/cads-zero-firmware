@@ -60,12 +60,21 @@
 #define CADS_RNLAB_TCP_SND_BUF_MSS  4
 #endif
 
+/* Segment size (CMake CADS_RNLAB_TCP_MSS, 536 or 1460). 536 is lwIP's own
+ * default and what this firmware always ran with; 1460 is what a 1500-byte
+ * Ethernet MTU allows (L08/L09 measure both). PBUF_POOL_BUFSIZE follows it
+ * automatically (lwIP's default is TCP_MSS + headers), so a 1460 build has
+ * ~1.5 KB pool buffers instead of ~600 B - in CCM with the lab. */
+#ifndef CADS_RNLAB_TCP_MSS
+#define CADS_RNLAB_TCP_MSS          536
+#endif
+#define TCP_MSS                     CADS_RNLAB_TCP_MSS
+
 /* 4 KB until the send buffer outgrows it: TCP copies unsent/unacked data
  * into PBUF_RAM from this heap, so it needs the whole TCP_SND_BUF plus the
- * same ~2 KB of headroom the default leaves for DHCP/ARP/ICMP. TCP_MSS is
- * lwIP's default 536 here (not yet defined at this point). */
-#if CADS_RNLAB_TCP_SND_BUF_MSS > 4
-#define MEM_SIZE                    ((CADS_RNLAB_TCP_SND_BUF_MSS * 536) + 2048)
+ * same ~2 KB of headroom the default leaves for DHCP/ARP/ICMP. */
+#if (CADS_RNLAB_TCP_SND_BUF_MSS * CADS_RNLAB_TCP_MSS) + 2048 > 4096
+#define MEM_SIZE                    ((CADS_RNLAB_TCP_SND_BUF_MSS * CADS_RNLAB_TCP_MSS) + 2048)
 #else
 #define MEM_SIZE                    (4 * 1024)
 #endif
@@ -162,9 +171,12 @@
  * bigger window needs pool buffers to hold the in-flight bytes before the app
  * reads them, so the pool grows with it. +4 x ~608 B .bss. */
 /* A larger lab TCP_WND needs the pool to hold one window of full-sized
- * segments (lwIP's own sanity check); 10 covers the default 8 x MSS. */
+ * segments (lwIP's own sanity check), plus one buffer for whatever else
+ * arrives meanwhile (ARP, ICMP); 10 covers the default 8 x MSS. Kept at +1,
+ * not more: at MSS 1460 / WND 16 each buffer is ~1.5 KB of CCM, and that
+ * configuration fills CCM almost completely (apps/rnlab/README.md). */
 #if CADS_RNLAB_TCP_WND_MSS > 8
-#define PBUF_POOL_SIZE              (CADS_RNLAB_TCP_WND_MSS + 2)
+#define PBUF_POOL_SIZE              (CADS_RNLAB_TCP_WND_MSS + 1)
 #else
 #define PBUF_POOL_SIZE              10
 #endif
