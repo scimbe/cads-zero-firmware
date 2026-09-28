@@ -16,6 +16,7 @@
 #include "cads_gui.h"
 #include "cads_statusbar.h"
 #include "cads_softkeys.h"
+#include "cads_dialog.h"
 
 #include "cads_desktop.h"
 #include "cads_menu_app.h"
@@ -129,6 +130,18 @@ int main(int argc, char** argv) {
     shoot(out_dir, CADS_VIEW_ID_GAME_DODGER, "12_dodger");
     shoot(out_dir, CADS_VIEW_ID_ACTIVE, "13_active");
     shoot(out_dir, CADS_VIEW_ID_ACTIVE_TOOL, "14_active_tool");
+
+    /* A confirm dialog over Settings - the dialog body had no coverage here
+     * and once shipped white-on-Surface text nobody could read. */
+    shoot(out_dir, CADS_VIEW_ID_SETTINGS, "15_dialog_base");
+    static const cads_dialog_answer_t answers[] = {{CadsKeyBack, "Cancel"}, {CadsKeyOk, "Reset"}};
+    cads_dialog_t dialog;
+    cads_dialog_init(
+        &dialog, "Factory reset", "Erase all settings and restart? This cannot be undone.",
+        answers, 2u);
+    cads_dialog_layout(&dialog, full);
+    cads_dialog_draw(&dialog);
+    dump_ppm(out_dir, "15_dialog");
 
     return 0;
 }
