@@ -304,6 +304,8 @@ void cads_net_status(cads_net_status_t* status) {
         status->ip_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&cads_netif)));
         status->gw_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_gw(&cads_netif)));
         status->dhcp_bound = dhcp_supplied_address(&cads_netif) != 0u;
+        const struct dhcp* dhcp = netif_dhcp_data(&cads_netif);
+        if(dhcp) status->dhcp_naks = dhcp->naks_total;
 
         const ip_addr_t* dns = dns_getserver(0u);
         if(dns) status->dns_addr = lwip_ntohl(ip4_addr_get_u32(dns));
