@@ -84,6 +84,15 @@ uint32_t cads_forensic_count(void);
  */
 bool cads_forensic_get(uint32_t index, cads_forensic_record_t* out);
 
+/**
+ * Empties the ring (invalidates every slot's magic). The ring survives warm
+ * resets on purpose, so before a measurement the operator needs a way to
+ * start from zero - otherwise an old record (or one from an image with a
+ * different CCM layout, whose reason pointers no longer point at its
+ * strings) is indistinguishable from a new one. Not for fault context.
+ */
+void cads_forensic_clear(void);
+
 #ifdef __cplusplus
 }
 #endif

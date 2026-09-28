@@ -58,6 +58,9 @@ void cads_hal_watchdog_init(uint32_t timeout_ms) {
      * set before the first feed below; harmless if no debugger ever
      * attaches. */
     DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;
+    /* WWDG is not used by this firmware; frozen as well so a future user of
+     * it inherits the same debugger-friendly behaviour. */
+    DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_WWDG_STOP;
 
     /* Order matters and this is now deliberately ST's own documented/HAL
      * sequence, not the "configure then start" order an earlier version of
