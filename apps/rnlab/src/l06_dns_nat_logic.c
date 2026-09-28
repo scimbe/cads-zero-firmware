@@ -23,7 +23,8 @@ rnlab_dns_status_t rnlab_l06_read_name(const uint8_t* msg, size_t len, size_t of
      *    (14 Bit). *next zeigt hinter den ERSTEN Zeiger, sonst hinter die 0.
      *  - 01xxxxxx / 10xxxxxx sind reserviert -> RNLAB_DNS_ERR_NAME.
      *  - Nie ausserhalb msg[0..len-1] lesen (-> RNLAB_DNS_ERR_TRUNCATED),
-     *    nie ueber out_size schreiben (-> RNLAB_DNS_ERR_NAME_LONG).
+     *    nie ueber out_size schreiben (-> RNLAB_DNS_ERR_NAME_LONG, *next
+     *    aber trotzdem hinter das Namensende setzen).
      *  - Terminieren bei JEDER Eingabe: ein Zeiger ist nur gueltig, wenn er
      *    vor den Anfang der gerade gelesenen Labelfolge zeigt. */
     (void)msg;

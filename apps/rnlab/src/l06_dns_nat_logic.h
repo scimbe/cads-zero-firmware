@@ -84,7 +84,9 @@ typedef struct {
  * without a final dot ("www.example.com"; the root name gives "").
  * `*next` receives the offset just behind the name *where it was found*,
  * i.e. behind the first pointer if the name is compressed - that is where
- * the record continues.
+ * the record continues. If the name does not fit into `out`, the result is
+ * RNLAB_DNS_ERR_NAME_LONG, but `*next` is set all the same: the caller may
+ * skip an over-long owner name and keep parsing the record behind it.
  *
  * Must never read outside msg[0 .. len-1] and must terminate on any
  * input: a pointer is only valid if it points strictly before the label it

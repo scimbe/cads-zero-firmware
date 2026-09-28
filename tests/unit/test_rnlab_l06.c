@@ -171,6 +171,50 @@ static void test_read_name_too_long_for_buffer(void) {
     TEST_ASSERT_EQUAL_STRING("api.open-meteo.com", exact);
 }
 
+/* Builds HDR(1), Q_AB_DE, then an answer whose owner name is written out
+ * (no pointer) as two 40-character labels - 81 characters, too long for
+ * RNLAB_DNS_NAME_MAX - followed by A IN, TTL 60, 10.0.0.1. Returns the
+ * length; *owner_end receives the offset just behind the owner name. */
+static size_t build_long_owner_response(uint8_t* msg, size_t* owner_end) {
+    static const uint8_t head[] = {HDR(1), Q_AB_DE};
+    static const uint8_t tail[] = {0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 60, 0x00, 0x04, 10, 0, 0, 1};
+    size_t n = 0u;
+    memcpy(&msg[n], head, sizeof(head));
+    n += sizeof(head);
+    for(int label = 0; label < 2; label++) {
+        msg[n++] = 40u;
+        memset(&msg[n], 'x', 40u);
+        n += 40u;
+    }
+    msg[n++] = 0u;
+    *owner_end = n;
+    memcpy(&msg[n], tail, sizeof(tail));
+    return n + sizeof(tail);
+}
+
+static void test_read_name_too_long_still_sets_next(void) {
+    uint8_t msg[128];
+    size_t owner_end;
+    size_t len = build_long_owner_response(msg, &owner_end);
+    char name[RNLAB_DNS_NAME_MAX];
+    size_t next = 0u;
+    TEST_ASSERT_EQUAL(RNLAB_DNS_ERR_NAME_LONG,
+                      rnlab_l06_read_name(msg, len, 23u, name, sizeof(name), &next));
+    TEST_ASSERT_EQUAL_size_t(owner_end, next);
+}
+
+static void test_parse_keeps_record_with_long_uncompressed_owner(void) {
+    uint8_t msg[128];
+    size_t owner_end;
+    size_t len = build_long_owner_response(msg, &owner_end);
+    rnlab_dns_reply_t r;
+    TEST_ASSERT_EQUAL(RNLAB_DNS_OK, rnlab_l06_parse(msg, len, &r));
+    TEST_ASSERT_EQUAL_UINT8(1u, r.n_answers);
+    TEST_ASSERT_EQUAL_UINT16(RNLAB_DNS_TYPE_A, r.answers[0].type);
+    TEST_ASSERT_EQUAL_UINT32(60u, r.answers[0].ttl);
+    TEST_ASSERT_EQUAL_HEX32(IP4(10, 0, 0, 1), r.answers[0].addr);
+}
+
 /* --- rnlab_l06_parse: captured responses --------------------------------- */
 
 static void test_parse_single_a_record(void) {
@@ -345,6 +389,8 @@ int main(void) {
     RUN_TEST(test_read_name_rejects_reserved_label_types);
     RUN_TEST(test_read_name_rejects_truncation);
     RUN_TEST(test_read_name_too_long_for_buffer);
+    RUN_TEST(test_read_name_too_long_still_sets_next);
+    RUN_TEST(test_parse_keeps_record_with_long_uncompressed_owner);
     RUN_TEST(test_parse_single_a_record);
     RUN_TEST(test_parse_two_a_records);
     RUN_TEST(test_parse_cname_chain);
