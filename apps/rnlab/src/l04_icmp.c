@@ -432,14 +432,18 @@ static void l04_reset(void) {
 }
 
 static void l04_help(cads_cli_session_t* session) {
-    cads_cli_write(session,
-        "lab 04 echo on|off          eigener Echo-Responder (RAW-PCB) an/aus\r\n"
-        "lab 04 delay <ms>           Antwort verzoegern (0..2000)\r\n"
-        "lab 04 loss <p>             Anfragen mit p % verwerfen (0..100)\r\n"
-        "lab 04 ping <ip> [n] [size] n Pings (1..200), size B Daten (0..1472)\r\n"
-        "lab 04 pollgap [n]          Poll-Abstand messen / anzeigen\r\n"
-        "lab 04 stats                Zaehler und letzte Messungen\r\n"
-        "lab 04 reset                Zaehler auf 0\r\n");
+    /* One write per line: cads_cli_write() stops after 4 * CADS_CLI_LINE_MAX
+     * (384) bytes, and this text is longer. */
+    static const char* const lines[] = {
+        "lab 04 echo on|off          eigener Echo-Responder (RAW-PCB) an/aus\r\n",
+        "lab 04 delay <ms>           Antwort verzoegern (0..2000)\r\n",
+        "lab 04 loss <p>             Anfragen mit p % verwerfen (0..100)\r\n",
+        "lab 04 ping <ip> [n] [size] n Pings (1..200), size B Daten (0..1472)\r\n",
+        "lab 04 pollgap [n]          Poll-Abstand messen / anzeigen\r\n",
+        "lab 04 stats                Zaehler und letzte Messungen\r\n",
+        "lab 04 reset                Zaehler auf 0\r\n",
+    };
+    for(size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) cads_cli_write(session, lines[i]);
 }
 
 static bool l04_parse_bounded(const char* text, uint32_t max, uint32_t* value) {
