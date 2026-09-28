@@ -143,10 +143,13 @@ option(CADS_APP_RNLAB "Include the computer-networks lab framework (apps/rnlab)"
 # lwIP's stats counters (lwip/stats.h) for the lab - RAM-only cost, checked
 # against scripts/check_ram_budget.py. Only meaningful with CADS_APP_RNLAB.
 option(CADS_RNLAB_LWIP_STATS "Enable lwIP stats counters for apps/rnlab" ON)
-# L08/L09: lwIP TCP_WND / TCP_SND_BUF in multiples of TCP_MSS (536 B).
+# L08/L09: lwIP TCP_WND / TCP_SND_BUF in multiples of TCP_MSS.
 # Defaults are the values main uses (8 / 4); ranges 2..16 and 2..8.
 set(CADS_RNLAB_TCP_WND_MSS 8 CACHE STRING "apps/rnlab: TCP_WND in multiples of TCP_MSS (2..16)")
 set(CADS_RNLAB_TCP_SND_BUF_MSS 4 CACHE STRING "apps/rnlab: TCP_SND_BUF in multiples of TCP_MSS (2..8)")
+# TCP_MSS itself: 536 (lwIP's default, what main runs) or 1460 (1500-byte MTU).
+set(CADS_RNLAB_TCP_MSS 536 CACHE STRING "apps/rnlab: TCP_MSS in bytes (536|1460)")
+set_property(CACHE CADS_RNLAB_TCP_MSS PROPERTY STRINGS 536 1460)
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the

@@ -47,6 +47,7 @@ void cads_explorer_cli_demo(uint32_t seconds) {
     uint32_t start = cads_hal_ticks_ms();
     while(cads_hal_ticks_ms() - start < seconds * 1000u) {
         cads_net_poll();
+        cads_cli_tcp_service(); /* TCP commands run here, not inside lwIP (cli_tcp.h) */
 
         uint8_t byte;
         if(cads_hal_console_read(&byte)) {

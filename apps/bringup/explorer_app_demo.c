@@ -34,6 +34,7 @@
 #include "cads_touch_calib.h"
 #endif
 #include "cads_gui.h"
+#include "cads/cli/cli_tcp.h"
 #include "cads_hal.h"
 #include "cads_menu_app.h" /* also registers settings, about, gpio, netinfo, filebrowser, game */
 #include "cads_softkeys.h"
@@ -257,6 +258,9 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
         if(!cads_active_owns_rx())
 #endif
             cads_net_poll();
+        /* TCP CLI commands (:4242, if a listener runs) execute here, outside
+         * every lwIP callback - cads/cli/cli_tcp.h. */
+        cads_cli_tcp_service();
         cads_statusbar_set_indicator(&s_statusbar, CADS_NET_STATUSBAR_SLOT, cads_net_indicator_text());
         cads_desktop_tick(now);
 #ifdef CADS_APP_GPIO_ENABLED

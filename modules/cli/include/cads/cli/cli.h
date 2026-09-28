@@ -46,6 +46,7 @@ typedef struct {
     void* write_context;
     char line[CADS_CLI_LINE_MAX];
     size_t length;
+    bool last_was_cr; /**< CR just ended a line: a following LF (or telnet's NUL) belongs to it */
 } cads_cli_session_t;
 
 /** Reset a session and bind it to a transport. Call once per connection
@@ -55,7 +56,9 @@ void cads_cli_session_init(cads_cli_session_t* session, cads_cli_write_fn write,
 /**
  * Feed one byte from the transport.
  *
- * Buffers until '\r' or '\n', then looks the first whitespace-delimited
+ * Buffers until '\r' or '\n' - CR LF and telnet's CR NUL count as ONE line
+ * end, so PuTTY/Windows telnet/nc all get exactly one prompt per line -
+ * then looks the first whitespace-delimited
  * word up in the shared command table and calls its handler with the rest
  * of the line as `args` (never NULL; "" when there were no arguments).
  * An unrecognised command or an overslength line gets a one-line error

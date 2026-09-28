@@ -35,6 +35,19 @@ extern "C" {
  */
 bool cads_cli_tcp_start(uint16_t port);
 
+/**
+ * Run the commands the TCP session has received since the last call.
+ *
+ * The connection's tcp_recv callback only queues bytes: it fires inside
+ * cads_net_poll(), and a command that pumps the network itself (a ping, an
+ * ARP probe) would re-enter lwIP's tcp_input() from there. Call this from
+ * the loop that calls cads_net_poll() - after it, never from inside an lwIP
+ * callback. Commands run here may call cads_net_poll() freely, and their
+ * output may wait (bounded) for the peer's ACKs instead of being truncated.
+ * Cheap when nothing is queued; a no-op on the simulator.
+ */
+void cads_cli_tcp_service(void);
+
 #ifdef __cplusplus
 }
 #endif
