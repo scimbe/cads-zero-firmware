@@ -182,6 +182,15 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
     cads_cli_outq_init(&s_conn.inq, s_inq_storage, sizeof(s_inq_storage));
     s_conn.remote_closed = false;
 
+    /* No Nagle. After a command that switches views (`lab key`), the panel
+     * blit takes the Ethernet datapath away (PA7) for ~0.45 s; with Nagle
+     * the trailing "> " prompt - a second small write - then waited for the
+     * ACK of the reply line, 0.4..0.7 s late. Safe here only because
+     * replies go through the output queue (cads_cli_tcp_flush() waits for
+     * TCP_SND_QUEUELEN room): without it, main's CLI lost the tail of `help`
+     * with Nagle off (every write its own segment, queue full). */
+    tcp_nagle_disable(new_pcb);
+
     tcp_arg(new_pcb, NULL);
     tcp_recv(new_pcb, cads_cli_tcp_recv);
     tcp_sent(new_pcb, cads_cli_tcp_sent);
