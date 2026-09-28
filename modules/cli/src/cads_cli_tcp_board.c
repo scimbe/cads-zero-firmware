@@ -60,6 +60,10 @@ static struct tcp_pcb* s_listen_pcb = NULL;
 /* True while cads_cli_tcp_service() runs commands - the only context in
  * which a write may pump the network while it waits for room. */
 static bool s_servicing = false;
+/* When output last went to tcp_write() - the clock for the progress flush
+ * (cads_cli_outq_flush_due()). Reset when a command starts, so a fast reply
+ * still leaves as one segment at its line end. */
+static uint32_t s_last_flush_ms = 0u;
 
 /* Move as much queued output into lwIP as it will take right now. Never
  * blocks (see cli.h's write_fn contract); whatever is left waits for the
@@ -84,7 +88,10 @@ static void cads_cli_tcp_flush(struct tcp_pcb* pcb) {
         s_conn.outq.truncated = false;
         wrote = true;
     }
-    if(wrote) tcp_output(pcb);
+    if(wrote) {
+        tcp_output(pcb);
+        s_last_flush_ms = cads_hal_ticks_ms();
+    }
 }
 
 static bool cads_cli_tcp_alive(const struct tcp_pcb* pcb) {
@@ -113,9 +120,14 @@ static void cads_cli_tcp_write(void* context, const char* text, size_t length) {
      * as dozens of tiny ones. With Nagle off (below), tiny segments each
      * drew an ACK, and that burst overran the 8-frame RX ring while the
      * console task was still busy (rx_ring_overruns, found by lek-03-04).
-     * Outside a command (the accept banner) and once half the queue is
-     * used, send right away. */
-    if(!s_servicing || s_conn.outq.count >= s_conn.outq.size / 2u) cads_cli_tcp_flush(pcb);
+     * But a slow command's progress dots must not wait for its end either
+     * (rnlab.py takes 1 s of silence for "done"): see
+     * cads_cli_outq_flush_due() for the whole rule. The bytes only reach
+     * the wire if the command keeps polling the network (NO_SYS) - which
+     * every waiting loop that prints progress does. */
+    if(cads_cli_outq_flush_due(&s_conn.outq, s_servicing, cads_hal_ticks_ms(), s_last_flush_ms)) {
+        cads_cli_tcp_flush(pcb);
+    }
 }
 
 static void cads_cli_tcp_session_flush(void* context) {
@@ -241,6 +253,7 @@ void cads_cli_tcp_service(void) {
     struct tcp_pcb* pcb = s_conn.pcb;
 
     s_servicing = true;
+    s_last_flush_ms = cads_hal_ticks_ms(); /* a command's first 250 ms are collected */
     (void)cads_cli_input_drain(&s_conn.inq, &s_conn.session);
     s_servicing = false;
     if(cads_cli_tcp_alive(pcb)) cads_cli_tcp_flush(pcb); /* a partial line's output, if any */
