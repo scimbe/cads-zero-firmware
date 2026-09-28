@@ -235,14 +235,18 @@ static void l03_cmd_filter(cads_cli_session_t* session, const char* text) {
 }
 
 static void l03_help(cads_cli_session_t* session) {
-    cads_cli_write(session,
-        "lab 03 show              Adresse, Maske, Netz, Broadcast, Gateway\r\n"
-        "lab 03 netmask <m>       Maske setzen (255.255.255.128 | /25 | 25)\r\n"
-        "lab 03 route <ip>        Zielklasse und next hop\r\n"
-        "lab 03 probe <ip>        route + ARP fuer next hop + ping\r\n"
-        "lab 03 stats             IPv4-Empfang nach Ziel/Quelle\r\n"
-        "lab 03 reset             Zaehler auf 0\r\n"
-        "lab 03 filter <cidr>|off nur Quellen aus <cidr> annehmen\r\n");
+    /* One write per line: cads_cli_write() stops after 4 * CADS_CLI_LINE_MAX
+     * (384) bytes, and this text is longer. */
+    static const char* const lines[] = {
+        "lab 03 show              Adresse, Maske, Netz, Broadcast, Gateway\r\n",
+        "lab 03 netmask <m>       Maske setzen (255.255.255.128 | /25 | 25)\r\n",
+        "lab 03 route <ip>        Zielklasse und next hop\r\n",
+        "lab 03 probe <ip>        route + ARP fuer next hop + ping\r\n",
+        "lab 03 stats             IPv4-Empfang nach Ziel/Quelle\r\n",
+        "lab 03 reset             Zaehler auf 0\r\n",
+        "lab 03 filter <cidr>|off nur Quellen aus <cidr> annehmen\r\n",
+    };
+    for(size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) cads_cli_write(session, lines[i]);
 }
 
 void rnlab_l03_command(cads_cli_session_t* session, int argc, char* argv[]) {
