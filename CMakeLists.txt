@@ -375,7 +375,6 @@ add_library(cads_apps STATIC
     apps/bringup/explorer_capture_buffer.c
     apps/bringup/explorer_gui_demo.c
     apps/bringup/explorer_app_demo.c
-    apps/bringup/cads_lightorgan.c
     apps/bringup/explorer_storage_test.c
     apps/bringup/explorer_filebrowser_demo.c
     apps/bringup/explorer_cli_demo.c
@@ -433,6 +432,10 @@ if(CADS_APP_ACTIVE)
 endif()
 if(CADS_APP_MARAUDER)
     target_link_libraries(cads_apps PUBLIC cads_app_marauder)
+    # The light organ follows the Marauder link state (cads_marauder.h) and
+    # is only ticked under CADS_APP_MARAUDER_ENABLED - built unconditionally,
+    # it broke every -DCADS_APP_MARAUDER=OFF build.
+    target_sources(cads_apps PRIVATE apps/bringup/cads_lightorgan.c)
 endif()
 if(CADS_APP_RNLAB)
     # explorer.c/explorer_app_demo.c call rnlab_init()/rnlab_poll()/
