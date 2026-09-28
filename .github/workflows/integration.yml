@@ -37,6 +37,11 @@ concurrency:
 jobs:
   integrate:
     name: All solutions on praktikum/start
+    # Only in the private repo, where the solution branches live. The public
+    # mirror (scimbe/cads-zero-firmware, scripts/publish-firmware.sh in the lab
+    # docs repo) carries this file too; there it would build for minutes to
+    # report eleven "missing" solutions.
+    if: github.repository == 'scimbe/cads-zero'
     runs-on: ubuntu-latest
     steps:
       # Full history and every branch: the script merges origin/loesung/l*
