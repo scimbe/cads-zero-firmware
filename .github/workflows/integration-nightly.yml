@@ -11,12 +11,9 @@ on:
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
-  # TEST-ONLY (removed before merge): run on this PR against the PR branch.
-  pull_request:
-    branches: [main]
 
 jobs:
   integration:
-    uses: scimbe/cads-zero/.github/workflows/integration.yml@ci/integration-callable
+    uses: scimbe/cads-zero/.github/workflows/integration.yml@praktikum/start
     with:
       ref: praktikum/start
