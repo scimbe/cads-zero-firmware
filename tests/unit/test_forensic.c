@@ -10,6 +10,8 @@
  * from now, is the entire point.
  */
 
+#include <string.h>
+
 #include "unity.h"
 
 #include "cads/diag/forensic.h"
@@ -141,6 +143,29 @@ static void test_clear_empties_the_ring_and_recording_resumes(void) {
     TEST_ASSERT_EQUAL_STRING("after-clear", out.reason);
 }
 
+static void test_reason_is_copied_not_referenced(void) {
+    /* cads_kernel_assert() formats its file:line into a .bss buffer that the
+     * next Reset_Handler zeroes - the record must hold its own copy. */
+    char location[16] = "queue.c:1234";
+    cads_forensic_record(location, NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
+    location[0] = '\0';
+
+    cads_forensic_record_t out;
+    TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
+    TEST_ASSERT_EQUAL_STRING("queue.c:1234", out.reason);
+}
+
+static void test_long_reason_keeps_its_tail(void) {
+    const char* location =
+        "/Users/dev/some/very/long/checkout/path/lib/FreeRTOS-Kernel/queue.c:1234";
+    cads_forensic_record(location, NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
+
+    cads_forensic_record_t out;
+    TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
+    TEST_ASSERT_EQUAL_UINT32(CADS_FORENSIC_REASON_MAX - 1u, (uint32_t)strlen(out.reason));
+    TEST_ASSERT_EQUAL_STRING(location + strlen(location) - (CADS_FORENSIC_REASON_MAX - 1u), out.reason);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_empty_ring_reports_zero);
@@ -151,5 +176,7 @@ int main(void) {
     RUN_TEST(test_eviction_beyond_depth_keeps_newest_and_count_capped);
     RUN_TEST(test_uptime_is_captured_at_record_time);
     RUN_TEST(test_clear_empties_the_ring_and_recording_resumes);
+    RUN_TEST(test_reason_is_copied_not_referenced);
+    RUN_TEST(test_long_reason_keeps_its_tail);
     return UNITY_END();
 }

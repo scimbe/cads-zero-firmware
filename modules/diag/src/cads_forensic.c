@@ -51,7 +51,10 @@
  * problem again squared - a practical non-issue even on a CCM region this
  * heavily reused, where a single word demonstrably was not. */
 #define CADS_FORENSIC_MAGIC_A 0x43614673u /* "CaFs" */
-#define CADS_FORENSIC_MAGIC_B 0x21215246u /* "RF!!" */
+/* The record size is folded into the second word, so a build whose
+ * cads_forensic_record_t has a different layout rejects the previous
+ * image's slots instead of misreading them as one garbled record. */
+#define CADS_FORENSIC_MAGIC_B (0x21215246u /* "RF!!" */ ^ (uint32_t)sizeof(cads_forensic_record_t))
 
 typedef struct {
     uint32_t magic_a;
@@ -64,6 +67,21 @@ CADS_CCM_SECTION static cads_forensic_slot_t cads_forensic_ring[CADS_FORENSIC_RI
 static bool cads_forensic_slot_valid(uint32_t index) {
     return cads_forensic_ring[index].magic_a == CADS_FORENSIC_MAGIC_A &&
            cads_forensic_ring[index].magic_b == CADS_FORENSIC_MAGIC_B;
+}
+
+/* Bounded copy that keeps the tail of an over-long reason: for an assert
+ * location that is the "file.c:line" end, not the build machine's path. No
+ * libc on purpose - this runs inside fault handlers. */
+static void cads_forensic_copy_reason(char dst[CADS_FORENSIC_REASON_MAX], const char* src) {
+    if(src == NULL) src = "(none)";
+    uint32_t len = 0u;
+    while(src[len] != '\0') len++;
+    if(len > CADS_FORENSIC_REASON_MAX - 1u) {
+        src += len - (CADS_FORENSIC_REASON_MAX - 1u);
+        len = CADS_FORENSIC_REASON_MAX - 1u;
+    }
+    for(uint32_t i = 0u; i < len; i++) dst[i] = src[i];
+    dst[len] = '\0';
 }
 
 void cads_forensic_record(
@@ -82,24 +100,41 @@ void cads_forensic_record(
     uint32_t max_sequence = 0u;
     uint32_t min_sequence = 0u;
 
+    bool have_empty = false;
+
+    /* Always scan every slot: max_sequence has to cover all valid records,
+     * including ones after the first empty slot, or the new record could
+     * get a lower sequence than an older one and be the next evicted. */
     for(uint32_t i = 0; i < CADS_FORENSIC_RING_DEPTH; i++) {
         if(!cads_forensic_slot_valid(i)) {
-            target = i;
-            have_target = true;
-            break;
+            if(!have_empty) {
+                target = i;
+                have_empty = true;
+            }
+            continue;
         }
         uint32_t sequence = cads_forensic_ring[i].record.sequence;
         if(sequence > max_sequence) max_sequence = sequence;
-        if(!have_target || sequence < min_sequence) {
+        if(!have_empty && (!have_target || sequence < min_sequence)) {
             min_sequence = sequence;
             target = i;
+            have_target = true;
         }
-        have_target = true;
     }
+
+    /* Invalidate first when reusing an occupied slot: otherwise a write cut
+     * short (a nested fault, the watchdog) would leave the old magic in
+     * front of a half-old, half-new record. The barrier keeps the compiler
+     * from sinking these stores below the field writes. */
+    volatile uint32_t* magic_a = &cads_forensic_ring[target].magic_a;
+    volatile uint32_t* magic_b = &cads_forensic_ring[target].magic_b;
+    *magic_a = 0u;
+    *magic_b = 0u;
+    __asm__ volatile("" ::: "memory");
 
     cads_forensic_record_t* out = &cads_forensic_ring[target].record;
     out->sequence = max_sequence + 1u;
-    out->reason = reason;
+    cads_forensic_copy_reason(out->reason, reason);
     out->uptime_ms = cads_hal_ticks_ms();
     out->has_frame = frame != NULL;
     if(frame != NULL) {
@@ -118,9 +153,11 @@ void cads_forensic_record(
      * valid once its content is already fully in place, so a write cut
      * short (another fault landing mid-record, or the watchdog finally
      * catching a lockup this same call was trying to explain) leaves the
-     * slot correctly reading as invalid rather than valid-but-torn. */
-    cads_forensic_ring[target].magic_a = CADS_FORENSIC_MAGIC_A;
-    cads_forensic_ring[target].magic_b = CADS_FORENSIC_MAGIC_B;
+     * slot correctly reading as invalid rather than valid-but-torn - for
+     * an empty slot and, thanks to the invalidation above, a reused one. */
+    __asm__ volatile("" ::: "memory");
+    *magic_a = CADS_FORENSIC_MAGIC_A;
+    *magic_b = CADS_FORENSIC_MAGIC_B;
 }
 
 uint32_t cads_forensic_count(void) {
