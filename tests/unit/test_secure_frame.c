@@ -169,6 +169,25 @@ static void test_undersized_output_buffer_reports_too_large(void) {
     TEST_ASSERT_EQUAL_UINT(0u, consumed);
 }
 
+/* An oversized length field must be reported as TOO_LARGE as soon as the
+ * header is in, not as INCOMPLETE until a body that may never come (or
+ * that the caller could never buffer anyway) has arrived. */
+static void test_oversized_length_reports_too_large_before_body_arrives(void) {
+    uint8_t frame[sizeof(s_plain) + CADS_SECURE_FRAME_OVERHEAD];
+    size_t frame_len = cads_secure_frame_encode(
+        frame, sizeof(frame), s_key, s_nonce, s_ad, sizeof(s_ad), s_plain, sizeof(s_plain));
+    TEST_ASSERT_TRUE(frame_len > CADS_SECURE_FRAME_HEADER_LEN);
+
+    uint8_t plain_out[4];
+    size_t plain_len = 0u, consumed = 123u;
+    cads_secure_frame_status_t status = cads_secure_frame_decode(
+        frame, CADS_SECURE_FRAME_HEADER_LEN, s_key, s_ad, sizeof(s_ad), plain_out,
+        sizeof(plain_out), &plain_len, &consumed);
+
+    TEST_ASSERT_EQUAL(CADS_SECURE_FRAME_TOO_LARGE, status);
+    TEST_ASSERT_EQUAL_UINT(0u, consumed);
+}
+
 static void test_undersized_encode_buffer_returns_zero(void) {
     uint8_t frame[sizeof(s_plain) + CADS_SECURE_FRAME_OVERHEAD - 1u]; /* one byte short */
     size_t frame_len = cads_secure_frame_encode(
@@ -232,6 +251,7 @@ int main(void) {
     RUN_TEST(test_tampered_ciphertext_fails_auth_and_consumes_whole_frame);
     RUN_TEST(test_wrong_ad_fails_auth);
     RUN_TEST(test_undersized_output_buffer_reports_too_large);
+    RUN_TEST(test_oversized_length_reports_too_large_before_body_arrives);
     RUN_TEST(test_undersized_encode_buffer_returns_zero);
     RUN_TEST(test_two_frames_back_to_back_decode_independently);
     RUN_TEST(test_empty_plaintext_round_trips);
