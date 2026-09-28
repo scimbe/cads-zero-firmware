@@ -196,6 +196,10 @@ target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)
 cads_add_unit_test(test_config test_config.c)
 target_link_libraries(test_config PRIVATE cads_config)
 
+# --- net: per-board default MAC (cads/net/mac.h) ------------------------------
+cads_add_unit_test(test_net_mac test_net_mac.c)
+target_link_libraries(test_net_mac PRIVATE cads_net)
+
 # --- net: lwIP's random source (cads/net/rand.h) ------------------------------
 cads_add_unit_test(test_net_rand test_net_rand.c)
 target_link_libraries(test_net_rand PRIVATE cads_net)

@@ -15,6 +15,7 @@
 
 #include "board.h"
 #include "cads/config/config.h"
+#include "cads/net/mac.h"
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads_hal.h"
@@ -254,10 +255,11 @@ void cads_explorer_eth_status(void) {
 /*
  * Locally-administered (bit 1 of the first byte set, per IEEE 802-2014
  * clause 8.2.2), never-forwarded-by-standard-switches unicast (bit 0
- * clear) address. Fixed by default - fine for the single board this
- * firmware currently runs on; the day a second board is on the same
- * segment, this needs to come from something per-device (the STM32's
- * 96-bit UID would be the obvious source) instead of a shared constant.
+ * clear) address. Derived from the STM32's 96-bit unique device ID
+ * (cads_net_mac_from_uid(), 02:CA:D5 + 24-bit hash): stable for one board
+ * across resets and reflashes, different between boards. It used to be one
+ * shared constant (02:CA:D5:5E:00:01) on every board - fine on a single
+ * point-to-point cable, a collision as soon as two boards share a switch.
  *
  * `net.mac_random` (2026-08-29, field-use OPSEC): with that config key set,
  * this becomes a fresh random address every boot instead - a locally
@@ -268,14 +270,20 @@ void cads_explorer_eth_status(void) {
  * (cads_hal_rng_bytes(), the same driver `J` proves live - RM0090's
  * documented procedure, FIPS 140-2 continuous-test included), then held
  * for the rest of this boot: lwIP and every caller here need one stable
- * address per session, not a new one per packet.
+ * address per session, not a new one per packet. On an RNG failure the
+ * UID-derived address stays - never an uninitialised or partial one.
  */
-static uint8_t cads_net_mac_value[6] = {0x02, 0xCA, 0xD5, 0x5E, 0x00, 0x01};
+static uint8_t cads_net_mac_value[6];
+static const char* cads_net_mac_source_name = "uid";
 static bool cads_net_mac_ready = false;
 
 const uint8_t* cads_explorer_net_mac(void) {
     if(!cads_net_mac_ready) {
         cads_net_mac_ready = true;
+        const volatile uint32_t* uid_reg = (const volatile uint32_t*)UID_BASE;
+        const uint32_t uid[3] = {uid_reg[0], uid_reg[1], uid_reg[2]};
+        cads_net_mac_from_uid(uid, cads_net_mac_value);
+
         cads_config_t cfg;
         (void)cads_config_load(&cfg); /* always leaves cfg valid, error or not */
         if(cfg.net_mac_random) {
@@ -283,14 +291,16 @@ const uint8_t* cads_explorer_net_mac(void) {
             if(cads_hal_rng_bytes(random_bytes, sizeof(random_bytes))) {
                 random_bytes[0] = (uint8_t)((random_bytes[0] & 0xFEu) | 0x02u); /* unicast + locally administered */
                 memcpy(cads_net_mac_value, random_bytes, sizeof(cads_net_mac_value));
+                cads_net_mac_source_name = "random";
             }
-            /* RNG failure (SECS/CECS live-seed error, exhausted retries):
-             * silently keep the fixed default rather than send an
-             * uninitialised or partially-random address - see
-             * cads_hal_rng_bytes()'s own contract in core/cads_hal.h. */
         }
     }
     return cads_net_mac_value;
+}
+
+const char* cads_explorer_net_mac_source(void) {
+    (void)cads_explorer_net_mac();
+    return cads_net_mac_source_name;
 }
 
 /*

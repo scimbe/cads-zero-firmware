@@ -66,7 +66,7 @@ void cads_explorer_phy_reg(uint8_t reg, bool do_write, uint16_t value);
 void cads_explorer_net_test(uint32_t seconds);
 
 /**
- * The fixed, locally-administered MAC address this firmware calls
+ * The locally-administered MAC address this firmware calls
  * cads_net_init() with, everywhere it is called (`h` above,
  * apps/bringup/explorer_app_demo.c) - one source of truth, since
  * cads_net_init() ignores the address on every call after the first and two
@@ -75,5 +75,9 @@ void cads_explorer_net_test(uint32_t seconds);
  * cads_net_init() with a real intent to bring anything up.
  */
 const uint8_t* cads_explorer_net_mac(void);
+
+/** Where that address came from: "uid" (default, derived from the MCU's
+ *  unique ID), "random" (config net.mac_random) or "fixed" (simulator). */
+const char* cads_explorer_net_mac_source(void);
 
 #endif /* CADS_EXPLORER_ETH_H */
