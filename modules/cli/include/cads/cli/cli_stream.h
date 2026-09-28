@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cads/cli/cli.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -60,6 +62,28 @@ size_t cads_cli_outq_peek(const cads_cli_outq_t* q, const char** chunk);
 
 /** Drop the first `length` queued bytes (after they were sent). */
 void cads_cli_outq_consume(cads_cli_outq_t* q, size_t length);
+
+/* --- deferred input ----------------------------------------------------------
+ *
+ * Why commands must not run where the bytes arrive: the TCP transport's
+ * tcp_recv callback fires inside cads_net_poll() -> tcp_input(). A command
+ * that itself pumps the network (`lab 04 ping`, cads_net_arp_probe(), any
+ * lesson waiting for a reply) would re-enter tcp_input() and overwrite its
+ * file-scope state (inseg, recv_data, tcp_input_pcb) - silent corruption.
+ * So the callback only queues the (telnet-filtered) bytes, and the owner of
+ * the main loop runs them later, outside every lwIP callback. */
+
+/** Queue `length` received bytes, dropping telnet command sequences on the
+ *  way. All or nothing: returns false and consumes nothing (not even telnet
+ *  state) when the queue cannot be guaranteed to hold them - the caller then
+ *  leaves the data with lwIP (return ERR_MEM from tcp_recv) to retry later,
+ *  which is TCP flow control rather than loss. */
+bool cads_cli_input_push(cads_cli_outq_t* in, cads_cli_telnet_t* telnet, const uint8_t* data, size_t length);
+
+/** Feed every queued byte to `session` (which dispatches complete lines).
+ *  Bytes pushed while a command runs (it may pump the network) are fed in
+ *  the same call. Returns the number of bytes fed. */
+size_t cads_cli_input_drain(cads_cli_outq_t* in, cads_cli_session_t* session);
 
 #ifdef __cplusplus
 }

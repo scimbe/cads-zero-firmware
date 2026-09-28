@@ -91,3 +91,30 @@ void cads_cli_outq_consume(cads_cli_outq_t* q, size_t length) {
     q->count -= length;
     if(q->count == 0u) q->head = 0u;
 }
+
+bool cads_cli_input_push(cads_cli_outq_t* in, cads_cli_telnet_t* telnet, const uint8_t* data, size_t length) {
+    /* Filtering only ever shrinks the data, so `length` free bytes is
+     * enough; checked up front so a refusal leaves the telnet state as it
+     * was for the retry. */
+    if(in->size - in->count < length) return false;
+    for(size_t i = 0; i < length; i++) {
+        if(cads_cli_telnet_filter(telnet, data[i])) {
+            char c = (char)data[i];
+            (void)cads_cli_outq_push(in, &c, 1u);
+        }
+    }
+    return true;
+}
+
+size_t cads_cli_input_drain(cads_cli_outq_t* in, cads_cli_session_t* session) {
+    size_t fed = 0u;
+    /* One byte at a time off the head: a command dispatched by feed() may
+     * pump the network and append to this same queue meanwhile. */
+    while(in->count > 0u) {
+        uint8_t byte = (uint8_t)in->data[in->head];
+        cads_cli_outq_consume(in, 1u);
+        cads_cli_session_feed(session, byte);
+        fed++;
+    }
+    return fed;
+}

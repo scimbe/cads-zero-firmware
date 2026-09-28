@@ -33,6 +33,7 @@ typedef struct {
     uint32_t rx_frames;
     uint32_t tx_frames;
     uint32_t rx_dropped; /**< frames the MAC handed up but this layer discarded */
+    uint32_t poll_nested; /**< cads_net_poll() calls refused because they came from inside lwIP (see cads_net_poll()) */
 } cads_net_status_t;
 
 /**
@@ -53,6 +54,10 @@ void cads_net_init(const uint8_t mac_address[6]);
  *
  * Call every iteration of the bringup loop. Cheap when there is nothing to
  * do - a handful of register/descriptor reads that come back empty.
+ *
+ * Never from inside an lwIP callback (recv/sent/err handlers, timeouts):
+ * lwIP is not reentrant. Such a nested call does nothing and is counted in
+ * cads_net_status_t.poll_nested.
  */
 void cads_net_poll(void);
 

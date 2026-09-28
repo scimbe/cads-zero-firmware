@@ -270,16 +270,33 @@ void cads_net_set_poll_suppressed(bool suppressed) {
     cads_net_poll_suppressed = suppressed;
 }
 
+/* Reentrancy guard. lwIP (NO_SYS=1) is not reentrant: a poll from inside
+ * one of its own callbacks - a tcp_recv/udp_recv/raw_recv handler, or a
+ * timeout - would run tcp_input()/udp_input() nested in themselves and
+ * overwrite their file-scope state (tcp_in.c's inseg, recv_data,
+ * tcp_input_pcb): silent corruption. A nested call is therefore a no-op,
+ * counted so it is visible (cads_net_status_t.poll_nested, `lab info`). A
+ * caller waiting in such a nested loop (cads_net_ping() from a callback)
+ * simply times out instead. */
+static uint8_t cads_net_poll_depth = 0u;
+static uint32_t cads_net_poll_nested = 0u;
+
 void cads_net_poll(void) {
+    if(cads_net_poll_depth != 0u) {
+        cads_net_poll_nested++;
+        return;
+    }
     /* A promiscuous capture session (modules/netx) owns the RX ring and
      * the MAC filter for its duration; this poll must not touch either, or
      * run lwIP timeouts against traffic the netif is no longer receiving -
      * so it returns outright while suppressed. The session always clears
      * this on end, including on view exit. */
     if(cads_net_poll_suppressed) return;
+    cads_net_poll_depth++;
     cads_net_link_check();
     if(cads_net_link_was_up) cads_net_receive_pump();
     sys_check_timeouts();
+    cads_net_poll_depth--;
 }
 
 /* lwIP's own timestamp source (NO_SYS=1 still needs one - see lwip/sys.h,
@@ -307,6 +324,7 @@ void cads_net_status(cads_net_status_t* status) {
     status->rx_frames = cads_net_rx_frames;
     status->tx_frames = cads_net_tx_frames;
     status->rx_dropped = cads_net_rx_dropped;
+    status->poll_nested = cads_net_poll_nested;
     if(cads_net_link_was_up) {
         status->ip_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&cads_netif)));
         status->gw_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_gw(&cads_netif)));

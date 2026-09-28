@@ -92,7 +92,9 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     cads_cli_write_uint(session, status.rx_dropped);
     cads_cli_write(session, " verworfen)\r\ntx:     ");
     cads_cli_write_uint(session, status.tx_frames);
-    cads_cli_write(session, " Frames\r\nuptime: ");
+    cads_cli_write(session, " Frames\r\nnested: ");
+    cads_cli_write_uint(session, status.poll_nested);
+    cads_cli_write(session, " verschachtelte Polls abgewiesen\r\nuptime: ");
     cads_cli_write_uint(session, cads_hal_ticks_ms());
     cads_cli_write(session, " ms\r\n");
 }
@@ -187,6 +189,7 @@ void rnlab_init(const uint8_t mac[6]) {
 
 void rnlab_poll(void) {
     cads_net_poll();
+    cads_cli_tcp_service();
 }
 
 void rnlab_serial_feed(uint8_t byte) {

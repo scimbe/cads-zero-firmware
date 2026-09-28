@@ -70,11 +70,19 @@ Ausgaben gehen über `cads_cli_write(session, "...")` und
 von der der Befehl kam. Zeilen sind höchstens 95 Zeichen lang, höchstens 8
 Wörter.
 
-Der Handler läuft im Konsolen-Task, synchron zwischen zwei
-`cads_net_poll()`-Aufrufen. Wer auf Antworten aus dem Netz warten muss,
-ruft in seiner Warteschleife selbst `cads_net_poll()` auf (Beispiel:
-`cads_net_ping()` in `modules/net/src/cads_net_board.c`) — und bleibt dabei
-kurz, denn solange der Handler läuft, steht die Oberfläche.
+Der Handler läuft im Konsolen-Task, **außerhalb** jedes lwIP-Callbacks —
+auch bei Telnet: der TCP-Empfang puffert die Zeile nur, ausgeführt wird sie
+danach aus der Hauptschleife (`cads_cli_tcp_service()`). Wer auf Antworten
+aus dem Netz warten muss, ruft deshalb in seiner Warteschleife gefahrlos
+selbst `cads_net_poll()` auf (Beispiel: `cads_net_ping()` in
+`modules/net/src/cads_net_board.c`) — und bleibt dabei kurz, denn solange
+der Handler läuft, steht die Oberfläche.
+
+**Nie** `cads_net_poll()` (oder `cads_net_ping()`, `cads_net_arp_probe()` …)
+aus einem lwIP-Callback (`tcp_recv`, `udp_recv`, `raw_recv`, Hook, Timer)
+aufrufen: lwIP ist nicht reentrant. Ein solcher verschachtelter Aufruf wird
+abgewiesen (tut nichts) und in `lab info` unter `nested:` gezählt — steigt
+der Zähler, pollt Lektions-Code an der falschen Stelle.
 
 ### Tests
 

@@ -7,13 +7,18 @@
  * call chain (cads_netif.input() -> ethernet_input() -> ... -> tcp_input()),
  * the same way the netif's own receive path already works - see that
  * file's header comment on why NO_SYS=1 raw API needs no separate polling
- * for this.
+ * for this. Which is exactly why no command runs in them: tcp_recv only
+ * queues, and cads_cli_tcp_service() executes from the caller's loop (see
+ * cli_tcp.h and cli_stream.h's "deferred input").
  */
 
 #include "cads/cli/cli_tcp.h"
 
 #include "cads/cli/cli.h"
 #include "cads/cli/cli_stream.h"
+
+#include "cads/net/net.h"
+#include "cads_hal.h"
 
 #include "lwip/tcp.h"
 
@@ -25,6 +30,18 @@
 #define CADS_CLI_TCP_OUTQ_SIZE 1024u
 __attribute__((section(".ccm"))) static char s_outq_storage[CADS_CLI_TCP_OUTQ_SIZE];
 
+/* Received, telnet-filtered bytes waiting for cads_cli_tcp_service() - see
+ * cli_stream.h's "deferred input" for why they are not executed in
+ * tcp_recv. Four full CLI lines; more than that stays with lwIP (flow
+ * control) until the queue drains. */
+#define CADS_CLI_TCP_INQ_SIZE 384u
+__attribute__((section(".ccm"))) static char s_inq_storage[CADS_CLI_TCP_INQ_SIZE];
+
+/* How long one write may wait for ACKs to free room before it gives up and
+ * truncates - only outside lwIP callbacks (s_servicing), where polling the
+ * network is safe. */
+#define CADS_CLI_TCP_WRITE_WAIT_MS 1000u
+
 static const char s_truncated_notice[] = "\r\n? Ausgabe gekuerzt\r\n";
 
 /* One session at a time - see cli_tcp.h's own header comment on why. */
@@ -33,11 +50,16 @@ typedef struct {
     cads_cli_session_t session;
     cads_cli_telnet_t telnet;
     cads_cli_outq_t outq;
+    cads_cli_outq_t inq;
     bool in_use;
+    bool remote_closed; /* FIN seen: run what is queued, then close */
 } cads_cli_tcp_conn_t;
 
 static cads_cli_tcp_conn_t s_conn;
 static struct tcp_pcb* s_listen_pcb = NULL;
+/* True while cads_cli_tcp_service() runs commands - the only context in
+ * which a write may pump the network while it waits for room. */
+static bool s_servicing = false;
 
 /* Move as much queued output into lwIP as it will take right now. Never
  * blocks (see cli.h's write_fn contract); whatever is left waits for the
@@ -65,9 +87,26 @@ static void cads_cli_tcp_flush(struct tcp_pcb* pcb) {
     if(wrote) tcp_output(pcb);
 }
 
+static bool cads_cli_tcp_alive(const struct tcp_pcb* pcb) {
+    return s_conn.in_use && s_conn.pcb == pcb;
+}
+
 static void cads_cli_tcp_write(void* context, const char* text, size_t length) {
     struct tcp_pcb* pcb = (struct tcp_pcb*)context;
-    if(!pcb || length == 0u) return;
+    if(!pcb || length == 0u || !cads_cli_tcp_alive(pcb)) return;
+
+    /* Outside lwIP callbacks a command may wait (bounded) for ACKs instead
+     * of truncating: cads_net_poll() is safe here and is what processes
+     * them. Inside a callback (the accept banner) it must not, and the
+     * queue alone has to do. */
+    uint32_t start = cads_hal_ticks_ms();
+    while(s_servicing && s_conn.outq.size - s_conn.outq.count < length &&
+          cads_hal_ticks_ms() - start < CADS_CLI_TCP_WRITE_WAIT_MS) {
+        cads_cli_tcp_flush(pcb);
+        cads_net_poll();
+        if(!cads_cli_tcp_alive(pcb)) return; /* closed or reset while waiting */
+        cads_hal_delay_ms(1u);
+    }
     (void)cads_cli_outq_push(&s_conn.outq, text, length);
     cads_cli_tcp_flush(pcb);
 }
@@ -86,21 +125,24 @@ static err_t cads_cli_tcp_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, e
     (void)arg;
     (void)err;
 
-    if(!p) {
-        /* The remote end closed its side. */
-        tcp_sent(pcb, NULL);
-        tcp_close(pcb);
-        s_conn.in_use = false;
+    if(!cads_cli_tcp_alive(pcb)) {
+        if(p) pbuf_free(p);
         return ERR_OK;
     }
 
+    if(!p) {
+        /* The remote end closed its side. `printf 'lab info\n' | nc -N`
+         * sends the command and the FIN together, so the close waits until
+         * cads_cli_tcp_service() has run what is still queued. */
+        s_conn.remote_closed = true;
+        return ERR_OK;
+    }
+
+    /* Queue only - never execute here (cli_stream.h, "deferred input").
+     * No room yet: leave the data with lwIP, which offers it again later. */
+    if(s_conn.inq.size - s_conn.inq.count < p->tot_len) return ERR_MEM;
     for(struct pbuf* q = p; q != NULL; q = q->next) {
-        const uint8_t* data = (const uint8_t*)q->payload;
-        for(u16_t i = 0; i < q->len; i++) {
-            if(cads_cli_telnet_filter(&s_conn.telnet, data[i])) {
-                cads_cli_session_feed(&s_conn.session, data[i]);
-            }
-        }
+        (void)cads_cli_input_push(&s_conn.inq, &s_conn.telnet, (const uint8_t*)q->payload, q->len);
     }
 
     tcp_recved(pcb, p->tot_len);
@@ -133,6 +175,8 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
     cads_cli_session_init(&s_conn.session, cads_cli_tcp_write, new_pcb);
     cads_cli_telnet_init(&s_conn.telnet);
     cads_cli_outq_init(&s_conn.outq, s_outq_storage, sizeof(s_outq_storage));
+    cads_cli_outq_init(&s_conn.inq, s_inq_storage, sizeof(s_inq_storage));
+    s_conn.remote_closed = false;
 
     tcp_arg(new_pcb, NULL);
     tcp_recv(new_pcb, cads_cli_tcp_recv);
@@ -164,4 +208,22 @@ bool cads_cli_tcp_start(uint16_t port) {
     s_conn.in_use = false;
     tcp_accept(s_listen_pcb, cads_cli_tcp_accept);
     return true;
+}
+
+void cads_cli_tcp_service(void) {
+    if(s_servicing || !s_conn.in_use) return; /* a command calling back in here runs nothing twice */
+    struct tcp_pcb* pcb = s_conn.pcb;
+
+    s_servicing = true;
+    (void)cads_cli_input_drain(&s_conn.inq, &s_conn.session);
+    s_servicing = false;
+
+    if(cads_cli_tcp_alive(pcb) && s_conn.remote_closed && s_conn.inq.count == 0u) {
+        tcp_sent(pcb, NULL);
+        tcp_recv(pcb, NULL);
+        tcp_err(pcb, NULL);
+        /* tcp_close() still delivers whatever tcp_write() already queued. */
+        tcp_close(pcb);
+        s_conn.in_use = false;
+    }
 }

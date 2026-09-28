@@ -94,6 +94,96 @@ static void test_outq_overflow_sets_truncated(void) {
     TEST_ASSERT_EQUAL_MEMORY("1234", chunk, 4u);
 }
 
+/* --- deferred input: bytes arriving must not execute anything ------------- */
+
+static unsigned s_runs;
+static char s_last_args[32];
+static cads_cli_outq_t* s_reentry_queue;
+static cads_cli_telnet_t* s_reentry_telnet;
+
+static void noop_write(void* context, const char* text, size_t length) {
+    (void)context;
+    (void)text;
+    (void)length;
+}
+
+/* Stands in for a lesson handler that pumps the network: while it runs,
+ * "the network" delivers another command into the same queue. */
+static void probe_handler(cads_cli_session_t* session, const char* args) {
+    (void)session;
+    s_runs++;
+    strncpy(s_last_args, args, sizeof(s_last_args) - 1u);
+    if(s_reentry_queue && strcmp(args, "first") == 0) {
+        static const uint8_t more[] = "probe second\r\n";
+        TEST_ASSERT_TRUE(cads_cli_input_push(s_reentry_queue, s_reentry_telnet, more, sizeof(more) - 1u));
+    }
+}
+
+static const cads_cli_command_t s_probe = {"probe", probe_handler, "test"};
+
+static void test_push_queues_without_executing(void) {
+    TEST_ASSERT_TRUE(cads_cli_register(&s_probe));
+    char storage[64];
+    cads_cli_outq_t in;
+    cads_cli_telnet_t telnet;
+    cads_cli_session_t session;
+    cads_cli_outq_init(&in, storage, sizeof(storage));
+    cads_cli_telnet_init(&telnet);
+    cads_cli_session_init(&session, noop_write, NULL);
+    s_runs = 0u;
+    s_reentry_queue = NULL;
+
+    static const uint8_t line[] = {0xFF, 0xFB, 0x18, 'p', 'r', 'o', 'b', 'e', ' ', 'x', '\r', '\n'};
+    TEST_ASSERT_TRUE(cads_cli_input_push(&in, &telnet, line, sizeof(line)));
+    TEST_ASSERT_EQUAL_UINT(0u, s_runs); /* the "tcp_recv" side ran nothing */
+
+    TEST_ASSERT_EQUAL_size_t(9u, cads_cli_input_drain(&in, &session)); /* IAC WILL TTYPE filtered */
+    TEST_ASSERT_EQUAL_UINT(1u, s_runs);
+    TEST_ASSERT_EQUAL_STRING("x", s_last_args);
+}
+
+static void test_push_refuses_without_room_and_keeps_state(void) {
+    char storage[8];
+    cads_cli_outq_t in;
+    cads_cli_telnet_t telnet;
+    cads_cli_outq_init(&in, storage, sizeof(storage));
+    cads_cli_telnet_init(&telnet);
+
+    static const uint8_t iac_start[] = {0xFF};
+    static const uint8_t too_long[] = "0123456789";
+    TEST_ASSERT_TRUE(cads_cli_input_push(&in, &telnet, iac_start, 1u));
+    TEST_ASSERT_FALSE(cads_cli_input_push(&in, &telnet, too_long, sizeof(too_long) - 1u));
+    TEST_ASSERT_EQUAL_size_t(0u, in.count);
+    /* The refused push did not advance the telnet state: the next byte is
+     * still read as the command after IAC. */
+    static const uint8_t nop_then_a[] = {0xF1, 'a'};
+    TEST_ASSERT_TRUE(cads_cli_input_push(&in, &telnet, nop_then_a, 2u));
+    TEST_ASSERT_EQUAL_size_t(1u, in.count);
+}
+
+static void test_bytes_arriving_during_a_command_run_after_it(void) {
+    char storage[64];
+    cads_cli_outq_t in;
+    cads_cli_telnet_t telnet;
+    cads_cli_session_t session;
+    cads_cli_outq_init(&in, storage, sizeof(storage));
+    cads_cli_telnet_init(&telnet);
+    cads_cli_session_init(&session, noop_write, NULL);
+    s_runs = 0u;
+    s_reentry_queue = &in;
+    s_reentry_telnet = &telnet;
+
+    static const uint8_t first[] = "probe first\r\n";
+    TEST_ASSERT_TRUE(cads_cli_input_push(&in, &telnet, first, sizeof(first) - 1u));
+    cads_cli_input_drain(&in, &session);
+
+    /* Sequential, not nested: the second ran after the first returned. */
+    TEST_ASSERT_EQUAL_UINT(2u, s_runs);
+    TEST_ASSERT_EQUAL_STRING("second", s_last_args);
+    TEST_ASSERT_EQUAL_size_t(0u, in.count);
+    s_reentry_queue = NULL;
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_plain_text_passes);
@@ -102,5 +192,8 @@ int main(void) {
     RUN_TEST(test_iac_inside_subnegotiation);
     RUN_TEST(test_outq_wraps_in_order);
     RUN_TEST(test_outq_overflow_sets_truncated);
+    RUN_TEST(test_push_queues_without_executing);
+    RUN_TEST(test_push_refuses_without_room_and_keeps_state);
+    RUN_TEST(test_bytes_arriving_during_a_command_run_after_it);
     return UNITY_END();
 }
