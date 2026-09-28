@@ -47,7 +47,10 @@
 #define L04_DELAY_MAX_MS    2000u
 #define L04_PING_MAX_COUNT  200u
 #define L04_PING_MAX_DATA   1472u   /* 1500 - 20 IP - 8 ICMP: one frame, no fragments */
-#define L04_PING_TIMEOUT_US 1000000u
+/* 400 ms: a direct link answers in well under 1 ms, and the progress output
+ * below must never go quiet longer than a client's idle timeout (rnlab.py:
+ * 0.5 s) while the series runs. */
+#define L04_PING_TIMEOUT_US 400000u
 #define L04_PING_GAP_US     20000u  /* request spacing, like `ping -i 0.02` */
 #define L04_GAP_MAX_SAMPLES 500u
 
@@ -330,6 +333,10 @@ static void l04_cmd_ping(cads_cli_session_t* session, uint32_t ip, uint32_t coun
         }
         l04_ping.active = false;
         if(l04_ping.got_reply) rnlab_l04_stats_add(&l04_rtt, l04_ping.rtt_us);
+        /* One character per request, like `ping -f`: the command runs for
+         * seconds, and a silent connection looks dead to the client. */
+        cads_cli_write(session, l04_ping.got_reply ? "." : "x");
+        if(seq % 50u == 0u || seq == count) cads_cli_write(session, "\r\n");
 
         while(seq < count && cads_hal_ticks_us() - l04_ping.sent_us < L04_PING_GAP_US) {
             cads_net_poll();
