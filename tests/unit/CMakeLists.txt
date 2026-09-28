@@ -254,6 +254,18 @@ if(CADS_APP_WETTER)
     cads_add_unit_test(test_wetter_app test_wetter_app.c)
     target_link_libraries(test_wetter_app PRIVATE cads_app_wetter cads_fake_hal)
     set_tests_properties(test_wetter_app PROPERTIES LABELS rnlab-L11)
+
+    # The app's controller against a scripted fake network: compiles
+    # cads_wetter.c itself with fakes of cads_wetter_net.h and
+    # cads_net_status() (so neither cads_app_wetter nor cads_net is linked),
+    # which makes the order of events between two ticks deterministic -
+    # the race "app fetch ends + lab 10 get starts in one pass" (PR #78).
+    cads_add_unit_test(test_wetter_race test_wetter_race.c ${CADS_ROOT}/apps/wetter/cads_wetter.c)
+    target_include_directories(test_wetter_race PRIVATE
+        ${CADS_ROOT}/apps/wetter ${CADS_ROOT}/modules/net/include)
+    target_link_libraries(test_wetter_race PRIVATE
+        cads_gui_view cads_toolbox cads_rnlab_logic cads_fake_hal)
+    set_tests_properties(test_wetter_race PROPERTIES LABELS rnlab-L11)
 endif()
 
 # --- net: lwIP's random source (cads/net/rand.h) ------------------------------
