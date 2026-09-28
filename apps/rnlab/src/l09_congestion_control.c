@@ -227,6 +227,14 @@ static void l09_tick(void* arg) {
     }
 }
 
+/* The tick lives only while a transfer runs; every way out of SENDING ends
+ * it right away instead of leaving a timeout in lwIP's list. */
+static void l09_stop_ticking(void) {
+    if(!l09_ticking) return;
+    sys_untimeout(l09_tick, NULL);
+    l09_ticking = false;
+}
+
 /* --- the sender ------------------------------------------------------------ */
 
 static void l09_detach(void) {
@@ -261,6 +269,7 @@ static err_t l09_sent(void* arg, struct tcp_pcb* pcb, u16_t len) {
         l09.t_end_us = cads_hal_ticks_us();
         l09.run = L09_DONE;
         l09_detach();
+        l09_stop_ticking();
         /* Everything is ACKed, so the FIN goes out on its own; rnlab.py
          * tcp-recv stops its clock there. */
         if(tcp_close(pcb) != ERR_OK) {
@@ -285,6 +294,7 @@ static err_t l09_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, err_t err)
     l09.run = L09_FAILED;
     l09.t_end_us = cads_hal_ticks_us();
     l09_detach();
+    l09_stop_ticking();
     if(tcp_close(pcb) != ERR_OK) {
         tcp_abort(pcb);
         return ERR_ABRT;
@@ -298,6 +308,7 @@ static void l09_err(void* arg, err_t err) {
     l09.pcb = NULL; /* already freed by lwIP */
     l09.run = L09_FAILED;
     l09.t_end_us = cads_hal_ticks_us();
+    l09_stop_ticking();
 }
 
 static err_t l09_connected(void* arg, struct tcp_pcb* pcb, err_t err) {
@@ -379,6 +390,7 @@ static void l09_cmd_stop(cads_cli_session_t* s) {
         l09.run = L09_FAILED;
         l09.t_end_us = cads_hal_ticks_us();
     }
+    l09_stop_ticking();
     cads_cli_write(s, "gestoppt\r\n");
 }
 
