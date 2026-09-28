@@ -223,14 +223,21 @@ static void l07_cmd_blit(cads_cli_session_t* s, int argc, char* argv[]) {
      * blits the network is polled, so the RX ring itself does not overflow -
      * whatever is missing afterwards went missing on the wire side of PA7. */
     uint32_t start = cads_hal_ticks_ms();
+    uint32_t last_dot = start;
     uint32_t blits = 0u;
     while(cads_hal_ticks_ms() - start < ms) {
         cads_hal_display_blit(CADS_DISPLAY_WIDTH - L07_BLIT_W, 0u, L07_BLIT_W, L07_BLIT_H, l07_blit_pixels);
         cads_hal_display_wait();
         blits++;
         cads_net_poll();
+        /* A sign of life every 300 ms: rnlab.py lab takes 0.5 s of silence
+         * as the end of the answer. */
+        if(cads_hal_ticks_ms() - last_dot >= 300u) {
+            last_dot = cads_hal_ticks_ms();
+            cads_cli_write(s, ".");
+        }
     }
-    cads_cli_write(s, "blit: ");
+    cads_cli_write(s, "\r\nblit: ");
     cads_cli_write_uint(s, blits);
     cads_cli_write(s, " Rechtecke in ");
     cads_cli_write_uint(s, cads_hal_ticks_ms() - start);
