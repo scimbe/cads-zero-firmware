@@ -208,16 +208,27 @@ static void rnlab_cmd_key(cads_cli_session_t* session, int argc, char* argv[]) {
         cads_cli_write(session, "? Menue laeuft nicht - erst 'lab key menu'\r\n");
         return;
     }
+    /* Reply first, in one piece, then press: a key that switches views
+     * makes the ui task blit the whole panel, and while it does the
+     * Ethernet datapath is off (PA7 is shared with the display, hal_spi.c).
+     * A reply written after the press - or split into small writes that
+     * Nagle holds back - reached a Telnet client ~0.5 s late, after its
+     * idle timeout (found by lek-10-11: an empty "key: "). */
+    char reply[48];
+    char digits[12];
+    cads_str_copy(reply, sizeof(reply), "key: ");
+    cads_str_append(reply, sizeof(reply), argv[0]);
+    if(count > 1u) {
+        cads_fmt_uint(digits, sizeof(digits), count);
+        cads_str_append(reply, sizeof(reply), " x");
+        cads_str_append(reply, sizeof(reply), digits);
+    }
+    cads_str_append(reply, sizeof(reply), "\r\n");
+    cads_cli_write(session, reply);
+
     for(uint32_t i = 0; i < count && rnlab_key_injector; i++) {
         (void)rnlab_key_injector(code);
     }
-    cads_cli_write(session, "key: ");
-    cads_cli_write(session, argv[0]);
-    if(count > 1u) {
-        cads_cli_write(session, " x");
-        cads_cli_write_uint(session, count);
-    }
-    cads_cli_write(session, "\r\n");
 }
 
 static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
