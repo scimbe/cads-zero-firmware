@@ -314,14 +314,36 @@ static void cads_sim_shutdown(void) {
     fflush(stdout);
 }
 
+/* RGB565 -> 8 bit per channel by bit replication ((v << 3) | (v >> 2) for the
+ * 5-bit channels, (v << 2) | (v >> 4) for green): exact at 0 and at full
+ * scale, integer-only, and - the point - done here rather than left to SDL.
+ * SDL_SaveBMP on an RGB565 surface upconverts on its own, and how it rounds
+ * depends on which SDL is installed: Ubuntu's libsdl2 truncates (red 22 ->
+ * 180), macOS's sdl2-compat on SDL3 replicates bits (22 -> 181). That 1-LSB
+ * split on every anti-aliased pixel is what made the golden images pass on
+ * one host and fail on the other (targets/sim/golden/README.md). */
+static uint8_t cads_sim_screenshot_bgr[CADS_SIM_PIXELS * 3];
+
 static void cads_sim_write_screenshot(void) {
+    for(int i = 0; i < CADS_SIM_PIXELS; i++) {
+        uint16_t px = cads_sim.framebuffer[i];
+        uint8_t r = (uint8_t)((px >> 11) & 0x1F);
+        uint8_t g = (uint8_t)((px >> 5) & 0x3F);
+        uint8_t b = (uint8_t)(px & 0x1F);
+        cads_sim_screenshot_bgr[i * 3 + 0] = (uint8_t)((b << 3) | (b >> 2));
+        cads_sim_screenshot_bgr[i * 3 + 1] = (uint8_t)((g << 2) | (g >> 4));
+        cads_sim_screenshot_bgr[i * 3 + 2] = (uint8_t)((r << 3) | (r >> 2));
+    }
+
+    /* BGR24 is the byte order a 24 bpp BMP stores, so SDL_SaveBMP writes the
+     * rows through as they are instead of converting them. */
     SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(
-        cads_sim.framebuffer,
+        cads_sim_screenshot_bgr,
         CADS_DISPLAY_WIDTH,
         CADS_DISPLAY_HEIGHT,
-        16,
-        CADS_DISPLAY_WIDTH * (int)sizeof(uint16_t),
-        SDL_PIXELFORMAT_RGB565);
+        24,
+        CADS_DISPLAY_WIDTH * 3,
+        SDL_PIXELFORMAT_BGR24);
 
     if(!surface) {
         fprintf(stderr, "sim: cannot wrap the framebuffer: %s\n", SDL_GetError());
