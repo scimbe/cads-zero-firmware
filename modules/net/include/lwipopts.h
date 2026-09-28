@@ -189,6 +189,11 @@
 #define LWIP_STATS                  0
 #define LWIP_DEBUG                  0
 
+/* TCP initial sequence numbers per RFC 6528 instead of lwIP's counter, which
+ * restarted identically on every boot - cads/net/rand.h. */
+#define LWIP_HOOK_FILENAME          "cads/net/lwip_hooks.h"
+#define LWIP_HOOK_TCP_ISN           cads_lwip_tcp_isn
+
 /* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------
  * See docs/reference/wifi-coprocessor.md. This is a private, physically
  * wired point-to-point link between two boards this project controls - not
