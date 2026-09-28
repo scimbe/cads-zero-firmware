@@ -129,6 +129,14 @@ option(CADS_APP_NETIPERF "Include the iperf server/client app" ON)
 option(CADS_APP_NETTOOLS "Include the network tools menu (ping/ARP/traceroute)" ON)
 option(CADS_APP_ACTIVE "Include the Active Net Tools (M9) offensive suite" ON)
 option(CADS_APP_MARAUDER "Include the ESP32Marauder co-processor CLI bridge" ON)
+# The computer-networks lab (apps/rnlab, branch praktikum/start): network up
+# at boot, the `lab` CLI command on UART and TCP :4242, and the RX/TX/IPv4
+# hook points in modules/net (cads/net/rnlab_hooks.h). OFF builds none of it
+# and leaves the net driver's RX/TX path exactly as before.
+option(CADS_APP_RNLAB "Include the computer-networks lab framework (apps/rnlab)" ON)
+# lwIP's stats counters (lwip/stats.h) for the lab - RAM-only cost, checked
+# against scripts/check_ram_budget.py. Only meaningful with CADS_APP_RNLAB.
+option(CADS_RNLAB_LWIP_STATS "Enable lwIP stats counters for apps/rnlab" ON)
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -199,6 +207,9 @@ if(CADS_APP_ACTIVE)
 endif()
 if(CADS_APP_MARAUDER)
     target_compile_definitions(cads_flags INTERFACE CADS_APP_MARAUDER_ENABLED)
+endif()
+if(CADS_APP_RNLAB)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_RNLAB_ENABLED)
 endif()
 
 # --- modules -----------------------------------------------------------------

@@ -99,6 +99,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # nothing from targets/itsboard belongs on this list.
     target_include_directories(cads_lwip PRIVATE ${CADS_ROOT}/core)
 
+    # apps/rnlab's hook points (cads/net/rnlab_hooks.h, lwipopts.h) and its
+    # optional lwIP stats counters. PUBLIC on cads_lwip, not just cads_flags:
+    # lwIP's own sources do not link cads_flags, and LWIP_STATS changes the
+    # layout of lwIP's global stats struct, so every translation unit that
+    # includes lwIP's headers must see the same value.
+    if(CADS_APP_RNLAB)
+        target_compile_definitions(cads_lwip PUBLIC CADS_APP_RNLAB_ENABLED)
+        if(CADS_RNLAB_LWIP_STATS)
+            target_compile_definitions(cads_lwip PUBLIC CADS_RNLAB_LWIP_STATS=1)
+        endif()
+    endif()
+
     target_sources(cads_net PRIVATE src/cads_net_board.c)
     # Mirrors modules/storage/CMakeLists.txt's CADS_STORAGE_TARGET_INCLUDES:
     # cads_hal_itsboard (targets/itsboard/CMakeLists.txt) is not a link

@@ -27,6 +27,7 @@ typedef struct {
     bool full_duplex;
     uint32_t ip_addr;    /**< host byte order, 0 when none configured yet */
     uint32_t gw_addr;    /**< host byte order, 0 when none configured yet */
+    uint32_t netmask;    /**< host byte order, 0 when none configured yet */
     uint32_t dns_addr;   /**< host byte order, 0 when none configured yet */
     bool dhcp_bound;     /**< true when ip_addr came from a DHCP lease, not a static address */
     uint32_t rx_frames;

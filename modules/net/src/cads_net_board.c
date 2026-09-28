@@ -36,6 +36,43 @@
 #include "netif/etharp.h"
 #include "netif/ethernet.h"
 
+#ifdef CADS_APP_RNLAB_ENABLED
+#include "cads/net/rnlab_hooks.h"
+
+/* Weak no-op defaults for the lab's hook points - a lesson overrides one by
+ * defining it in its own apps/rnlab/src/lNN_<slug>.c (see rnlab_hooks.h).
+ * Living in this file, not in apps/rnlab, keeps the dependency direction
+ * intact: lwIP's ip4.c and this driver reference them, and this object is
+ * always linked, so the weak definition is always there to resolve against. */
+__attribute__((weak)) void rnlab_hook_rx_frame(const uint8_t* frame, size_t len) {
+    (void)frame;
+    (void)len;
+}
+
+__attribute__((weak)) bool rnlab_hook_rx_drop(const uint8_t* frame, size_t len) {
+    (void)frame;
+    (void)len;
+    return false;
+}
+
+__attribute__((weak)) void rnlab_hook_tx_frame(const uint8_t* frame, size_t len) {
+    (void)frame;
+    (void)len;
+}
+
+__attribute__((weak)) bool rnlab_hook_tx_drop(const uint8_t* frame, size_t len) {
+    (void)frame;
+    (void)len;
+    return false;
+}
+
+__attribute__((weak)) int rnlab_hook_ip4_input(struct pbuf* p, struct netif* inp) {
+    (void)p;
+    (void)inp;
+    return 0;
+}
+#endif
+
 static struct netif cads_netif;
 static uint8_t cads_net_mac[6];
 static bool cads_net_link_was_up = false;
@@ -82,6 +119,12 @@ static err_t cads_netif_linkoutput(struct netif* netif, struct pbuf* p) {
     if(p->tot_len > CADS_NET_TX_STAGING_SIZE) return ERR_BUF;
 
     uint16_t copied = pbuf_copy_partial(p, cads_net_tx_staging, p->tot_len, 0u);
+#ifdef CADS_APP_RNLAB_ENABLED
+    rnlab_hook_tx_frame(cads_net_tx_staging, copied);
+    /* ERR_OK, not an error: a lost frame on a real wire is invisible to the
+     * sender too, which is exactly what the lab's loss experiments need. */
+    if(rnlab_hook_tx_drop(cads_net_tx_staging, copied)) return ERR_OK;
+#endif
     if(!cads_hal_eth_mac_transmit(cads_net_tx_staging, copied)) return ERR_IF;
 
     cads_net_tx_frames++;
@@ -222,6 +265,14 @@ static void cads_net_receive_pump(void) {
         uint16_t length = cads_hal_eth_mac_receive(rx_buf, sizeof(rx_buf));
         if(length == 0u) break;
 
+#ifdef CADS_APP_RNLAB_ENABLED
+        rnlab_hook_rx_frame(rx_buf, length);
+        if(rnlab_hook_rx_drop(rx_buf, length)) {
+            cads_net_rx_dropped++;
+            continue;
+        }
+#endif
+
         struct pbuf* p = pbuf_alloc(PBUF_RAW, length, PBUF_POOL);
         if(!p) {
             cads_net_rx_dropped++;
@@ -277,6 +328,7 @@ void cads_net_status(cads_net_status_t* status) {
     if(cads_net_link_was_up) {
         status->ip_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&cads_netif)));
         status->gw_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_gw(&cads_netif)));
+        status->netmask = lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(&cads_netif)));
         status->dhcp_bound = dhcp_supplied_address(&cads_netif) != 0u;
 
         const ip_addr_t* dns = dns_getserver(0u);

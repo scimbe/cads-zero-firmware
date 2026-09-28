@@ -183,11 +183,30 @@
 #define CHECKSUM_CHECK_UDP          1
 #define CHECKSUM_CHECK_TCP          1
 
-/* No stats counters or debug tracing linked into the board build - both
- * would need LWIP_PLATFORM_DIAG to do something more than the no-op
- * arch/cc.h gives it, and neither is needed to bring the netif up. */
+/* No debug tracing linked into the board build - it would need
+ * LWIP_PLATFORM_DIAG to do something more than the no-op arch/cc.h gives
+ * it, and it is not needed to bring the netif up. Stats counters are off for
+ * the same reason, except with CADS_RNLAB_LWIP_STATS (CMake option, default
+ * ON only together with CADS_APP_RNLAB): the lab reads lwip_stats directly
+ * (lwip/stats.h) - counters only, LWIP_STATS_DISPLAY stays off because it
+ * would print through that same no-op. The define comes from cads_lwip's
+ * PUBLIC compile definitions, so every translation unit that sees lwIP's
+ * headers agrees on the size of struct stats_. */
+#if defined(CADS_RNLAB_LWIP_STATS) && CADS_RNLAB_LWIP_STATS
+#define LWIP_STATS                  1
+#define LWIP_STATS_DISPLAY          0
+#else
 #define LWIP_STATS                  0
+#endif
 #define LWIP_DEBUG                  0
+
+/* The lab's IPv4 input hook (cads/net/rnlab_hooks.h) - every received IPv4
+ * packet passes rnlab_hook_ip4_input() first; its weak default returns 0
+ * ("not consumed"). Same define-visibility rule as CADS_RNLAB_LWIP_STATS. */
+#ifdef CADS_APP_RNLAB_ENABLED
+#include "cads/net/rnlab_hooks.h"
+#define LWIP_HOOK_IP4_INPUT(p, inp) rnlab_hook_ip4_input((p), (inp))
+#endif
 
 /* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------
  * See docs/reference/wifi-coprocessor.md. This is a private, physically
