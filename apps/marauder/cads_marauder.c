@@ -233,8 +233,12 @@ static void cads_marauder_join_service(uint32_t now_ms) {
     if(s_join.status == CADS_MARAUDER_JOIN_FOUND) {
         cads_marauder_send("stopscan", now_ms);
 
-        char cmd[64];
+        /* Sized for the longest possible command: a 10-digit index and a
+         * full 63-char WPA passphrase. A 64-byte buffer silently cut
+         * passphrases longer than ~49 chars, and the join then failed with
+         * the wrong key and no error. */
         char num[12];
+        char cmd[sizeof("join -a ") + sizeof(num) + sizeof(" -p ") + sizeof(s_join_password)];
         cads_str_copy(cmd, sizeof(cmd), "join -a ");
         cads_fmt_uint(num, sizeof(num), s_join.found_index);
         cads_str_append(cmd, sizeof(cmd), num);

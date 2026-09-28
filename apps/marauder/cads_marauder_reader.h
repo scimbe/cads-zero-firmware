@@ -22,7 +22,9 @@
  * gets overflow-split mid-ESSID is invisible to the matcher. 48 covers
  * every SSID up to ~20 chars unsplit (the large majority of real networks);
  * the 802.11 max of 32 bytes can still split on an unusually long name,
- * which degrades to "not found" rather than a wrong match or a crash. Costs
+ * which degrades to "not found" rather than a wrong match or a crash (the
+ * matcher does not accept end-of-line as an SSID boundary on a line that
+ * filled this buffer, since that end may be the split point). Costs
  * (48-30)*(OUT_LINES+1 partial) = 108 B over the previous 30-char buffer -
  * paid because both the join feature's correctness and the plain display's
  * readability depend on it, not merely cosmetic. Display truncation for the
