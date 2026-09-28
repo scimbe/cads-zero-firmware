@@ -237,6 +237,11 @@ static void l08_cmd_stop(cads_cli_session_t* s) {
         tcp_close(l08.listener);
         l08.listener = NULL;
     }
+    if(l08.ticking) {
+        /* Free the timeout slot now, not only when the tick next runs. */
+        sys_untimeout(l08_tick, NULL);
+        l08.ticking = false;
+    }
     cads_cli_write(s, "TCP-Senke gestoppt\r\n");
 }
 
