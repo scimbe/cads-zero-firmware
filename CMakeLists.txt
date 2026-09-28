@@ -363,6 +363,9 @@ endif()
 if(CADS_APP_MARAUDER)
     add_subdirectory(apps/marauder)
 endif()
+if(CADS_APP_RNLAB)
+    add_subdirectory(apps/rnlab)
+endif()
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -430,6 +433,11 @@ if(CADS_APP_ACTIVE)
 endif()
 if(CADS_APP_MARAUDER)
     target_link_libraries(cads_apps PUBLIC cads_app_marauder)
+endif()
+if(CADS_APP_RNLAB)
+    # explorer.c/explorer_app_demo.c call rnlab_init()/rnlab_poll()/
+    # rnlab_serial_*() - network up at boot and `lab` on the serial console.
+    target_link_libraries(cads_apps PUBLIC cads_app_rnlab)
 endif()
 if(CADS_APP_SETTINGS)
     # explorer_app_demo.c calls cads_touch_calib_tick() straight into

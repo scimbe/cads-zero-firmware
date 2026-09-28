@@ -40,6 +40,10 @@
 #include "cads/toolbox/record.h"
 #include "cads/toolbox/str.h"
 #include "explorer_app_demo.h"
+#ifdef CADS_APP_RNLAB_ENABLED
+#include "cads/cli/cli.h"
+#include "rnlab/rnlab.h"
+#endif
 #include "cads/config/config.h"
 #include "explorer_arp_demo.h"
 #include "explorer_arpwatch_demo.h"
@@ -445,8 +449,20 @@ void cads_explorer_run(void) {
     cads_probe_puts("\r\n# EXPLORER ready, '?' for help\r\n");
     cads_help();
 
+#ifdef CADS_APP_RNLAB_ENABLED
+    /* `lab net static <ip> <mask> <gw>` does not fit 32 bytes. The buffer
+     * is on the console task's stack (CCM), not the SRAM heap budget. */
+    char line[CADS_CLI_LINE_MAX];
+    uint32_t length = 0u;
+
+    /* The lab needs the board reachable straight after reset, with no
+     * console command: network up, `lab` registered, TCP :4242 listening -
+     * before boot.autostart hands the console to the app tree below. */
+    rnlab_init(cads_explorer_net_mac());
+#else
     char line[32];
     uint32_t length = 0u;
+#endif
 
 #ifdef CADS_APP_SETTINGS_ENABLED
     /* boot.autostart (default on): hand the panel straight to the menu so the
@@ -482,6 +498,11 @@ void cads_explorer_run(void) {
     for(;;) {
         uint8_t byte;
         if(!cads_hal_console_read(&byte)) {
+#ifdef CADS_APP_RNLAB_ENABLED
+            /* Keep ping, ARP and TCP :4242 answering between commands too,
+             * not only while the app tree runs. */
+            rnlab_poll();
+#endif
             /* Yield rather than spin: under the scheduler a busy wait here
              * would starve nothing (this is the lowest priority task) but it
              * would keep the CPU out of idle for no reason. */
@@ -493,6 +514,14 @@ void cads_explorer_run(void) {
             if(length == 0u) continue;
             line[length] = '\0';
 
+#ifdef CADS_APP_RNLAB_ENABLED
+            /* Checked before the single-letter switch: "lab ..." would
+             * otherwise land on 'l' (LEDs) with argument "ab ...". */
+            if(rnlab_serial_line(line)) {
+                length = 0u;
+                continue;
+            }
+#endif
             const char* argument = line + 1;
             while(*argument == ' ') argument++;
 

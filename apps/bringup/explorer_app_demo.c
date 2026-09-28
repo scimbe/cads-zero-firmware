@@ -41,6 +41,9 @@
 #include "cads_view_dispatcher.h"
 #include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
+#ifdef CADS_APP_RNLAB_ENABLED
+#include "rnlab/rnlab.h"
+#endif
 
 /*
  * desktop, menu, settings, settings-confirm, about, gpio, netinfo,
@@ -229,7 +232,15 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
                         .type = CadsInputRelease, .key = injected, .timestamp = now};
                     cads_gui_input(&s_gui, &release);
                 }
-                /* any other byte: ignored, loop continues */
+#ifdef CADS_APP_RNLAB_ENABLED
+                /* Any other byte goes to the lab's serial CLI session, so
+                 * `lab info` works on the UART while the menu is up. The
+                 * session never ends this loop - only the exit byte does. */
+                else {
+                    rnlab_serial_feed(byte);
+                }
+#endif
+                /* without the lab, any other byte: ignored, loop continues */
             }
         }
         if(seconds != 0u && now - start >= seconds * 1000u) {

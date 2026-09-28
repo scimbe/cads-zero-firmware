@@ -204,6 +204,24 @@ target_link_libraries(test_config PRIVATE cads_config)
 cads_add_unit_test(test_cli test_cli.c)
 target_link_libraries(test_cli PRIVATE cads_cli cads_fake_hal)
 
+# --- rnlab (computer-networks lab) ---------------------------------------------
+# test_rnlab_args covers the framework's own `lab` argument parsing (label
+# rnlab). test_rnlab_lNN are the lessons' tests (label rnlab-LNN, run one with
+# `ctest --test-dir build/host -L rnlab-L03`); on praktikum/start they may be
+# expected red once a lesson ships its student stubs, which is why CI
+# excludes rnlab-L there - see .github/workflows/ci.yml.
+if(CADS_APP_RNLAB)
+    cads_add_unit_test(test_rnlab_args test_rnlab_args.c)
+    target_link_libraries(test_rnlab_args PRIVATE cads_rnlab_logic)
+    set_tests_properties(test_rnlab_args PROPERTIES LABELS rnlab)
+
+    foreach(nn 01 02 03 04 05 06 07 08 09 10 11)
+        cads_add_unit_test(test_rnlab_l${nn} test_rnlab_l${nn}.c)
+        target_link_libraries(test_rnlab_l${nn} PRIVATE cads_rnlab_logic)
+        set_tests_properties(test_rnlab_l${nn} PROPERTIES LABELS rnlab-L${nn})
+    endforeach()
+endif()
+
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)
