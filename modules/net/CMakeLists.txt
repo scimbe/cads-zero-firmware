@@ -19,7 +19,9 @@ if(NOT TARGET cads_flags)
     target_compile_options(cads_flags INTERFACE -Wall -Wextra -Wshadow -Wundef -Wno-unused-parameter)
 endif()
 
-add_library(cads_net STATIC)
+# cads_net_mac.c is portable (both targets, host tested); reading the MCU UID
+# it hashes is the board's job (apps/bringup/explorer_eth.c).
+add_library(cads_net STATIC src/cads_net_mac.c)
 target_include_directories(cads_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(cads_net PRIVATE cads_flags)
 
