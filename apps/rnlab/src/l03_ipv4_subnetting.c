@@ -150,8 +150,10 @@ static void l03_write_route(cads_cli_session_t* session, uint32_t dst, uint32_t*
 }
 
 /* Route decision, then the two things that can fail on the way: ARP for the
- * next hop, and the echo reply itself. Blocks for up to ~2 s, polling lwIP
- * itself like cads_net_ping() does. */
+ * next hop, and the echo reply itself. Blocks for up to 2 x 400 ms, polling
+ * lwIP itself like cads_net_ping() does - 400 ms is ample on one cable and
+ * keeps each silent stretch below a client's idle timeout (rnlab.py 0.5 s). */
+#define L03_PROBE_TIMEOUT_MS 400u
 static void l03_cmd_probe(cads_cli_session_t* session, uint32_t dst) {
     uint32_t next_hop;
     l03_write_route(session, dst, &next_hop);
@@ -163,7 +165,7 @@ static void l03_cmd_probe(cads_cli_session_t* session, uint32_t dst) {
     if(!broadcast) {
         uint8_t mac[6];
         cads_cli_write(session, "arp:       ");
-        if(cads_net_arp_probe(next_hop, 1000u, mac)) {
+        if(cads_net_arp_probe(next_hop, L03_PROBE_TIMEOUT_MS, mac)) {
             char text[18];
             cads_fmt_mac(text, sizeof(text), mac);
             cads_cli_write(session, text);
@@ -175,7 +177,7 @@ static void l03_cmd_probe(cads_cli_session_t* session, uint32_t dst) {
 
     uint32_t rtt_ms = 0u;
     cads_cli_write(session, "ping:      ");
-    if(cads_net_ping(dst, 1000u, &rtt_ms)) {
+    if(cads_net_ping(dst, L03_PROBE_TIMEOUT_MS, &rtt_ms)) {
         cads_cli_write(session, "Antwort nach ");
         cads_cli_write_uint(session, rtt_ms);
         cads_cli_write(session, " ms\r\n");
