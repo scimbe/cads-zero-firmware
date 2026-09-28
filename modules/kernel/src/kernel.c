@@ -317,12 +317,23 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char* name) {
     cads_hal_panic(name ? name : "stack overflow");
 }
 
+/* With the lab (apps/rnlab) the idle and timer task stacks join the other
+ * task stacks in CCM (apps/bringup/tasks.c), freeing 1.5 KB of SRAM for the
+ * lessons; a stack is never a DMA target. Unchanged without the lab. */
+#ifdef CADS_APP_RNLAB_ENABLED
+/* Spelled out rather than CADS_CCM_SECTION: that macro keys on
+ * CADS_TARGET_ITSBOARD, which cads_kernel (board-only anyway) never gets. */
+#define CADS_KERNEL_STACK_SECTION __attribute__((section(".ccm"), aligned(8)))
+#else
+#define CADS_KERNEL_STACK_SECTION
+#endif
+
 void vApplicationGetIdleTaskMemory(
     StaticTask_t** tcb,
     StackType_t** stack,
     uint32_t* stack_words) {
     static StaticTask_t idle_tcb;
-    static StackType_t idle_stack[configMINIMAL_STACK_SIZE];
+    CADS_KERNEL_STACK_SECTION static StackType_t idle_stack[configMINIMAL_STACK_SIZE];
     *tcb = &idle_tcb;
     *stack = idle_stack;
     *stack_words = configMINIMAL_STACK_SIZE;
@@ -333,7 +344,7 @@ void vApplicationGetTimerTaskMemory(
     StackType_t** stack,
     uint32_t* stack_words) {
     static StaticTask_t timer_tcb;
-    static StackType_t timer_stack[configTIMER_TASK_STACK_DEPTH];
+    CADS_KERNEL_STACK_SECTION static StackType_t timer_stack[configTIMER_TASK_STACK_DEPTH];
     *tcb = &timer_tcb;
     *stack = timer_stack;
     *stack_words = configTIMER_TASK_STACK_DEPTH;

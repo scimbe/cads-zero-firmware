@@ -44,7 +44,31 @@
  * double-buffer removal freed 15 KB and the margin now sits at ~8.6 KB, so
  * the tightest cuts are walked back first. 3072 gives TCP's send path and
  * an lwiperf session real slack instead of ~400 B. */
+/* apps/rnlab (L08/L09): TCP_WND and TCP_SND_BUF in multiples of TCP_MSS, set
+ * by the CMake options CADS_RNLAB_TCP_WND_MSS / CADS_RNLAB_TCP_SND_BUF_MSS
+ * (PUBLIC defines on cads_lwip, modules/net/CMakeLists.txt). The defaults
+ * below are this file's values from before the lab existed, so a build that
+ * does not touch the options - or has no lab at all - is unchanged. The
+ * pools that must grow with them (MEM_SIZE, MEMP_NUM_TCP_SEG,
+ * PBUF_POOL_SIZE) are derived below and keep their old values at the
+ * defaults; with the lab they live in CCM (LWIP_DECLARE_MEMORY_ALIGNED at
+ * the end of this file), so growing them costs no SRAM. */
+#ifndef CADS_RNLAB_TCP_WND_MSS
+#define CADS_RNLAB_TCP_WND_MSS      8
+#endif
+#ifndef CADS_RNLAB_TCP_SND_BUF_MSS
+#define CADS_RNLAB_TCP_SND_BUF_MSS  4
+#endif
+
+/* 4 KB until the send buffer outgrows it: TCP copies unsent/unacked data
+ * into PBUF_RAM from this heap, so it needs the whole TCP_SND_BUF plus the
+ * same ~2 KB of headroom the default leaves for DHCP/ARP/ICMP. TCP_MSS is
+ * lwIP's default 536 here (not yet defined at this point). */
+#if CADS_RNLAB_TCP_SND_BUF_MSS > 4
+#define MEM_SIZE                    ((CADS_RNLAB_TCP_SND_BUF_MSS * 536) + 2048)
+#else
 #define MEM_SIZE                    (4 * 1024)
+#endif
 
 /* Was 16; trimmed to 12 for the same reason as the pools below it - still
  * generous for pbuf metadata structs (not the ~608 B PBUF_POOL_SIZE data
@@ -85,21 +109,23 @@
 /* 2026-08-27: restored 12 -> 16, the lwIP default (see MEM_SIZE's
  * restore note) - segment starvation shows up as mysterious TCP stalls,
  * the worst kind of bench bug to chase. */
-#define MEMP_NUM_TCP_SEG            16
+/* lwIP's sanity check requires MEMP_NUM_TCP_SEG >= TCP_SND_QUEUELEN; 16 at
+ * the default TCP_SND_BUF. */
+#define MEMP_NUM_TCP_SEG            (4 * CADS_RNLAB_TCP_SND_BUF_MSS)
 
 /* Receive window. Default is 2 x TCP_MSS (1072 B here) - far too small for the
  * link's RTT. Sized to 8 MSS, comfortably inside the 10-buffer RX pool above
  * with a couple of buffers of headroom for the copy path. Raises Mac -> board
  * throughput without touching TCP_MSS (1460 would fit the wire better but each
  * pool buffer would balloon to ~1.5 KB, ~9 KB the RAM budget cannot spare). */
-#define TCP_WND                     (8 * TCP_MSS)
+#define TCP_WND                     (CADS_RNLAB_TCP_WND_MSS * TCP_MSS)
 
 /* Send buffer / queue length. Default 2 x TCP_MSS (1072 B) throttled the
  * board -> Mac direction to ~15.7 Mbit/s once the poll delay was gone; 4 x MSS
  * lets more data sit unacked in flight. The queued send data is copied into
  * PBUF_RAM from MEM_SIZE (bumped to 4 KB above to keep headroom for the DHCP
  * client and one lwiperf session alongside it). */
-#define TCP_SND_BUF                 (4 * TCP_MSS)
+#define TCP_SND_BUF                 (CADS_RNLAB_TCP_SND_BUF_MSS * TCP_MSS)
 #define TCP_SND_QUEUELEN            ((4 * TCP_SND_BUF) / TCP_MSS)
 /* cads_net_ping() (modules/net/src/cads_net_board.c) creates one raw pcb
  * per call and removes it before returning - never more than one in use
@@ -135,7 +161,13 @@
  * RTT that caps the sender at window/RTT regardless of how fast we poll. A
  * bigger window needs pool buffers to hold the in-flight bytes before the app
  * reads them, so the pool grows with it. +4 x ~608 B .bss. */
+/* A larger lab TCP_WND needs the pool to hold one window of full-sized
+ * segments (lwIP's own sanity check); 10 covers the default 8 x MSS. */
+#if CADS_RNLAB_TCP_WND_MSS > 8
+#define PBUF_POOL_SIZE              (CADS_RNLAB_TCP_WND_MSS + 2)
+#else
 #define PBUF_POOL_SIZE              10
+#endif
 
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
@@ -206,6 +238,17 @@
 #ifdef CADS_APP_RNLAB_ENABLED
 #include "cads/net/rnlab_hooks.h"
 #define LWIP_HOOK_IP4_INPUT(p, inp) rnlab_hook_ip4_input((p), (inp))
+
+/* With the lab, lwIP's own memory - the MEM_SIZE heap and every memp pool,
+ * PBUF_POOL included - goes to CCM (.ccm, NOLOAD) instead of SRAM, freeing
+ * ~12 KB of the SRAM budget (scripts/check_ram_budget.py) for the lessons.
+ * Safe because nothing DMAs to or from lwIP memory: hal_eth_mac.c copies
+ * every frame between its own SRAM descriptor buffers and pbufs
+ * ("BUFFERS ARE COPIED, NOT ZERO-COPY"), and the WiFi UART is interrupt-
+ * driven. NOLOAD means not zeroed at boot - lwIP does not need it:
+ * mem_init() and memp_init() lay out both regions themselves. */
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
+    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".ccm"), aligned(4)))
 #endif
 
 /* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------

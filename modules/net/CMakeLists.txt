@@ -109,6 +109,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
         if(CADS_RNLAB_LWIP_STATS)
             target_compile_definitions(cads_lwip PUBLIC CADS_RNLAB_LWIP_STATS=1)
         endif()
+        # L08/L09 window experiments: TCP_WND / TCP_SND_BUF in multiples of
+        # TCP_MSS (536). Bounds keep lwIP's own sanity checks satisfied and
+        # the CCM-resident pools (lwipopts.h) inside CCM.
+        if(CADS_RNLAB_TCP_WND_MSS LESS 2 OR CADS_RNLAB_TCP_WND_MSS GREATER 16)
+            message(FATAL_ERROR "CADS_RNLAB_TCP_WND_MSS must be 2..16, got ${CADS_RNLAB_TCP_WND_MSS}")
+        endif()
+        if(CADS_RNLAB_TCP_SND_BUF_MSS LESS 2 OR CADS_RNLAB_TCP_SND_BUF_MSS GREATER 8)
+            message(FATAL_ERROR "CADS_RNLAB_TCP_SND_BUF_MSS must be 2..8, got ${CADS_RNLAB_TCP_SND_BUF_MSS}")
+        endif()
+        target_compile_definitions(cads_lwip PUBLIC
+            CADS_RNLAB_TCP_WND_MSS=${CADS_RNLAB_TCP_WND_MSS}
+            CADS_RNLAB_TCP_SND_BUF_MSS=${CADS_RNLAB_TCP_SND_BUF_MSS})
     endif()
 
     target_sources(cads_net PRIVATE src/cads_net_board.c)

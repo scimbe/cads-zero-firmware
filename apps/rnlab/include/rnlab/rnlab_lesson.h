@@ -22,6 +22,17 @@
 extern "C" {
 #endif
 
+/* Place a large, CPU-only lesson buffer in CCM instead of the tight SRAM
+ * budget: `RNLAB_CCM static uint8_t buf[2048];`. CCM is NOT zeroed at boot
+ * (initialise it yourself) and NEVER a DMA target - fine for anything lwIP
+ * or the CPU copies into, wrong for anything handed to the Ethernet or
+ * display DMA. Empty on the host, where the lesson logic is tested. */
+#if defined(__arm__)
+#define RNLAB_CCM __attribute__((section(".ccm")))
+#else
+#define RNLAB_CCM
+#endif
+
 typedef void (*rnlab_lesson_fn)(cads_cli_session_t* session, int argc, char* argv[]);
 
 void rnlab_l01_command(cads_cli_session_t* session, int argc, char* argv[]);
