@@ -1,0 +1,22 @@
+name: Integration (nightly)
+
+# Nightly integration check of all lab solutions on praktikum/start. The check
+# itself lives on praktikum/start (.github/workflows/integration.yml, next to
+# scripts/integrate_solutions.sh); GitHub runs `schedule` only for workflow
+# files on the default branch, so this one on main just calls it there.
+# Reusable workflow instead of `gh workflow run`: dispatching also requires
+# the target file on the default branch, which would mean a second copy here.
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+  # TEST-ONLY (removed before merge): run on this PR against the PR branch.
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration:
+    uses: scimbe/cads-zero/.github/workflows/integration.yml@ci/integration-callable
+    with:
+      ref: praktikum/start
