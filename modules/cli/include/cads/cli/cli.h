@@ -102,7 +102,8 @@ bool cads_cli_register(const cads_cli_command_t* command);
  *  own serial loop). */
 void cads_cli_execute(cads_cli_session_t* session, const char* line);
 
-/** Write a NUL-terminated string through the session's transport. */
+/** Write a NUL-terminated string of any length through the session's
+ *  transport (handed over in pieces of at most CADS_CLI_LINE_MAX * 4 bytes). */
 void cads_cli_write(cads_cli_session_t* session, const char* text);
 
 /** Write an unsigned decimal through the session's transport. */

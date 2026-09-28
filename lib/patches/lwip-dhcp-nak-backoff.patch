@@ -1,0 +1,74 @@
+From: scimbe <scimbe@gmail.com>
+Subject: [PATCH] dhcp: back off after a NAK instead of rediscovering at once
+
+dhcp_handle_nak() called dhcp_discover() immediately. With two DHCP
+servers on one segment - one OFFERing, the other NAKing every REQUEST -
+that turns into OFFER -> REQUEST -> NAK -> DISCOVER at wire speed:
+dhcp_set_state() resets dhcp->tries on every state change, so the normal
+discover back-off (DHCP_REQUEST_BACKOFF_SEQUENCE) never grows. Measured on
+the CaDS Zero bench (2026-09-28): 31,908 DHCP packets in 140 s, one cycle
+about every 10 ms.
+
+After a NAK the client now stays in BACKING_OFF for 1, 2, 4 ... 64 s,
+doubling per consecutive NAK; dhcp_timeout() restarts discovery from
+BACKING_OFF as it already does after an ACD conflict, and dhcp_bind()
+resets the sequence. struct dhcp gains nak_backoff (the sequence) and
+naks_total (a diagnostic counter since dhcp_start()).
+
+Applied at configure time by modules/net/CMakeLists.txt, the same way as
+lwip-lwiperf-abort-fix.patch.
+---
+diff --git a/src/core/ipv4/dhcp.c b/src/core/ipv4/dhcp.c
+index 5c401368..c62e3963 100644
+--- a/src/core/ipv4/dhcp.c
++++ b/src/core/ipv4/dhcp.c
+@@ -332,8 +332,22 @@ dhcp_handle_nak(struct netif *netif)
+   dhcp_set_state(dhcp, DHCP_STATE_BACKING_OFF);
+   /* remove IP address from interface (must no longer be used, as per RFC2131) */
+   netif_set_addr(netif, IP4_ADDR_ANY4, IP4_ADDR_ANY4, IP4_ADDR_ANY4);
+-  /* We can immediately restart discovery */
+-  dhcp_discover(netif);
++  /* Do NOT restart discovery immediately: with a second server on the
++   * segment that NAKs every REQUEST, OFFER -> REQUEST -> NAK -> DISCOVER
++   * loops at wire speed (dhcp_set_state() resets 'tries', so the normal
++   * discover back-off never grows). Wait 1, 2, 4 ... 64 s instead, doubling
++   * per consecutive NAK; dhcp_timeout() restarts discovery from
++   * BACKING_OFF, and dhcp_bind() resets the sequence. */
++  if (dhcp->nak_backoff < 255) {
++    dhcp->nak_backoff++;
++  }
++  if (dhcp->naks_total < 0xFFFF) {
++    dhcp->naks_total++;
++  }
++  {
++    u32_t msecs = 1000UL << LWIP_MIN(dhcp->nak_backoff - 1, 6);
++    dhcp->request_timeout = (dhcp_timeout_t)((msecs + DHCP_FINE_TIMER_MSECS - 1) / DHCP_FINE_TIMER_MSECS);
++  }
+ }
+ 
+ #if LWIP_DHCP_DOES_ACD_CHECK
+@@ -1092,6 +1106,8 @@ dhcp_bind(struct netif *netif)
+ 
+   /* reset time used of lease */
+   dhcp->lease_used = 0;
++  /* a lease was accepted: the next NAK starts the back-off from 1 s again */
++  dhcp->nak_backoff = 0;
+ 
+   if (dhcp->offered_t0_lease != 0xffffffffUL) {
+     /* set renewal period timer */
+diff --git a/src/include/lwip/dhcp.h b/src/include/lwip/dhcp.h
+index b413fa63..3a6696cd 100644
+--- a/src/include/lwip/dhcp.h
++++ b/src/include/lwip/dhcp.h
+@@ -92,6 +92,11 @@ struct dhcp
+   u8_t tries;
+   /** see DHCP_FLAG_* */
+   u8_t flags;
++  /** consecutive NAKs since the last ACK - drives the rediscovery back-off
++   *  (dhcp_handle_nak(); reset in dhcp_bind()) */
++  u8_t nak_backoff;
++  /** NAKs received since dhcp_start(), for diagnostics */
++  u16_t naks_total;
+ 
+   dhcp_timeout_t request_timeout; /* #ticks with period DHCP_FINE_TIMER_SECS for request timeout */
+   dhcp_timeout_t t1_timeout;  /* #ticks with period DHCP_COARSE_TIMER_SECS for renewal time */

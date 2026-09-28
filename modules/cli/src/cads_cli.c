@@ -9,7 +9,16 @@
 
 void cads_cli_write(cads_cli_session_t* session, const char* text) {
     if(!session || !session->write || !text) return;
-    session->write(session->write_context, text, cads_str_len(text, CADS_CLI_LINE_MAX * 4u));
+    /* In bounded pieces rather than one bounded call: a single call used to
+     * cut anything past 384 B silently (a lesson's long table, a help
+     * text). cads_str_len() stays bounded per piece, so a missing
+     * terminator still cannot run away in one step. */
+    for(;;) {
+        size_t length = cads_str_len(text, CADS_CLI_LINE_MAX * 4u);
+        if(length == 0u) return;
+        session->write(session->write_context, text, length);
+        text += length;
+    }
 }
 
 void cads_cli_write_uint(cads_cli_session_t* session, uint32_t value) {

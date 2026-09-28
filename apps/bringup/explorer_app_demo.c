@@ -294,7 +294,11 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
             total_pixels += pixels;
             frames++;
         }
+#ifdef CADS_APP_RNLAB_ENABLED
+        rnlab_idle_ms(10u); /* same 10 ms tick, network polled every `lab poll` ms inside it */
+#else
         cads_hal_delay_ms(10u);
+#endif
     }
 
     uint32_t end_generation = cads_view_dispatcher_generation(&s_dispatcher);

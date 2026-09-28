@@ -40,6 +40,7 @@
  * LFS_NO_ASSERT bug, just reached through rand() instead of assert().
  * cads_net_board.c defines and seeds a tiny xorshift32 instead.
  */
+/* Hardware RNG per call, counted fallback otherwise - cads/net/rand.h. */
 uint32_t cads_lwip_rand(void);
 #define LWIP_RAND() ((u32_t)cads_lwip_rand())
 

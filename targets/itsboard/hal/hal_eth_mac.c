@@ -59,7 +59,15 @@
  * the ring doubles the burst absorbed between drains; affordable now that
  * gui/canvas.c reclaimed 15 KB (issue #59). Normal traffic never came near the
  * old depth of 4. Costs CADS_ETH_BUF_SIZE (1536 B) per added descriptor. */
+/* praktikum/start's lab build may deepen it (CMake CADS_RNLAB_ETH_RX_COUNT,
+ * 4..32): L08/L09 show when the receive ring rather than the TCP window
+ * limits throughput. Descriptors and buffers stay in SRAM regardless - the
+ * DMA cannot reach CCM. */
+#ifdef CADS_RNLAB_ETH_RX_COUNT
+#define CADS_ETH_RX_COUNT ((uint32_t)CADS_RNLAB_ETH_RX_COUNT)
+#else
 #define CADS_ETH_RX_COUNT 8u
+#endif
 /* 2, not 4: cads_hal_eth_mac_transmit() copies one frame into the next TX
  * buffer and hands it to the DMA, which drains a 1522-byte frame in ~123us
  * at 100Mbit - far faster than this software-checksummed, single-loop TX
@@ -186,7 +194,15 @@ void cads_hal_eth_mac_init(const uint8_t mac_address[6], bool full_duplex, bool 
     maccr &= ~(ETH_MACCR_DM | ETH_MACCR_FES | ETH_MACCR_LM);
     if(full_duplex) maccr |= ETH_MACCR_DM;
     if(speed_100) maccr |= ETH_MACCR_FES;
-    maccr |= ETH_MACCR_APCS; /* strip pad/FCS on receive - lwIP wants the payload, not padding */
+    /* Strip the 4-byte FCS from every received frame. APCS alone does that
+     * only for IEEE 802.3 length-field frames (type/length < 0x0600) -
+     * every IPv4/ARP frame is Ethernet II and kept its FCS, so lwIP, the lab
+     * hooks and the capture tools all saw 4 trailing CRC bytes (ping -s 64:
+     * 110 B received for 106 B sent, found by the L00-02 lesson agent).
+     * CSTF (RM0090 ETH_MACCR bit 25, F42x/F43x) strips it for type frames
+     * too. Pad bytes of a minimum-size type frame stay (60 B frames);
+     * lwIP trims them via the IP total length. */
+    maccr |= ETH_MACCR_APCS | ETH_MACCR_CSTF;
     ETH->MACCR = maccr;
 
     cads_eth_desc_rings_init();
@@ -245,7 +261,8 @@ uint16_t cads_hal_eth_mac_receive(uint8_t* buffer, uint16_t buffer_size) {
 
     /* FS+LS both set is the only shape this driver hands to lwIP: a whole
      * frame in one buffer. CADS_ETH_BUF_SIZE (1536) exceeds the largest
-     * frame this MAC can receive with APCS stripping pad/FCS, so a frame
+     * frame this MAC can receive (1518 B with FCS, 1514 B once CSTF/APCS
+     * have stripped it - see cads_hal_eth_mac_init()), so a frame
      * spanning multiple descriptors would mean something is misconfigured
      * upstream - dropped, not stitched back together, same as any other
      * frame this driver does not recognise as complete and well-formed. */
@@ -279,8 +296,35 @@ void cads_hal_eth_mac_set_promiscuous(bool enable) {
     }
 }
 
-void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+/* DMAMFBOCR clears on read, and two readers want it: the sniff demo (counts
+ * since its own last call) and the running totals behind
+ * cads_hal_eth_mac_missed_totals(). Every read lands in both, so neither
+ * steals the other's counts. */
+static uint32_t cads_eth_missed_pending_nodesc = 0u;
+static uint32_t cads_eth_missed_pending_fifo = 0u;
+static uint32_t cads_eth_missed_total_nodesc = 0u;
+static uint32_t cads_eth_missed_total_fifo = 0u;
+
+static void cads_eth_missed_collect(void) {
     uint32_t reg = ETH->DMAMFBOCR; /* reading this clears both fields (RM0090: rc_r) */
-    if(no_descriptor) *no_descriptor = reg & ETH_DMAMFBOCR_MFC_Msk;
-    if(fifo_overflow) *fifo_overflow = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
+    uint32_t nodesc = reg & ETH_DMAMFBOCR_MFC_Msk;
+    uint32_t fifo = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
+    cads_eth_missed_pending_nodesc += nodesc;
+    cads_eth_missed_pending_fifo += fifo;
+    cads_eth_missed_total_nodesc += nodesc;
+    cads_eth_missed_total_fifo += fifo;
+}
+
+void cads_hal_eth_mac_missed_totals(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+    cads_eth_missed_collect();
+    if(no_descriptor) *no_descriptor = cads_eth_missed_total_nodesc;
+    if(fifo_overflow) *fifo_overflow = cads_eth_missed_total_fifo;
+}
+
+void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+    cads_eth_missed_collect();
+    if(no_descriptor) *no_descriptor = cads_eth_missed_pending_nodesc;
+    if(fifo_overflow) *fifo_overflow = cads_eth_missed_pending_fifo;
+    cads_eth_missed_pending_nodesc = 0u;
+    cads_eth_missed_pending_fifo = 0u;
 }

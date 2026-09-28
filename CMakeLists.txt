@@ -152,12 +152,15 @@ endif()
 # against scripts/check_ram_budget.py. Only meaningful with CADS_APP_RNLAB.
 option(CADS_RNLAB_LWIP_STATS "Enable lwIP stats counters for apps/rnlab" ON)
 # L08/L09: lwIP TCP_WND / TCP_SND_BUF in multiples of TCP_MSS.
-# Defaults are the values main uses (8 / 4); ranges 2..16 and 2..8.
-set(CADS_RNLAB_TCP_WND_MSS 8 CACHE STRING "apps/rnlab: TCP_WND in multiples of TCP_MSS (2..16)")
-set(CADS_RNLAB_TCP_SND_BUF_MSS 4 CACHE STRING "apps/rnlab: TCP_SND_BUF in multiples of TCP_MSS (2..8)")
+# Defaults are the values main uses (8 / 4); ranges 2..32 and 2..16.
+set(CADS_RNLAB_TCP_WND_MSS 8 CACHE STRING "apps/rnlab: TCP_WND in multiples of TCP_MSS (2..32)")
+set(CADS_RNLAB_TCP_SND_BUF_MSS 4 CACHE STRING "apps/rnlab: TCP_SND_BUF in multiples of TCP_MSS (2..16)")
 # TCP_MSS itself: 536 (lwIP's default, what main runs) or 1460 (1500-byte MTU).
 set(CADS_RNLAB_TCP_MSS 536 CACHE STRING "apps/rnlab: TCP_MSS in bytes (536|1460)")
 set_property(CACHE CADS_RNLAB_TCP_MSS PROPERTY STRINGS 536 1460)
+# Ethernet RX DMA ring depth (hal_eth_mac.c). 8 = main; up to 32, each
+# descriptor is 1536 B of SRAM (DMA - never CCM).
+set(CADS_RNLAB_ETH_RX_COUNT 8 CACHE STRING "apps/rnlab: Ethernet RX descriptors (4..32)")
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -499,6 +502,15 @@ if(CADS_TARGET STREQUAL "itsboard")
     # (and however many times) the final executable actually needs it,
     # instead of trusting a fixed position in the hand-written link list.
     target_link_libraries(cads_net PUBLIC cads_hal_itsboard)
+    if(CADS_APP_RNLAB)
+        if(CADS_RNLAB_ETH_RX_COUNT LESS 4 OR CADS_RNLAB_ETH_RX_COUNT GREATER 32)
+            message(FATAL_ERROR "CADS_RNLAB_ETH_RX_COUNT must be 4..32, got ${CADS_RNLAB_ETH_RX_COUNT}")
+        endif()
+        # The driver sizes its ring from it; cads_net_board.c its per-poll
+        # drain budget.
+        target_compile_definitions(cads_hal_itsboard PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
+        target_compile_definitions(cads_net PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
+    endif()
 
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)
 
@@ -513,6 +525,15 @@ if(CADS_TARGET STREQUAL "itsboard")
         -nostartfiles
     )
     set_target_properties(cads-zero.elf PROPERTIES LINK_DEPENDS ${CADS_LINKER_SCRIPT})
+    if(CADS_APP_RNLAB)
+        # praktikum/start only (CTO decision 2026-09-28): the linker script's
+        # 48K SRAM "heap" floor has no run-time consumer - no malloc/_sbrk is
+        # linked, lwIP uses static pools, the main stack lives in CCM - so the
+        # lab build drops it to 0 and may spend that SRAM on lwIP pools for
+        # the big TCP windows (modules/net/include/lwipopts.h). The CI margin
+        # gate (scripts/check_ram_budget.py, reads this same symbol) remains.
+        target_link_options(cads-zero.elf PRIVATE -Wl,--defsym=__cads_heap_floor=0)
+    endif()
 
     add_custom_command(TARGET cads-zero.elf POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:cads-zero.elf> ${CMAKE_BINARY_DIR}/cads-zero.bin

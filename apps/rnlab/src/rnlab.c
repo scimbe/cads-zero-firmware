@@ -18,6 +18,7 @@
 #include "cads_hal.h"
 #include "rnlab/rnlab_lesson.h"
 #include "rnlab_args_logic.h"
+#include "rnlab_selftest.h"
 
 #define RNLAB_IP4(a, b, c, d) \
     (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
@@ -30,6 +31,7 @@ static const rnlab_lesson_fn rnlab_lessons[11] = {
 };
 
 static cads_cli_session_t rnlab_serial;
+static uint32_t rnlab_poll_ms = RNLAB_POLL_MS_DEFAULT;
 
 static void rnlab_write_ipv4(cads_cli_session_t* session, uint32_t ip) {
     if(ip == 0u) {
@@ -47,6 +49,8 @@ static void rnlab_cmd_help(cads_cli_session_t* session) {
         "lab info                     IP/Maske/GW/DNS/MAC, Link, DHCP, Zaehler, Uptime\r\n"
         "lab net static [ip mask gw]  statische Adresse (ohne Argumente: 192.168.33.99/24 gw .1)\r\n"
         "lab net dhcp                 Adresse per DHCP beziehen\r\n"
+        "lab selftest                 Zusagen des Rahmens pruefen (Timer-Reserve)\r\n"
+        "lab poll [ms]                Poll-Intervall im App-Baum anzeigen/setzen (1..10)\r\n"
         "lab NN <cmd> [args]          Lektion NN (01..11), z.B. lab 01 help\r\n");
 }
 
@@ -85,6 +89,8 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     } else {
         cads_cli_write(session, status.dhcp_bound ? "an (gebunden)" : "an (wartet auf Lease)");
     }
+    cads_cli_write(session, "\r\ndhcp_naks: ");
+    cads_cli_write_uint(session, status.dhcp_naks);
 
     cads_cli_write(session, "\r\nrx:     ");
     cads_cli_write_uint(session, status.rx_frames);
@@ -92,9 +98,17 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     cads_cli_write_uint(session, status.rx_dropped);
     cads_cli_write(session, " verworfen)\r\ntx:     ");
     cads_cli_write_uint(session, status.tx_frames);
-    cads_cli_write(session, " Frames\r\nnested: ");
+    cads_cli_write(session, " Frames\r\nrx_ring_overruns: ");
+    cads_cli_write_uint(session, status.rx_ring_overruns);
+    cads_cli_write(session, " (FIFO: ");
+    cads_cli_write_uint(session, status.rx_fifo_overruns);
+    cads_cli_write(session, ")\r\nrand_fallbacks: ");
+    cads_cli_write_uint(session, status.rand_fallbacks);
+    cads_cli_write(session, "\r\nnested: ");
     cads_cli_write_uint(session, status.poll_nested);
-    cads_cli_write(session, " verschachtelte Polls abgewiesen\r\nuptime: ");
+    cads_cli_write(session, " verschachtelte Polls abgewiesen\r\npoll:   ");
+    cads_cli_write_uint(session, rnlab_poll_ms);
+    cads_cli_write(session, " ms\r\nuptime: ");
     cads_cli_write_uint(session, cads_hal_ticks_ms());
     cads_cli_write(session, " ms\r\n");
 }
@@ -149,6 +163,26 @@ static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
         rnlab_cmd_info(session);
         return;
     }
+    if(cads_str_equal(argv[0], "poll")) {
+        uint32_t ms;
+        const char* end;
+        if(argc >= 2) {
+            if(!cads_str_to_uint(argv[1], &ms, &end) || *end != '\0' || ms < RNLAB_POLL_MS_MIN ||
+               ms > RNLAB_POLL_MS_MAX) {
+                cads_cli_write(session, "? Aufruf: lab poll [1..10]\r\n");
+                return;
+            }
+            rnlab_poll_ms = ms;
+        }
+        cads_cli_write(session, "poll: ");
+        cads_cli_write_uint(session, rnlab_poll_ms);
+        cads_cli_write(session, " ms\r\n");
+        return;
+    }
+    if(cads_str_equal(argv[0], "selftest")) {
+        rnlab_selftest(session);
+        return;
+    }
     if(cads_str_equal(argv[0], "net")) {
         rnlab_cmd_net(session, argc - 1, argv + 1);
         return;
@@ -190,6 +224,20 @@ void rnlab_init(const uint8_t mac[6]) {
 void rnlab_poll(void) {
     cads_net_poll();
     cads_cli_tcp_service();
+}
+
+void rnlab_idle_ms(uint32_t ms) {
+    uint32_t start = cads_hal_ticks_ms();
+    for(;;) {
+        uint32_t elapsed = cads_hal_ticks_ms() - start;
+        if(elapsed >= ms) return;
+        uint32_t step = ms - elapsed;
+        if(step > rnlab_poll_ms) step = rnlab_poll_ms;
+        cads_hal_delay_ms(step);
+        if(cads_hal_ticks_ms() - start >= ms) return; /* the caller's own loop polls next */
+        cads_net_poll();
+        cads_cli_tcp_service();
+    }
 }
 
 void rnlab_serial_feed(uint8_t byte) {

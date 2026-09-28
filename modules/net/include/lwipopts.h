@@ -143,7 +143,16 @@
  * `ASSERT(__cads_heap_size >= 48K, ...)` headroom guard is load-bearing,
  * not advisory - see explorer_http_demo.c's file header for the RAM
  * budget lesson that guard already taught once this session). */
+#ifdef CADS_APP_RNLAB_ENABLED
+/* The lab: a lesson's own RAW PCB (L04's echo responder) stays open while
+ * cads_net_ping()/traceroute need one of their own - with one slot, those
+ * failed for as long as the lesson's PCB existed. Two more PCBs are ~70 B,
+ * placed with the lab's other pools (CCM by default, see the end of this
+ * file). */
+#define MEMP_NUM_RAW_PCB            3
+#else
 #define MEMP_NUM_RAW_PCB            1
+#endif
 
 /* Was 8, then 7, then 5 (see the ping and sniffer tasks' own notes on
  * those cuts, still true); now 4, again for
@@ -244,6 +253,24 @@
 #endif
 #define LWIP_DEBUG                  0
 
+/* TCP initial sequence numbers per RFC 6528 instead of lwIP's counter, which
+ * restarted identically on every boot - cads/net/rand.h. */
+#define LWIP_HOOK_FILENAME          "cads/net/lwip_hooks.h"
+#define LWIP_HOOK_TCP_ISN           cads_lwip_tcp_isn
+
+/* Timer headroom for the lessons (sys_timeout(): L04, L08's 10 ms tick, L09's
+ * 1 ms tick, L10/L11 refresh). lwIP's default pool holds exactly its own
+ * cyclic timers plus PPP's slots, so a lesson timer only fits while PPP is
+ * idle - and a failed sys_timeout() is an LWIP_PLATFORM_ASSERT, i.e.
+ * cads_hal_panic(). Six extra slots cover the per-lesson budget in
+ * apps/rnlab/README.md ("Timer"); `lab selftest` holds all six at once.
+ * Expanded where lwIP uses it (memp_std.h), after opt.h has defined
+ * LWIP_NUM_SYS_TIMEOUT_INTERNAL. */
+#ifdef CADS_APP_RNLAB_ENABLED
+#define RNLAB_LESSON_TIMEOUTS       6
+#define MEMP_NUM_SYS_TIMEOUT        (LWIP_NUM_SYS_TIMEOUT_INTERNAL + RNLAB_LESSON_TIMEOUTS)
+#endif
+
 /* The lab's IPv4 input hook (cads/net/rnlab_hooks.h) - every received IPv4
  * packet passes rnlab_hook_ip4_input() first; its weak default returns 0
  * ("not consumed"). Same define-visibility rule as CADS_RNLAB_LWIP_STATS. */
@@ -251,16 +278,27 @@
 #include "cads/net/rnlab_hooks.h"
 #define LWIP_HOOK_IP4_INPUT(p, inp) rnlab_hook_ip4_input((p), (inp))
 
-/* With the lab, lwIP's own memory - the MEM_SIZE heap and every memp pool,
- * PBUF_POOL included - goes to CCM (.ccm, NOLOAD) instead of SRAM, freeing
- * ~12 KB of the SRAM budget (scripts/check_ram_budget.py) for the lessons.
- * Safe because nothing DMAs to or from lwIP memory: hal_eth_mac.c copies
- * every frame between its own SRAM descriptor buffers and pbufs
- * ("BUFFERS ARE COPIED, NOT ZERO-COPY"), and the WiFi UART is interrupt-
- * driven. NOLOAD means not zeroed at boot - lwIP does not need it:
- * mem_init() and memp_init() lay out both regions themselves. */
+/* With the lab, lwIP's MEM_SIZE heap always lives in CCM
+ * (LWIP_RAM_HEAP_POINTER -> cads_lwip_ram_heap, modules/net/src/
+ * cads_net_board.c), and so do the memp pools (PBUF_POOL included) as long
+ * as heap + pools fit CCM's lwIP share. The big L08/L09 windows (MSS 1460,
+ * WND 16..32) do not fit there: then the pools go to SRAM instead, which
+ * the lab build can afford because it drops the linker's unused 48K heap
+ * floor (top-level CMakeLists.txt, __cads_heap_floor). Either placement is
+ * safe: nothing DMAs to or from lwIP memory - hal_eth_mac.c copies every
+ * frame between its own SRAM descriptor buffers and pbufs ("BUFFERS ARE
+ * COPIED, NOT ZERO-COPY") - and CCM (.ccm, NOLOAD) not being zeroed at
+ * boot does not matter: mem_init()/memp_init() lay both out themselves.
+ * The estimate is deliberately rough (pool buffer ~ TCP_MSS + 80 B of
+ * headers/alignment, ~4 KB of small pools); the linker's CCM assert is the
+ * exact check behind it. */
+extern unsigned char cads_lwip_ram_heap[];
+#define LWIP_RAM_HEAP_POINTER cads_lwip_ram_heap
+#define CADS_LWIP_MEMP_ESTIMATE ((PBUF_POOL_SIZE * (TCP_MSS + 80)) + 4096)
+#if (CADS_LWIP_MEMP_ESTIMATE + MEM_SIZE) <= (36 * 1024)
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
     u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".ccm"), aligned(4)))
+#endif
 #endif
 
 /* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------

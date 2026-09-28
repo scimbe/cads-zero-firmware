@@ -10,7 +10,7 @@
 
 #include "cads/cli/cli.h"
 
-static char s_output[512];
+static char s_output[1024];
 static size_t s_output_length;
 static const char* s_last_args;
 static char s_last_args_copy[64];
@@ -161,6 +161,16 @@ static void test_lone_lf_and_blank_lines_still_prompt(void) {
     TEST_ASSERT_EQUAL_size_t(5u, count(s_output, "> "));
 }
 
+/* Longer than one CADS_CLI_LINE_MAX * 4 (384 B) piece: must arrive whole. */
+static void test_long_write_is_not_truncated(void) {
+    static char text[1000];
+    for(size_t i = 0; i < sizeof(text) - 1u; i++) text[i] = (char)('a' + (i % 26u));
+    text[sizeof(text) - 1u] = '\0';
+    cads_cli_write(&s_session, text);
+    TEST_ASSERT_EQUAL_size_t(sizeof(text) - 1u, s_output_length);
+    TEST_ASSERT_EQUAL_MEMORY(text, s_output, sizeof(text) - 1u);
+}
+
 static void test_builtins_still_work(void) {
     feed("echo hallo\r");
     TEST_ASSERT_NOT_NULL(strstr(s_output, "hallo\r\n"));
@@ -178,6 +188,7 @@ int main(void) {
     RUN_TEST(test_table_is_bounded);
     RUN_TEST(test_execute_dispatches_without_prompt);
     RUN_TEST(test_builtins_still_work);
+    RUN_TEST(test_long_write_is_not_truncated);
     RUN_TEST(test_crlf_is_one_line_end);
     RUN_TEST(test_lone_lf_and_blank_lines_still_prompt);
     return UNITY_END();

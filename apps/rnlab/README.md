@@ -14,9 +14,11 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 | Befehl | Wirkung |
 |---|---|
 | `lab help` | Übersicht |
-| `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand, RX/TX-Frames, Uptime |
+| `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand und `dhcp_naks`, RX/TX-Frames, `rx_ring_overruns` (FIFO), `nested`, `poll`, Uptime |
 | `lab net static [ip mask gw]` | statische Adresse (ohne Argumente: Default oben) |
 | `lab net dhcp` | Adresse per DHCP beziehen (Setup S2) |
+| `lab selftest` | Zusagen des Rahmens auf dem Board prüfen (Timer-Reserve) |
+| `lab poll [ms]` | Poll-Intervall des Netzes im App-Baum anzeigen/setzen, 1..10 ms (Default 10, siehe L04) |
 | `lab NN <cmd> [args]` | Befehl der Lektion `NN` (`01` … `11`) |
 
 Die Adresse wird nur im RAM gehalten; nach einem Reset gilt wieder der
@@ -96,6 +98,28 @@ noch lwIP einbinden. Die Board-Datei `lNN_<slug>.c` wird nur für das Board
 übersetzt (im Simulator antwortet `lab NN` mit „nur auf dem Board
 verfügbar“).
 
+## Timer (`sys_timeout`)
+
+lwIPs Timer-Pool ist nur für lwIPs eigene zyklische Timer bemessen; ein
+`sys_timeout()` ohne freien Platz endet in einer Assertion, also einem
+Absturz (`cads_hal_panic`). Mit `CADS_APP_RNLAB` hat der Pool
+**6 zusätzliche Plätze** (`RNLAB_LESSON_TIMEOUTS`, `lwipopts.h`). Jede Lektion
+hält gleichzeitig höchstens so viele eigene Timer:
+
+| Lektion | max. gleichzeitige `sys_timeout()` |
+|---|---:|
+| L01 … L03, L05 … L07 | 0 (bei Bedarf 1 aus der Reserve anmelden) |
+| L04 icmp | 1 |
+| L08 tcp-flusskontrolle | 1 (10-ms-Tick) |
+| L09 congestion-control | 1 (1-ms-Tick) |
+| L10 http-wetter-1 | 1 |
+| L11 wetter-app | 2 |
+| **Summe** | **6** |
+
+Ein Timer, der sich im Callback selbst neu setzt, belegt dabei nur einen Platz.
+`lab selftest` belegt alle 6 gleichzeitig zusätzlich zu lwIPs eigenen Timern
+und gibt sie wieder frei; kommt die Zeile „… - OK“, reicht der Pool.
+
 ## Hook-Punkte im Netztreiber
 
 Der Netztreiber ruft fünf Hook-Punkte auf (`modules/net/include/cads/net/rnlab_hooks.h`).
@@ -125,7 +149,12 @@ blockieren, kein `cads_net_poll()` darin aufrufen.
 
 ## Grenzen
 
-- Eine Telnet-Verbindung gleichzeitig (siehe `modules/cli`).
+- Eine Telnet-Verbindung gleichzeitig (siehe `modules/cli`); eine zweite
+  bekommt „? belegt: andere Sitzung aktiv - bitte spaeter erneut“ und wird
+  geschlossen.
+- Der App-Baum tickt alle 10 ms. Das Netz wird darin alle `lab poll` ms
+  bedient (Default 10): Ein Paket wartet also bis zu so lange, bevor lwIP es
+  sieht. Das ist der RTT-Streuanteil, den L04 misst; `lab poll 1` senkt ihn.
 - Solange ein anderes Explorer-Kommando läuft (z. B. `C`-Sniffer), gehört die
   Konsole diesem Kommando.
 - Im App-Baum (Menü auf dem Display, Standard nach dem Boot) gehen alle
@@ -135,20 +164,31 @@ blockieren, kein `cads_net_poll()` darin aufrufen.
 
 ## RAM-Budget
 
-Maßstab ist `scripts/check_ram_budget.py`: die SRAM-Reserve über dem 48-KB-
-Boden des Linkerskripts; mindestens 256 B müssen immer übrig bleiben (CI-Gate).
-Auf `praktikum/start` beträgt sie **24 736 B (24,2 KB)**. Möglich machen das
-zwei Maßnahmen:
+Maßstab ist `scripts/check_ram_budget.py`: die SRAM-Reserve über dem Boden
+des Linkerskripts; mindestens 256 B müssen immer übrig bleiben (CI-Gate).
+Auf `praktikum/start` liegt der Boden bei **0 statt 48 KB**, und die Reserve
+beträgt im Default **73 824 B (72,1 KB)**.
 
 | Maßnahme | SRAM frei | Wo |
 |---|---:|---|
-| Stand vor dem Umbau (alle Apps, lwIP im SRAM) | 384 B | — |
+| Stand vor dem Umbau (alle Apps, lwIP im SRAM, 48-KB-Boden) | 384 B | — |
 | Nicht-lehrrelevante Apps aus: `CADS_APP_MARAUDER`, `CADS_APP_ACTIVE` (offensive M9-Tools), `CADS_APP_GAME`, `CADS_APP_FILEBROWSER` | +5 632 B | `CMakeLists.txt`, Defaults auf diesem Branch `OFF` |
-| lwIP-Speicher (MEM_SIZE-Heap, alle memp-Pools inkl. PBUF_POOL) nach CCM | +12 608 B | `modules/net/include/lwipopts.h` |
+| lwIP-Speicher (MEM_SIZE-Heap, memp-Pools inkl. PBUF_POOL) nach CCM | +12 608 B | `modules/net/include/lwipopts.h` |
 | Kopierpuffer des Netztreibers (RX/TX je 1536 B) nach CCM | +3 072 B | `modules/net/src/cads_net_board.c` |
 | Explorer-Capture-Puffer, FreeRTOS-Idle-/Timer-Stack nach CCM | +3 072 B | `apps/bringup/explorer_capture_buffer.c`, `modules/kernel/src/kernel.c` |
-| CLI-Robustheit (Zeilenende-/Telnet-Zustand je Sitzung) | −32 B | `modules/cli` |
-| **Summe (praktikum/start)** | **24 736 B** | |
+| CLI-Robustheit und entkoppelte Ausführung (Zustand je Sitzung) | −64 B | `modules/cli` |
+| 48-KB-„Heap“-Boden auf 0 (CTO-Freigabe 2026-09-28, nur dieser Branch) | +49 152 B | `targets/itsboard/linker/cads_itsboard.ld`, `CMakeLists.txt` |
+| RX-Überlaufzähler (Summen im HAL) | −32 B | `targets/itsboard/hal/hal_eth_mac.c` |
+| **Summe (praktikum/start, Default-TCP)** | **73 824 B** | |
+
+**Warum der 48-KB-Boden fallen darf:** Nichts belegt diesen Bereich zur
+Laufzeit. Im Image ist kein `malloc`/`_sbrk`/`free` gelinkt (`nm`), lwIP
+arbeitet mit statischen Pools, der Framebuffer ist statisch, und der
+Hauptstack (MSP, 4 KB, `0x1000F000`–`0x10010000`) liegt im CCM, nicht im
+SRAM. Seine Reserve und der Stack-Guard (`apps/bringup/tasks.c`) bleiben
+unverändert. Der Build setzt `-Wl,--defsym=__cads_heap_floor=0`; Linker-ASSERT
+und `check_ram_budget.py` lesen dasselbe Symbol. Auf main bleibt der Boden
+bei 48 KB.
 
 Alles nach CCM Verschobene wird nur von der CPU angefasst (der Ethernet-
 Treiber kopiert zwischen seinen DMA-Puffern im SRAM und lwIP). Ohne
@@ -157,7 +197,9 @@ Apps lassen sich mit `-DCADS_APP_<NAME>=ON` wieder einschalten, das kostet
 dann entsprechend Reserve.
 
 **Richtmaß je Lektion** (SRAM, statisch). Die Werte summieren sich, weil ein
-Studierenden-Fork alle Lektionen nacheinander enthält:
+Studierenden-Fork alle Lektionen nacheinander enthält. Sie sind so bemessen,
+dass sie auch in der größten TCP-Konfiguration (1460/32/16, 19,3 KB Reserve)
+noch passen:
 
 | Lektion | Richtmaß | Wofür typischerweise |
 |---|---:|---|
@@ -168,55 +210,60 @@ Studierenden-Fork alle Lektionen nacheinander enthält:
 | L05 dhcp | 0,5 KB | Zustandsprotokoll |
 | L06 dns-nat | 1 KB | DNS-Antwortpuffer |
 | L07 udp-transport | 2 KB | Sequenz-/Verlustfenster |
-| L08 tcp-flusskontrolle | 3 KB | Sink-Zustand, Messreihen |
+| L08 tcp-flusskontrolle | 2 KB | Sink-Zustand, Messreihen |
 | L09 congestion-control | 2 KB | cwnd/ssthresh-Trace |
-| L10 http-wetter-1 | 4 KB | HTTP-Antwortpuffer (~2 KB) + JSON |
-| L11 wetter-app | 6 KB | GUI-View-Zustand, Texte |
-| Reserve | 2,5 KB | nicht verplanen |
-| **Summe** | **24 KB** | |
+| L10 http-wetter-1 | 3 KB | HTTP-Antwortpuffer (~2 KB) + JSON |
+| L11 wetter-app | 4 KB | GUI-View-Zustand, Texte |
+| Reserve | 1,5 KB | nicht verplanen |
+| **Summe** | **19 KB** | |
 
 Größere, reine CPU-Puffer gehören nach CCM: `RNLAB_CCM static uint8_t
 buf[4096];` (Makro in `rnlab/rnlab_lesson.h`; CCM wird beim Boot **nicht**
-genullt und ist **nie** DMA-Ziel). In CCM sind auf `praktikum/start` noch rund
-30 KB frei (64 KB minus 29,9 KB Sektionen minus 4 KB Hauptstack); wie viel
-bei anderen TCP-Optionen bleibt, steht unter „TCP-Parameter“. Lokale Variablen landen auf dem Stack des Konsolen-Tasks (4 KB, CCM):
-einzelne Puffer über ~1 KB dort vermeiden.
+genullt und ist **nie** DMA-Ziel). Wie viel CCM je TCP-Konfiguration frei
+bleibt, steht in der Tabelle unten. Lokale Variablen landen auf dem Stack des
+Konsolen-Tasks (4 KB, CCM): einzelne Puffer über ~1 KB dort vermeiden.
 
 ## TCP-Parameter für L08/L09
 
 | CMake-Option | Default (wie main) | Bereich | lwIP |
 |---|---:|---|---|
 | `CADS_RNLAB_TCP_MSS` | 536 | 536 oder 1460 | `TCP_MSS` (1460 = MTU 1500 − 40 B IP/TCP) |
-| `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..16 | `TCP_WND = n * TCP_MSS` |
-| `CADS_RNLAB_TCP_SND_BUF_MSS` | 4 | 2..8 | `TCP_SND_BUF = n * TCP_MSS` |
+| `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..32 | `TCP_WND = n * TCP_MSS` (max. 46 720 B, ohne Window Scaling < 64 KB) |
+| `CADS_RNLAB_TCP_SND_BUF_MSS` | 4 | 2..16 | `TCP_SND_BUF = n * TCP_MSS` |
+| `CADS_RNLAB_ETH_RX_COUNT` | 8 | 4..32 | Tiefe des Ethernet-RX-DMA-Rings (`hal_eth_mac.c`); je Deskriptor 1536 B **SRAM** (DMA, nie CCM) |
 
 ```bash
-bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=16 -DCADS_RNLAB_TCP_SND_BUF_MSS=8
+bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=32 -DCADS_RNLAB_TCP_SND_BUF_MSS=16
 ```
 
-Mitwachsende Pools (`PBUF_POOL_SIZE`, `PBUF_POOL_BUFSIZE` über `TCP_MSS`,
-`MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in `lwipopts.h` daraus abgeleitet und
-liegen in CCM. Die SRAM-Reserve bleibt in jeder Kombination bei 24 736 B;
-es wächst nur die CCM-Belegung (Grenze: 60 KB, darüber liegt der 4-KB-Hauptstack):
+Mitwachsende Pools (`PBUF_POOL_SIZE` = Fenster + 1 Puffer, `PBUF_POOL_BUFSIZE`
+über `TCP_MSS`, `MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in `lwipopts.h`
+abgeleitet. Der lwIP-Heap liegt immer im CCM, die memp-Pools ebenfalls,
+solange beides zusammen ins CCM passt; sonst wandern die Pools ins SRAM
+(automatisch, gemessen):
 
-| MSS / WND / SND_BUF | CCM belegt | CCM frei für Lektionen |
-|---|---:|---:|
-| 536 / 8 / 4 (Default) | 29,9 KB | ~30 KB |
-| 536 / 16 / 8 | 36,5 KB | ~23 KB |
-| 1460 / 8 / 4 | 42,6 KB | ~17 KB |
-| 1460 / 16 / 8 | 59,1 KB | **~0,9 KB** |
+| MSS / WND / SND_BUF | Pools | SRAM-Reserve | CCM belegt | CCM frei¹ |
+|---|---|---:|---:|---:|
+| 536 / 2 / 2 | CCM | 73 824 B | 30,1 KB | 30,6 KB |
+| 536 / 8 / 4 (Default) | CCM | 73 824 B | 30,4 KB | 30,3 KB |
+| 536 / 16 / 8 | CCM | 73 824 B | 36,9 KB | 23,1 KB |
+| 536 / 32 / 16 | CCM | 73 824 B | 51,2 KB | 8,8 KB |
+| 1460 / 8 / 4 | CCM | 73 824 B | 43,0 KB | 17,0 KB |
+| 1460 / 16 / 8 | SRAM | 44 928 B | 31,4 KB | 28,6 KB |
+| 1460 / 32 / 16 | SRAM | 19 776 B | 42,8 KB | 17,1 KB |
 
-Die Kombination 1460/16/8 ist nur für die Messung in L08/L09 gedacht: Sie füllt
-das CCM fast vollständig, andere Lektionen dürfen dann keine `RNLAB_CCM`-Puffer
-mehr anlegen. Die Optionen gelten für den ganzen Build-Ordner, danach also
-wieder auf die Defaults zurücksetzen
+¹ 64 KB minus belegt minus 4 KB Hauptstack.
+
+**RX-Ring:** Jeder Deskriptor über 8 kostet 1 536 B SRAM-Reserve. Messwerte:
+536/8/4 mit RX 8 hat 73 824 B Reserve, 536/32/16 mit RX 32 hat 36 576 B,
+1460/16/8 mit RX 32 hat 7 680 B. **1460/32/16 verträgt höchstens RX 20**
+(1 152 B Reserve; ab RX 21 läuft das SRAM über, der Linker bricht ab).
+Framebuffer (75 KB), Display-Stage (15 KB, DMA) und der PBUF_POOL (50 KB bei
+33 × 1 460 B) lassen daneben keinen Platz. Solche Kombinationen sind reine
+L08/L09-Messbuilds, in denen die Lektions-Richtmaße oben nicht mehr passen.
+Überläufe zeigt `lab info` als `rx_ring_overruns` (kein freier Deskriptor,
+DMAMFBOCR.MFC) und `FIFO` (DMAMFBOCR.MFA), jeweils seit dem Boot.
+
+Die Optionen gelten für den ganzen Build-Ordner, danach also wieder auf die
+Defaults zurücksetzen
 (`-DCADS_RNLAB_TCP_MSS=536 -DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4`).
-
-## Offene Frage an den Maintainer
-
-Das Linkerskript (`targets/itsboard/linker/cads_itsboard.ld`) verlangt
-`__cads_heap_size >= 48K` und nennt als Grund „lwIP and the GUI“. Soweit
-erkennbar nutzt aber nichts diesen Bereich: Es gibt kein `malloc`, lwIP
-arbeitet mit statischen Pools (auf diesem Branch im CCM), und die GUI hat
-einen statischen Framebuffer. Wäre der Boden überflüssig, stünden weitere
-~48 KB SRAM zur Verfügung. Auf `praktikum/start` bewusst **nicht** geändert.
