@@ -55,6 +55,11 @@ jobs:
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build libsdl2-dev
 
+      # The script's own self-test (throwaway repo, no firmware build) - if
+      # this fails, the verdict of the next step would not mean anything.
+      - name: Self-test of the integration script
+        run: python3 tests/scripts/test_integrate_solutions.py
+
       # Same configuration as ci.yml's firmware job, but into build/itsboard
       # (where the script and scripts/build.sh expect the ELF). The toolchain
       # dir is resolved inside the command: scripts/cads_env.sh (sourced by
