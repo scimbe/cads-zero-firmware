@@ -63,6 +63,22 @@ size_t cads_cli_outq_peek(const cads_cli_outq_t* q, const char** chunk);
 /** Drop the first `length` queued bytes (after they were sent). */
 void cads_cli_outq_consume(cads_cli_outq_t* q, size_t length);
 
+/** A running command's output that has waited this long leaves anyway. */
+#define CADS_CLI_PROGRESS_FLUSH_MS 250u
+
+/**
+ * Whether the TCP transport should hand its queued output to lwIP now.
+ * While a command runs (`in_command`), output is collected so a reply
+ * leaves as one segment when its line is done - dozens of tiny segments
+ * drew an ACK burst that overran the 8-frame RX ring. But a slow command's
+ * progress dots (`lab 04 ping`, `lab 02 resolve`: one every <= 400 ms)
+ * must not wait for the end: rnlab.py treats 1 s of silence as "done". So
+ * once CADS_CLI_PROGRESS_FLUSH_MS have passed since `last_flush_ms`, send
+ * too - at most one segment per 250 ms, no burst. Also due: outside a
+ * command (the accept banner) and once half the queue is used.
+ */
+bool cads_cli_outq_flush_due(const cads_cli_outq_t* q, bool in_command, uint32_t now_ms, uint32_t last_flush_ms);
+
 /* --- deferred input ----------------------------------------------------------
  *
  * Why commands must not run where the bytes arrive: the TCP transport's

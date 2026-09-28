@@ -92,6 +92,13 @@ void cads_cli_outq_consume(cads_cli_outq_t* q, size_t length) {
     if(q->count == 0u) q->head = 0u;
 }
 
+bool cads_cli_outq_flush_due(const cads_cli_outq_t* q, bool in_command, uint32_t now_ms, uint32_t last_flush_ms) {
+    if(q->count == 0u) return false;
+    if(!in_command || q->count >= q->size / 2u) return true;
+    /* Unsigned difference: correct across the 49.7-day tick wrap. */
+    return now_ms - last_flush_ms >= CADS_CLI_PROGRESS_FLUSH_MS;
+}
+
 bool cads_cli_input_push(cads_cli_outq_t* in, cads_cli_telnet_t* telnet, const uint8_t* data, size_t length) {
     /* Filtering only ever shrinks the data, so `length` free bytes is
      * enough; checked up front so a refusal leaves the telnet state as it

@@ -184,6 +184,103 @@ static void test_bytes_arriving_during_a_command_run_after_it(void) {
     s_reentry_queue = NULL;
 }
 
+/* --- progress flush (cads_cli_outq_flush_due) --------------------------------
+ *
+ * A stand-in for the TCP transport: every write is queued, then sent if the
+ * rule says so; a "segment" is one flush that moved bytes. The line end
+ * flushes unconditionally (cads_cli_session_feed() -> cads_cli_flush()). */
+typedef struct {
+    char storage[1024];
+    cads_cli_outq_t q;
+    char sent[2048];
+    size_t sent_len;
+    uint32_t last_flush_ms;
+    uint32_t segments;
+    uint32_t segment_ms[64];
+    uint32_t oldest_wait_ms; /* longest a byte waited in the queue */
+    uint32_t queued_since_ms;
+} fake_tcp_t;
+
+static void fake_init(fake_tcp_t* t, uint32_t now_ms) {
+    memset(t, 0, sizeof(*t));
+    cads_cli_outq_init(&t->q, t->storage, sizeof(t->storage));
+    t->last_flush_ms = now_ms; /* the transport resets it when a command starts */
+}
+
+static void fake_flush(fake_tcp_t* t, uint32_t now_ms) {
+    if(t->q.count == 0u) return;
+    uint32_t waited = now_ms - t->queued_since_ms;
+    if(waited > t->oldest_wait_ms) t->oldest_wait_ms = waited;
+    const char* chunk;
+    size_t n;
+    while((n = cads_cli_outq_peek(&t->q, &chunk)) > 0u) {
+        memcpy(&t->sent[t->sent_len], chunk, n);
+        t->sent_len += n;
+        cads_cli_outq_consume(&t->q, n);
+    }
+    if(t->segments < 64u) t->segment_ms[t->segments] = now_ms;
+    t->segments++;
+    t->last_flush_ms = now_ms;
+}
+
+static void fake_write(fake_tcp_t* t, const char* text, uint32_t now_ms, bool in_command) {
+    if(t->q.count == 0u) t->queued_since_ms = now_ms;
+    cads_cli_outq_push(&t->q, text, strlen(text));
+    if(cads_cli_outq_flush_due(&t->q, in_command, now_ms, t->last_flush_ms)) fake_flush(t, now_ms);
+}
+
+/* `lab 04 ping ... 100` shape: a dot every 200 ms for 2 s, then the result
+ * line. Dots must leave while the command runs (rnlab.py gives up after 1 s
+ * of silence), but never more than one segment per 250 ms. */
+static void test_slow_command_progress_leaves_in_time(void) {
+    static fake_tcp_t t;
+    fake_init(&t, 1000u);
+    char expected[64] = "";
+    for(uint32_t ms = 1000u; ms < 3000u; ms += 200u) {
+        fake_write(&t, ".", ms, true);
+        strcat(expected, ".");
+    }
+    fake_write(&t, "\r\nping: 10 gesendet\r\n", 3000u, true);
+    strcat(expected, "\r\nping: 10 gesendet\r\n");
+    uint32_t during = t.segments;
+    fake_flush(&t, 3000u); /* line end */
+
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, during);
+    TEST_ASSERT_LESS_OR_EQUAL_UINT32(2000u / CADS_CLI_PROGRESS_FLUSH_MS, during);
+    for(uint32_t i = 1u; i < during; i++) {
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(CADS_CLI_PROGRESS_FLUSH_MS, t.segment_ms[i] - t.segment_ms[i - 1u]);
+    }
+    TEST_ASSERT_LESS_THAN_UINT32(1000u, t.oldest_wait_ms); /* well inside rnlab.py's 1 s */
+    TEST_ASSERT_EQUAL_size_t(strlen(expected), t.sent_len);
+    TEST_ASSERT_EQUAL_MEMORY(expected, t.sent, t.sent_len);
+}
+
+/* `lab info` shape: 20 lines (460 B, under half the queue) within 10 ms stay
+ * one segment, sent at the line end - the property 6585812 introduced against the RX-ring ACK burst. */
+static void test_fast_command_stays_one_segment(void) {
+    static fake_tcp_t t;
+    fake_init(&t, 5000u);
+    for(uint32_t i = 0; i < 20u; i++) fake_write(&t, "ip:     192.168.33.99\r\n", 5000u + i / 2u, true);
+    TEST_ASSERT_EQUAL_UINT32(0u, t.segments);
+    fake_flush(&t, 5010u);
+    TEST_ASSERT_EQUAL_UINT32(1u, t.segments);
+    TEST_ASSERT_EQUAL_size_t(20u * 23u, t.sent_len);
+}
+
+static void test_flush_due_rules(void) {
+    char storage[16];
+    cads_cli_outq_t q;
+    cads_cli_outq_init(&q, storage, sizeof(storage));
+    TEST_ASSERT_FALSE(cads_cli_outq_flush_due(&q, false, 0u, 0u)); /* nothing queued */
+    cads_cli_outq_push(&q, "ab", 2u);
+    TEST_ASSERT_TRUE(cads_cli_outq_flush_due(&q, false, 0u, 0u));   /* banner, outside a command */
+    TEST_ASSERT_FALSE(cads_cli_outq_flush_due(&q, true, 249u, 0u));
+    TEST_ASSERT_TRUE(cads_cli_outq_flush_due(&q, true, 250u, 0u));
+    TEST_ASSERT_TRUE(cads_cli_outq_flush_due(&q, true, 5u, 0xFFFFFF00u)); /* across the tick wrap */
+    cads_cli_outq_push(&q, "cdefgh", 6u); /* 8 of 16: half full */
+    TEST_ASSERT_TRUE(cads_cli_outq_flush_due(&q, true, 1u, 0u));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_plain_text_passes);
@@ -195,5 +292,8 @@ int main(void) {
     RUN_TEST(test_push_queues_without_executing);
     RUN_TEST(test_push_refuses_without_room_and_keeps_state);
     RUN_TEST(test_bytes_arriving_during_a_command_run_after_it);
+    RUN_TEST(test_slow_command_progress_leaves_in_time);
+    RUN_TEST(test_fast_command_stays_one_segment);
+    RUN_TEST(test_flush_due_rules);
     return UNITY_END();
 }
