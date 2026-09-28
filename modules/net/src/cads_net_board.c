@@ -14,6 +14,8 @@
  */
 
 #include "cads/net/net.h"
+#include "cads/net/lwip_hooks.h"
+#include "cads/net/rand.h"
 
 #include <string.h>
 
@@ -103,17 +105,40 @@ static err_t cads_netif_init(struct netif* netif) {
     return ERR_OK;
 }
 
-/* xorshift32 (Marsaglia) - arch/cc.h's LWIP_RAND() source. Must never be
- * seeded to 0 (the sequence would stay 0 forever), hence the `| 1u` below. */
-static uint32_t cads_lwip_rand_state = 1u;
+/* arch/cc.h's LWIP_RAND() source - hardware RNG per number, counted
+ * fallback otherwise. See cads/net/rand.h for why (RFC 5452) and how. */
+static cads_net_rand_t cads_net_rand;
+
+static bool cads_net_rand_hw(uint32_t* word) {
+    return cads_hal_rng_bytes((uint8_t*)word, sizeof(*word));
+}
 
 uint32_t cads_lwip_rand(void) {
-    uint32_t x = cads_lwip_rand_state;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    cads_lwip_rand_state = x;
-    return x;
+    return cads_net_rand_next(&cads_net_rand, cads_net_rand_hw);
+}
+
+/* Key of the RFC 6528 ISN hash - drawn once, at cads_net_init(). */
+static uint32_t cads_net_isn_secret;
+
+u32_t cads_lwip_tcp_isn(const ip_addr_t* local_ip, u16_t local_port, const ip_addr_t* remote_ip, u16_t remote_port) {
+    return cads_net_tcp_isn(cads_net_isn_secret, ip4_addr_get_u32(ip_2_ip4(local_ip)), local_port,
+        ip4_addr_get_u32(ip_2_ip4(remote_ip)), remote_port, cads_hal_ticks_ms());
+}
+
+/* Fallback seed: hardware RNG if it works at all; otherwise the 96-bit
+ * device unique ID (differs per chip, constant per chip) mixed with the
+ * SysTick down-counter and the tick count (differ per boot by however long
+ * the boot path took). Weak, but only ever used after a hardware RNG error,
+ * which is counted and shown. No ADC noise: this firmware has no ADC driver,
+ * and adding one only for a fallback of a fallback is not worth it. */
+static void cads_net_rand_init(void) {
+    uint32_t seed;
+    if(!cads_net_rand_hw(&seed)) {
+        const volatile uint32_t* uid = (const volatile uint32_t*)UID_BASE;
+        seed = uid[0] ^ (uid[1] << 11) ^ (uid[2] << 22) ^ SysTick->VAL ^ (cads_hal_ticks_ms() << 16);
+    }
+    cads_net_rand_seed(&cads_net_rand, seed);
+    cads_net_isn_secret = cads_lwip_rand();
 }
 
 void cads_net_init(const uint8_t mac_address[6]) {
@@ -127,7 +152,7 @@ void cads_net_init(const uint8_t mac_address[6]) {
     initialised = true;
 
     memcpy(cads_net_mac, mac_address, sizeof(cads_net_mac));
-    cads_lwip_rand_state = cads_hal_ticks_ms() | 1u;
+    cads_net_rand_init();
 
     cads_hal_eth_mdio_init();
 
@@ -274,6 +299,7 @@ void cads_net_status(cads_net_status_t* status) {
     status->rx_frames = cads_net_rx_frames;
     status->tx_frames = cads_net_tx_frames;
     status->rx_dropped = cads_net_rx_dropped;
+    status->rand_fallbacks = cads_net_rand.fallbacks;
     if(cads_net_link_was_up) {
         status->ip_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(&cads_netif)));
         status->gw_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_gw(&cads_netif)));
