@@ -34,11 +34,16 @@
 #   --list          only show which solution branches exist
 # Exit 0 = everything green. Used by .github/workflows/integration.yml.
 # Commands can be overridden (CI, tests): INTEG_FW_BUILD, INTEG_FW_BUILD_MAX
-# (the max-TCP build; empty = skip it), INTEG_HOST_BUILD.
+# (the max-TCP build; empty = skip it), INTEG_HOST_BUILD; INTEG_FW_REPO picks
+# the repository. Self-test: python3 tests/scripts/test_integrate_solutions.py
 # The lab's private docs repo has the same check plus a hardware smoke test.
 set -euo pipefail
 
-FW="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && git rev-parse --show-toplevel)"
+# The repo to integrate: this script's own, unless INTEG_FW_REPO names another
+# (the lab's private wrapper runs a copy of this file from outside any clone;
+# the self-test points it at a throwaway repo).
+FW="${INTEG_FW_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && git rev-parse --show-toplevel)}"
+FW="$(cd "$FW" && pwd)"
 WT=""
 QUICK=0
 LIST=0
