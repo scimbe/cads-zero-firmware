@@ -173,19 +173,41 @@ genullt und ist **nie** DMA-Ziel). In CCM sind auf `praktikum/start` noch rund
 maximalen TCP-Optionen noch rund 24 KB. Lokale Variablen landen auf dem Stack des Konsolen-Tasks (4 KB, CCM):
 einzelne Puffer über ~1 KB dort vermeiden.
 
-## TCP-Fenster für L08/L09
+## TCP-Parameter für L08/L09
 
 | CMake-Option | Default (wie main) | Bereich | lwIP |
 |---|---:|---|---|
-| `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..16 | `TCP_WND = n * TCP_MSS` (MSS 536 B) |
+| `CADS_RNLAB_TCP_MSS` | 536 | 536 oder 1460 | `TCP_MSS` (1460 = MTU 1500 − 40 B IP/TCP) |
+| `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..16 | `TCP_WND = n * TCP_MSS` |
 | `CADS_RNLAB_TCP_SND_BUF_MSS` | 4 | 2..8 | `TCP_SND_BUF = n * TCP_MSS` |
 
 ```bash
-bash scripts/build.sh Debug -DCADS_RNLAB_TCP_WND_MSS=16 -DCADS_RNLAB_TCP_SND_BUF_MSS=8
+bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=16 -DCADS_RNLAB_TCP_SND_BUF_MSS=8
 ```
 
-Mitwachsende Pools (`PBUF_POOL_SIZE`, `MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in
-`lwipopts.h` daraus abgeleitet und liegen in CCM. Die SRAM-Reserve ändert sich
-dadurch nicht; auch bei 16/8 bleibt sie bei 24 768 B (CCM dann 36,1 KB belegt).
-Die Option gilt für den ganzen Build-Ordner, also nach dem Test wieder auf den
-Default zurücksetzen (`-DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4`).
+Mitwachsende Pools (`PBUF_POOL_SIZE`, `PBUF_POOL_BUFSIZE` über `TCP_MSS`,
+`MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in `lwipopts.h` daraus abgeleitet und
+liegen in CCM. Die SRAM-Reserve bleibt in jeder Kombination bei 24 768 B;
+es wächst nur die CCM-Belegung (Grenze: 60 KB, darüber liegt der 4-KB-Hauptstack):
+
+| MSS / WND / SND_BUF | CCM belegt | CCM frei für Lektionen |
+|---|---:|---:|
+| 536 / 8 / 4 (Default) | 29,0 KB | ~31 KB |
+| 536 / 16 / 8 | 36,1 KB | ~24 KB |
+| 1460 / 8 / 4 | 41,6 KB | ~18 KB |
+| 1460 / 16 / 8 | 59,6 KB | **~0,4 KB** |
+
+Die Kombination 1460/16/8 ist nur für die Messung in L08/L09 gedacht: Sie füllt
+das CCM fast vollständig, andere Lektionen dürfen dann keine `RNLAB_CCM`-Puffer
+mehr anlegen. Die Optionen gelten für den ganzen Build-Ordner, danach also
+wieder auf die Defaults zurücksetzen
+(`-DCADS_RNLAB_TCP_MSS=536 -DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4`).
+
+## Offene Frage an den Maintainer
+
+Das Linkerskript (`targets/itsboard/linker/cads_itsboard.ld`) verlangt
+`__cads_heap_size >= 48K` und nennt als Grund „lwIP and the GUI“. Soweit
+erkennbar nutzt aber nichts diesen Bereich: Es gibt kein `malloc`, lwIP
+arbeitet mit statischen Pools (auf diesem Branch im CCM), und die GUI hat
+einen statischen Framebuffer. Wäre der Boden überflüssig, stünden weitere
+~48 KB SRAM zur Verfügung. Auf `praktikum/start` bewusst **nicht** geändert.

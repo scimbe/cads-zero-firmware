@@ -60,12 +60,21 @@
 #define CADS_RNLAB_TCP_SND_BUF_MSS  4
 #endif
 
+/* Segment size (CMake CADS_RNLAB_TCP_MSS, 536 or 1460). 536 is lwIP's own
+ * default and what this firmware always ran with; 1460 is what a 1500-byte
+ * Ethernet MTU allows (L08/L09 measure both). PBUF_POOL_BUFSIZE follows it
+ * automatically (lwIP's default is TCP_MSS + headers), so a 1460 build has
+ * ~1.5 KB pool buffers instead of ~600 B - in CCM with the lab. */
+#ifndef CADS_RNLAB_TCP_MSS
+#define CADS_RNLAB_TCP_MSS          536
+#endif
+#define TCP_MSS                     CADS_RNLAB_TCP_MSS
+
 /* 4 KB until the send buffer outgrows it: TCP copies unsent/unacked data
  * into PBUF_RAM from this heap, so it needs the whole TCP_SND_BUF plus the
- * same ~2 KB of headroom the default leaves for DHCP/ARP/ICMP. TCP_MSS is
- * lwIP's default 536 here (not yet defined at this point). */
-#if CADS_RNLAB_TCP_SND_BUF_MSS > 4
-#define MEM_SIZE                    ((CADS_RNLAB_TCP_SND_BUF_MSS * 536) + 2048)
+ * same ~2 KB of headroom the default leaves for DHCP/ARP/ICMP. */
+#if (CADS_RNLAB_TCP_SND_BUF_MSS * CADS_RNLAB_TCP_MSS) + 2048 > 4096
+#define MEM_SIZE                    ((CADS_RNLAB_TCP_SND_BUF_MSS * CADS_RNLAB_TCP_MSS) + 2048)
 #else
 #define MEM_SIZE                    (4 * 1024)
 #endif
