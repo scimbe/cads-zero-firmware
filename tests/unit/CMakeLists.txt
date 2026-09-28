@@ -238,6 +238,22 @@ if(CADS_APP_RNLAB)
     endforeach()
 endif()
 
+# --- lwIP DHCP (vendored, patched) ---------------------------------------------
+# The real lwIP core on the host - only here, the simulator itself has no
+# stack - to test lib/patches/lwip-dhcp-nak-backoff.patch (applied by
+# modules/net/CMakeLists.txt for both targets) against synthetic OFFER/NAK/ACK
+# packets. Same lwipopts.h as the board; lwIP's own warnings are not ours to
+# fix, so no cads_flags on the library.
+set(LWIP_DIR ${CADS_ROOT}/lib/lwip)
+include(${LWIP_DIR}/src/Filelists.cmake)
+add_library(cads_lwip_host STATIC ${lwipcore_SRCS} ${lwipcore4_SRCS} ${LWIP_DIR}/src/netif/ethernet.c)
+target_include_directories(cads_lwip_host PUBLIC
+    ${CADS_ROOT}/modules/net/include
+    ${LWIP_DIR}/src/include
+    ${CADS_ROOT}/core)
+cads_add_unit_test(test_lwip_dhcp_nak test_lwip_dhcp_nak.c)
+target_link_libraries(test_lwip_dhcp_nak PRIVATE cads_lwip_host cads_fake_hal)
+
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)
