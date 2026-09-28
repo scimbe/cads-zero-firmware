@@ -13,20 +13,58 @@ const char* rnlab_l11_slug(void) {
 /* WMO codes (open-meteo documentation, "WMO Weather interpretation codes")  */
 /* ------------------------------------------------------------------------- */
 
+typedef struct {
+    uint8_t code;
+    rnlab_wx_icon_t icon;
+    const char* text;
+} rnlab_wx_wmo_t;
+
+static const rnlab_wx_wmo_t rnlab_wx_wmo_table[] = {
+    {0, RNLAB_WX_ICON_CLEAR, "Klar"},
+    {1, RNLAB_WX_ICON_PARTLY, "Ueberwiegend klar"},
+    {2, RNLAB_WX_ICON_PARTLY, "Teilweise bewoelkt"},
+    {3, RNLAB_WX_ICON_CLOUDY, "Bedeckt"},
+    {45, RNLAB_WX_ICON_FOG, "Nebel"},
+    {48, RNLAB_WX_ICON_FOG, "Reifnebel"},
+    {51, RNLAB_WX_ICON_DRIZZLE, "Leichter Niesel"},
+    {53, RNLAB_WX_ICON_DRIZZLE, "Niesel"},
+    {55, RNLAB_WX_ICON_DRIZZLE, "Starker Niesel"},
+    {56, RNLAB_WX_ICON_DRIZZLE, "Gefrierender Niesel"},
+    {57, RNLAB_WX_ICON_DRIZZLE, "Gefrierender Niesel"},
+    {61, RNLAB_WX_ICON_RAIN, "Leichter Regen"},
+    {63, RNLAB_WX_ICON_RAIN, "Regen"},
+    {65, RNLAB_WX_ICON_RAIN, "Starker Regen"},
+    {66, RNLAB_WX_ICON_RAIN, "Gefrierender Regen"},
+    {67, RNLAB_WX_ICON_RAIN, "Gefrierender Regen"},
+    {71, RNLAB_WX_ICON_SNOW, "Leichter Schneefall"},
+    {73, RNLAB_WX_ICON_SNOW, "Schneefall"},
+    {75, RNLAB_WX_ICON_SNOW, "Starker Schneefall"},
+    {77, RNLAB_WX_ICON_SNOW, "Schneegriesel"},
+    {80, RNLAB_WX_ICON_RAIN, "Leichte Regenschauer"},
+    {81, RNLAB_WX_ICON_RAIN, "Regenschauer"},
+    {82, RNLAB_WX_ICON_RAIN, "Heftige Regenschauer"},
+    {85, RNLAB_WX_ICON_SNOW, "Schneeschauer"},
+    {86, RNLAB_WX_ICON_SNOW, "Starke Schneeschauer"},
+    {95, RNLAB_WX_ICON_THUNDER, "Gewitter"},
+    {96, RNLAB_WX_ICON_THUNDER, "Gewitter mit Hagel"},
+    {99, RNLAB_WX_ICON_THUNDER, "Gewitter mit Hagel"},
+};
+
+static const rnlab_wx_wmo_t* rnlab_wx_wmo_find(int32_t code) {
+    for(size_t i = 0; i < sizeof(rnlab_wx_wmo_table) / sizeof(rnlab_wx_wmo_table[0]); i++) {
+        if((int32_t)rnlab_wx_wmo_table[i].code == code) return &rnlab_wx_wmo_table[i];
+    }
+    return NULL;
+}
+
 const char* rnlab_wx_wmo_text(int32_t code) {
-    /* TODO(L11): WMO-Code -> kurzer deutscher Text (ASCII, <= 23 Zeichen),
-     * Tabelle in der open-meteo-Doku ("WMO Weather interpretation codes"):
-     * 0 Klar, 1 Ueberwiegend klar, 2 Teilweise bewoelkt, 3 Bedeckt, 45/48
-     * Nebel, 51-57 Niesel, 61-67 Regen, 71-77 Schnee, 80-82 Schauer, 85/86
-     * Schneeschauer, 95-99 Gewitter; alles andere "Unbekannt". */
-    (void)code;
-    return "Unbekannt";
+    const rnlab_wx_wmo_t* e = rnlab_wx_wmo_find(code);
+    return e != NULL ? e->text : "Unbekannt";
 }
 
 rnlab_wx_icon_t rnlab_wx_wmo_icon(int32_t code) {
-    /* TODO(L11): dieselben Gruppen -> rnlab_wx_icon_t. */
-    (void)code;
-    return RNLAB_WX_ICON_UNKNOWN;
+    const rnlab_wx_wmo_t* e = rnlab_wx_wmo_find(code);
+    return e != NULL ? e->icon : RNLAB_WX_ICON_UNKNOWN;
 }
 
 /* ------------------------------------------------------------------------- */

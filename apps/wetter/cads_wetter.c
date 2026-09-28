@@ -19,6 +19,32 @@
  * means (only changed fields redrawn, one per frame, nothing while idle).
  */
 
+/*
+ * The layout, given: tests/unit/test_wetter_app.c checks every blit against
+ * exactly these rectangles (relative to the content area, 480 x 254). Each
+ * field's draw code must paint its whole rectangle itself (background
+ * first), so a field can be redrawn alone.
+ */
+typedef enum {
+    WX_FIELD_TEMP = 0, /* "23.2 C", font24                                 */
+    WX_FIELD_COND,     /* 96x96 icon at x=16 + condition text at (128,56)  */
+    WX_FIELD_HUM,      /* "54 %"                                           */
+    WX_FIELD_WIND,     /* "4.1 km/h"                                       */
+    WX_FIELD_STATUS,   /* status line, font12, colour by level             */
+    WX_FIELD_SOURCE,   /* "host:port" - changes with `lab 11 server`       */
+    WX_FIELD_COUNT,
+} wx_field_t;
+
+static const cads_rect_t wx_field_rects[WX_FIELD_COUNT] = {
+    [WX_FIELD_TEMP] = {128, 12, 200, 36},
+    [WX_FIELD_COND] = {16, 8, 448, 96}, /* contains TEMP - redraw TEMP after it */
+    [WX_FIELD_HUM] = {144, 120, 160, 24},
+    [WX_FIELD_WIND] = {144, 152, 160, 24},
+    [WX_FIELD_STATUS] = {16, 216, 448, 20},
+    [WX_FIELD_SOURCE] = {144, 184, 320, 24},
+};
+/* Labels "Luftfeuchte", "Wind", "Quelle" at x=16, y=120/152/184 (static). */
+
 typedef struct {
     cads_view_t view;
     bool active; /* view is current */
@@ -37,7 +63,13 @@ static void cads_wetter_draw(cads_rect_t area, void* context) {
      * Wind, Quelle, Statuszeile - aus dem View-Modell (rnlab_wx_view()).
      * Jedes Feld in einem eigenen Rechteck, das es komplett selbst uebermalt,
      * damit es allein neu gezeichnet werden kann. */
-    cads_rect_t box = {area.x, (int16_t)(area.y + 100), area.width, 24};
+    /* Placeholder: the field frames of the layout, and a hint. */
+    for(int f = 0; f < WX_FIELD_COUNT; f++) {
+        const cads_rect_t* r = &wx_field_rects[f];
+        cads_canvas_draw_rect((int16_t)(area.x + r->x), (int16_t)(area.y + r->y), r->width, r->height,
+                              CadsColorGrayDark);
+    }
+    cads_rect_t box = {area.x, (int16_t)(area.y + 60), area.width, 24};
     cads_canvas_draw_text_aligned(box, CadsAlignCenter, &cads_font16, "Wetter-App: TODO(L11)",
                                   CadsColorGray);
 }
