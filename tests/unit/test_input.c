@@ -239,23 +239,10 @@ static void test_a_second_press_arms_the_long_press_again(void) {
 }
 
 static void test_repeat_timing_survives_the_tick_counter_wrapping(void) {
-    /*
-     * KNOWN DEFECT in services/input/cads_input.c, ignored so the suite stays
-     * green until it is fixed. Enable this test with the fix.
-     *
-     * The debounce compares durations (now - since_ms), which is wrap safe.
-     * The repeat compares absolute stamps (now >= next_repeat), which is not:
-     * with the press at 0xFFFFFF00, next_repeat becomes 0x0000008F and every
-     * subsequent tick is "past" it, so the key repeats on every poll from the
-     * moment it is pressed. cads_hal_ticks_ms() is a uint32_t millisecond
-     * counter, so this happens 49.7 days after boot - well inside the uptime
-     * of a device that is meant to sit on a bench.
-     *
-     * The fix is the same shape as the debounce: keep last_repeat and compare
-     * (now - last_repeat) >= CADS_INPUT_REPEAT_PERIOD_MS.
-     */
-    TEST_IGNORE_MESSAGE("known defect: repeat uses an absolute deadline that wraps at 49.7 days");
-
+    /* The repeat deadline is compared as a signed difference, like the
+     * debounce: with the press at 0xFFFFFF00, next_repeat wraps to
+     * 0x0000008F, and a plain `now >= next_repeat` repeated the key on every
+     * poll from the moment it was pressed - 49.7 days after boot. */
     const uint32_t base = 0xFFFFFF00u;
     press_at(0u, base, base + 20u);
     TEST_ASSERT_EQUAL_UINT32(1u, count_of(CadsInputPress));

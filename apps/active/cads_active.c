@@ -37,6 +37,7 @@
 #include "cads/netx/rawio.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
+#include "cads_hal.h"
 #include "cads_menu.h"
 #include "cads_softkeys.h"
 #include "cads_view.h"
@@ -317,7 +318,11 @@ static void cads_active_tool_draw(cads_rect_t area, void* context) {
 static void cads_active_engine_start(void) {
     s_session.frames_sent = 0u;
     s_session.frames_seen = 0u;
-    s_session.next_tick_ms = 0u; /* fire on the first tick */
+    /* Fire on the first tick. Not 0: the engines test the signed difference
+     * (now - next), which is negative for a deadline of 0 once uptime passes
+     * 2^31 ms (24.8 days), and the engine would then stay silent until the
+     * counter wraps at 49.7 days. */
+    s_session.next_tick_ms = cads_hal_ticks_ms();
 
     const cads_active_tool_meta_t* meta = cads_active_meta();
     if(meta->phase != NULL) {
