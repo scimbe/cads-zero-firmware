@@ -50,7 +50,7 @@ target_link_libraries(cads_rnlab_hooks PRIVATE cads_flags)
 
 add_library(cads_app_rnlab STATIC src/rnlab.c)
 if(CADS_TARGET STREQUAL "itsboard")
-    target_sources(cads_app_rnlab PRIVATE ${RNLAB_BOARD_SOURCES})
+    target_sources(cads_app_rnlab PRIVATE ${RNLAB_BOARD_SOURCES} src/rnlab_selftest_board.c)
 else()
     target_sources(cads_app_rnlab PRIVATE src/rnlab_lessons_sim.c)
 endif()

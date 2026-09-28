@@ -9,6 +9,12 @@
  */
 
 #include "rnlab/rnlab_lesson.h"
+#include "rnlab_selftest.h"
+
+/* `lab selftest` needs lwIP's timers, which the simulator does not have. */
+void rnlab_selftest(cads_cli_session_t* session) {
+    cads_cli_write(session, "selftest: nur auf dem Board verfuegbar\r\n");
+}
 
 #define RNLAB_SIM_LESSON(nn)                                                          \
     void rnlab_l##nn##_command(cads_cli_session_t* session, int argc, char* argv[]) { \

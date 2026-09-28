@@ -244,6 +244,19 @@
 #endif
 #define LWIP_DEBUG                  0
 
+/* Timer headroom for the lessons (sys_timeout(): L04, L08's 10 ms tick, L09's
+ * 1 ms tick, L10/L11 refresh). lwIP's default pool holds exactly its own
+ * cyclic timers plus PPP's slots, so a lesson timer only fits while PPP is
+ * idle - and a failed sys_timeout() is an LWIP_PLATFORM_ASSERT, i.e.
+ * cads_hal_panic(). Six extra slots cover the per-lesson budget in
+ * apps/rnlab/README.md ("Timer"); `lab selftest` holds all six at once.
+ * Expanded where lwIP uses it (memp_std.h), after opt.h has defined
+ * LWIP_NUM_SYS_TIMEOUT_INTERNAL. */
+#ifdef CADS_APP_RNLAB_ENABLED
+#define RNLAB_LESSON_TIMEOUTS       6
+#define MEMP_NUM_SYS_TIMEOUT        (LWIP_NUM_SYS_TIMEOUT_INTERNAL + RNLAB_LESSON_TIMEOUTS)
+#endif
+
 /* The lab's IPv4 input hook (cads/net/rnlab_hooks.h) - every received IPv4
  * packet passes rnlab_hook_ip4_input() first; its weak default returns 0
  * ("not consumed"). Same define-visibility rule as CADS_RNLAB_LWIP_STATS. */

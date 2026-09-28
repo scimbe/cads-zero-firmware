@@ -17,6 +17,7 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 | `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand, RX/TX-Frames, Uptime |
 | `lab net static [ip mask gw]` | statische Adresse (ohne Argumente: Default oben) |
 | `lab net dhcp` | Adresse per DHCP beziehen (Setup S2) |
+| `lab selftest` | Zusagen des Rahmens auf dem Board prüfen (Timer-Reserve) |
 | `lab NN <cmd> [args]` | Befehl der Lektion `NN` (`01` … `11`) |
 
 Die Adresse wird nur im RAM gehalten; nach einem Reset gilt wieder der
@@ -96,6 +97,28 @@ noch lwIP einbinden. Die Board-Datei `lNN_<slug>.c` wird nur für das Board
 übersetzt (im Simulator antwortet `lab NN` mit „nur auf dem Board
 verfügbar“).
 
+## Timer (`sys_timeout`)
+
+lwIPs Timer-Pool ist nur für lwIPs eigene zyklische Timer bemessen; ein
+`sys_timeout()` ohne freien Platz endet in einer Assertion, also einem
+Absturz (`cads_hal_panic`). Mit `CADS_APP_RNLAB` hat der Pool
+**6 zusätzliche Plätze** (`RNLAB_LESSON_TIMEOUTS`, `lwipopts.h`). Jede Lektion
+hält gleichzeitig höchstens so viele eigene Timer:
+
+| Lektion | max. gleichzeitige `sys_timeout()` |
+|---|---:|
+| L01 … L03, L05 … L07 | 0 (bei Bedarf 1 aus der Reserve anmelden) |
+| L04 icmp | 1 |
+| L08 tcp-flusskontrolle | 1 (10-ms-Tick) |
+| L09 congestion-control | 1 (1-ms-Tick) |
+| L10 http-wetter-1 | 1 |
+| L11 wetter-app | 2 |
+| **Summe** | **6** |
+
+Ein Timer, der sich im Callback selbst neu setzt, belegt dabei nur einen Platz.
+`lab selftest` belegt alle 6 gleichzeitig zusätzlich zu lwIPs eigenen Timern
+und gibt sie wieder frei; kommt die Zeile „… - OK“, reicht der Pool.
+
 ## Hook-Punkte im Netztreiber
 
 Der Netztreiber ruft fünf Hook-Punkte auf (`modules/net/include/cads/net/rnlab_hooks.h`).
@@ -169,7 +192,7 @@ dann entsprechend Reserve.
 
 **Richtmaß je Lektion** (SRAM, statisch). Die Werte summieren sich, weil ein
 Studierenden-Fork alle Lektionen nacheinander enthält. Sie sind so bemessen,
-dass sie auch in der größten TCP-Konfiguration (1460/32/16, 19,9 KB Reserve)
+dass sie auch in der größten TCP-Konfiguration (1460/32/16, 19,3 KB Reserve)
 noch passen:
 
 | Lektion | Richtmaß | Wofür typischerweise |
@@ -220,15 +243,15 @@ solange beides zusammen ins CCM passt; sonst wandern die Pools ins SRAM
 | 536 / 16 / 8 | CCM | 73 824 B | 36,9 KB | 23,1 KB |
 | 536 / 32 / 16 | CCM | 73 824 B | 51,2 KB | 8,8 KB |
 | 1460 / 8 / 4 | CCM | 73 824 B | 43,0 KB | 17,0 KB |
-| 1460 / 16 / 8 | SRAM | 45 024 B | 31,4 KB | 28,6 KB |
-| 1460 / 32 / 16 | SRAM | 19 872 B | 42,8 KB | 17,1 KB |
+| 1460 / 16 / 8 | SRAM | 44 928 B | 31,4 KB | 28,6 KB |
+| 1460 / 32 / 16 | SRAM | 19 776 B | 42,8 KB | 17,1 KB |
 
 ¹ 64 KB minus belegt minus 4 KB Hauptstack.
 
 **RX-Ring:** Jeder Deskriptor über 8 kostet 1 536 B SRAM-Reserve. Messwerte:
 536/8/4 mit RX 8 hat 73 824 B Reserve, 536/32/16 mit RX 32 hat 36 576 B,
-1460/16/8 mit RX 32 hat 7 808 B. **1460/32/16 verträgt höchstens RX 20**
-(1 280 B Reserve; ab RX 21 läuft das SRAM über, der Linker bricht ab).
+1460/16/8 mit RX 32 hat 7 680 B. **1460/32/16 verträgt höchstens RX 20**
+(1 152 B Reserve; ab RX 21 läuft das SRAM über, der Linker bricht ab).
 Framebuffer (75 KB), Display-Stage (15 KB, DMA) und der PBUF_POOL (50 KB bei
 33 × 1 460 B) lassen daneben keinen Platz. Solche Kombinationen sind reine
 L08/L09-Messbuilds, in denen die Lektions-Richtmaße oben nicht mehr passen.

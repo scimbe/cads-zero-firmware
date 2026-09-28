@@ -18,6 +18,7 @@
 #include "cads_hal.h"
 #include "rnlab/rnlab_lesson.h"
 #include "rnlab_args_logic.h"
+#include "rnlab_selftest.h"
 
 #define RNLAB_IP4(a, b, c, d) \
     (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
@@ -47,6 +48,7 @@ static void rnlab_cmd_help(cads_cli_session_t* session) {
         "lab info                     IP/Maske/GW/DNS/MAC, Link, DHCP, Zaehler, Uptime\r\n"
         "lab net static [ip mask gw]  statische Adresse (ohne Argumente: 192.168.33.99/24 gw .1)\r\n"
         "lab net dhcp                 Adresse per DHCP beziehen\r\n"
+        "lab selftest                 Zusagen des Rahmens pruefen (Timer-Reserve)\r\n"
         "lab NN <cmd> [args]          Lektion NN (01..11), z.B. lab 01 help\r\n");
 }
 
@@ -153,6 +155,10 @@ static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
     }
     if(cads_str_equal(argv[0], "info")) {
         rnlab_cmd_info(session);
+        return;
+    }
+    if(cads_str_equal(argv[0], "selftest")) {
+        rnlab_selftest(session);
         return;
     }
     if(cads_str_equal(argv[0], "net")) {
