@@ -41,6 +41,9 @@
 #ifdef CADS_APP_MARAUDER_ENABLED
 #include "../marauder/cads_marauder.h"
 #endif
+#ifdef CADS_APP_WETTER_ENABLED
+#include "../wetter/cads_wetter.h"
+#endif
 
 typedef struct {
     cads_view_t view;
@@ -75,6 +78,10 @@ static const cads_menu_item_t cads_menu_app_items[] = {
     {"iperf Server", NULL, CADS_VIEW_ID_IPERF_SERVER},
     {"iperf Client", NULL, CADS_VIEW_ID_IPERF_CLIENT},
 #endif
+#endif
+#ifdef CADS_APP_WETTER_ENABLED
+    /* Lab L11's weather station - an app of its own, not a network tool. */
+    {"Wetter", "open-meteo", CADS_VIEW_ID_WETTER},
 #endif
 #ifdef CADS_APP_ACTIVE_ENABLED
     /* Top-level, not under the Network submenu: this is an offensive/attack
@@ -163,6 +170,9 @@ void cads_menu_app_init(cads_view_dispatcher_t* dispatcher) {
 #endif
 #ifdef CADS_APP_MARAUDER_ENABLED
     cads_marauder_init(dispatcher);
+#endif
+#ifdef CADS_APP_WETTER_ENABLED
+    cads_wetter_init(dispatcher);
 #endif
 
     s_menu_app.dispatcher = dispatcher;

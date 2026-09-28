@@ -140,6 +140,14 @@ option(CADS_APP_MARAUDER "Include the ESP32Marauder co-processor CLI bridge" OFF
 # hook points in modules/net (cads/net/rnlab_hooks.h). OFF builds none of it
 # and leaves the net driver's RX/TX path exactly as before.
 option(CADS_APP_RNLAB "Include the computer-networks lab framework (apps/rnlab)" ON)
+# The weather station of lab L11 (apps/wetter): an apps-menu entry that
+# fetches current weather over HTTP. Built on apps/rnlab (L10's HTTP client,
+# L11's controller logic), so it follows CADS_APP_RNLAB down.
+option(CADS_APP_WETTER "Include the weather station app (apps/wetter, lab L11)" ON)
+if(CADS_APP_WETTER AND NOT CADS_APP_RNLAB)
+    message(STATUS "CADS_APP_WETTER needs CADS_APP_RNLAB - weather app left out")
+    set(CADS_APP_WETTER OFF)
+endif()
 # lwIP's stats counters (lwip/stats.h) for the lab - RAM-only cost, checked
 # against scripts/check_ram_budget.py. Only meaningful with CADS_APP_RNLAB.
 option(CADS_RNLAB_LWIP_STATS "Enable lwIP stats counters for apps/rnlab" ON)
@@ -220,6 +228,9 @@ if(CADS_APP_MARAUDER)
 endif()
 if(CADS_APP_RNLAB)
     target_compile_definitions(cads_flags INTERFACE CADS_APP_RNLAB_ENABLED)
+endif()
+if(CADS_APP_WETTER)
+    target_compile_definitions(cads_flags INTERFACE CADS_APP_WETTER_ENABLED)
 endif()
 
 # --- modules -----------------------------------------------------------------
@@ -376,6 +387,9 @@ endif()
 if(CADS_APP_RNLAB)
     add_subdirectory(apps/rnlab)
 endif()
+if(CADS_APP_WETTER)
+    add_subdirectory(apps/wetter)
+endif()
 add_subdirectory(apps/menu)
 
 add_library(cads_apps STATIC
@@ -451,6 +465,10 @@ if(CADS_APP_RNLAB)
     # explorer.c/explorer_app_demo.c call rnlab_init()/rnlab_poll()/
     # rnlab_serial_*() - network up at boot and `lab` on the serial console.
     target_link_libraries(cads_apps PUBLIC cads_app_rnlab)
+endif()
+if(CADS_APP_WETTER)
+    # explorer_app_demo.c calls cads_wetter_tick() every loop pass.
+    target_link_libraries(cads_apps PUBLIC cads_app_wetter)
 endif()
 if(CADS_APP_SETTINGS)
     # explorer_app_demo.c calls cads_touch_calib_tick() straight into

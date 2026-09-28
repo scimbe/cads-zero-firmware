@@ -235,6 +235,15 @@ if(CADS_APP_RNLAB)
     endforeach()
 endif()
 
+# apps/wetter (lab L11's GUI app) through the real compositor on the fake
+# HAL: asserts the PA7 redraw budget (only changed fields, one per frame).
+# Same label as the L11 logic tests, so the student stub may be red here.
+if(CADS_APP_WETTER)
+    cads_add_unit_test(test_wetter_app test_wetter_app.c)
+    target_link_libraries(test_wetter_app PRIVATE cads_app_wetter cads_fake_hal)
+    set_tests_properties(test_wetter_app PROPERTIES LABELS rnlab-L11)
+endif()
+
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)
