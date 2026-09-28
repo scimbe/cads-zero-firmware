@@ -187,7 +187,7 @@ void cads_dialog_draw(cads_dialog_t* dialog) {
     for(size_t i = 0u; i < dialog->line_count; i++) {
         cads_text_draw_line(
             (int16_t)(area.x + CADS_DIALOG_PAD), y, cads_dialog_body_font(), dialog->message,
-            dialog->lines[i], CadsColorWhite);
+            dialog->lines[i], CadsColorGrayDark);
         y = (int16_t)(y + cads_dialog_body_font()->line_height);
     }
 
