@@ -226,6 +226,11 @@ if(CADS_APP_RNLAB)
     target_link_libraries(test_rnlab_args PRIVATE cads_rnlab_logic)
     set_tests_properties(test_rnlab_args PROPERTIES LABELS rnlab)
 
+    # `lab key` through the real dispatcher on the serial session.
+    cads_add_unit_test(test_rnlab_key test_rnlab_key.c)
+    target_link_libraries(test_rnlab_key PRIVATE cads_app_rnlab cads_fake_hal)
+    set_tests_properties(test_rnlab_key PROPERTIES LABELS rnlab)
+
     # The hook dispatcher with two lessons' hooks linked at once.
     cads_add_unit_test(test_rnlab_hooks test_rnlab_hooks.c)
     target_link_libraries(test_rnlab_hooks PRIVATE cads_rnlab_hooks)
