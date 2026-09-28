@@ -26,6 +26,7 @@
 
 #define L06_CACHE_SIZE 4u
 #define L06_TIMEOUT_MS 15000u /* lwIP: DNS_MAX_RETRIES (4) with growing waits */
+#define L06_DOT_MS 300u
 
 typedef struct {
     char name[RNLAB_DNS_NAME_MAX];
@@ -216,11 +217,21 @@ static void l06_cmd_resolve(cads_cli_session_t* s, int argc, char* argv[]) {
         return;
     }
 
+    /* A dot every 300 ms while lwIP retries (up to ~6.5 s): the telnet
+     * client (rnlab.py) takes 0.5 s of silence as "command finished". */
+    uint32_t dot = t0;
+    bool dots = false;
     while(!l06_query.done && (cads_hal_ticks_ms() - t0) < L06_TIMEOUT_MS) {
         cads_net_poll();
         cads_hal_delay_ms(1u);
+        if(!l06_query.done && cads_hal_ticks_ms() - dot >= L06_DOT_MS) {
+            dot = cads_hal_ticks_ms();
+            w(s, ".");
+            dots = true;
+        }
     }
     uint32_t total = cads_hal_ticks_ms() - t0;
+    if(dots) w(s, "\r\n");
     /* Only packets of this query count; `last` keeps showing older ones. */
     bool tx_now = l06_tx.seen && (int32_t)(l06_tx.t_tx_ms - t0) >= 0;
     bool rx_now = l06_rx.seen && (int32_t)(l06_rx.t_rx_ms - t0) >= 0;
