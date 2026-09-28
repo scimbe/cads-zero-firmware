@@ -19,6 +19,11 @@
  *  - tx_drop discards data segments according to `lab 09 loss`, before the
  *    MAC: lwIP believes they were sent, the receiver never sees them.
  *
+ * An ACK that triggers nothing (the first dupACKs, the last ACK before a
+ * timeout) would otherwise only be completed at the next event, possibly
+ * a whole RTO later and with the wrong state - a 1 ms lwIP timer, which
+ * runs at the end of the same poll that processed the ACK, closes it.
+ *
  * The trace ring lives in CCM (CPU-only, never DMA) and stops when full;
  * `lab 09 trace [from]` prints it as CSV in pages that fit one TCP send
  * buffer of the telnet session.
@@ -32,6 +37,7 @@
 #include "lwip/ip_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
+#include "lwip/timeouts.h"
 #include "rnlab_args_logic.h"
 
 #include "l09_congestion_control_logic.h"
@@ -40,6 +46,7 @@
 #define L09_TRACE_PAGE 25u
 #define L09_DEFAULT_BYTES 300000u
 #define L09_BLOCK 512u
+#define L09_TICK_MS 1u
 
 typedef enum { L09_IDLE = 0, L09_CONNECTING, L09_SENDING, L09_DONE, L09_FAILED } l09_run_t;
 
@@ -75,6 +82,7 @@ typedef struct {
 } l09_state_t;
 
 static l09_state_t l09;
+static bool l09_ticking; /* outside l09: survives the reset in cc start */
 RNLAB_CCM static rnlab_l09_trace_entry_t l09_trace[L09_TRACE_LEN];
 static const uint8_t l09_block[L09_BLOCK]; /* the payload: zeros, from flash */
 
@@ -209,6 +217,16 @@ bool rnlab_l09_hook_tx_drop(const uint8_t* frame, size_t len) {
     return true;
 }
 
+static void l09_tick(void* arg) {
+    (void)arg;
+    l09_flush_pending();
+    if(l09.run == L09_SENDING) {
+        sys_timeout(L09_TICK_MS, l09_tick, NULL);
+    } else {
+        l09_ticking = false;
+    }
+}
+
 /* --- the sender ------------------------------------------------------------ */
 
 static void l09_detach(void) {
@@ -294,6 +312,10 @@ static err_t l09_connected(void* arg, struct tcp_pcb* pcb, err_t err) {
     /* The model starts where lwIP starts: initial window (RFC 3390) and
      * ssthresh = TCP_SND_BUF (lwIP's choice, see tcp_alloc()). */
     rnlab_reno_init(&l09.model, pcb->mss, pcb->cwnd, pcb->ssthresh);
+    if(!l09_ticking) {
+        l09_ticking = true;
+        sys_timeout(L09_TICK_MS, l09_tick, NULL);
+    }
     l09_fill(pcb);
     return ERR_OK;
 }
