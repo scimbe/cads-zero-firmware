@@ -402,6 +402,7 @@ static void cads_help(void) {
         "#   t          one touch sample\r\n"
         "#   s <sec>    live button state S0..S7 and touch\r\n"
         "#   k          task stacks, task count, input counters\r\n"
+        "#   E [clear]  crash forensics: reset cause + stored fault records; 'clear' empties the ring\r\n"
         "#   e          Ethernet PHY identity and link state (MDIO only)\r\n"
         "#   c          cable test: TDR + matched length (MDIO only, disruptive)\r\n"
         "#   a          auto-negotiation inspector (MDIO only)\r\n"
@@ -600,6 +601,14 @@ void cads_explorer_run(void) {
                  * first this line, then every stored crash newest first.
                  * See core/cads_hal.h and modules/diag/include/cads/diag/
                  * forensic.h for the full design. */
+                /* `E clear`: empty the ring before a measurement - it
+                 * survives warm resets by design, so otherwise an old
+                 * record cannot be told from a new one. */
+                if(cads_str_equal(argument, "clear")) {
+                    cads_forensic_clear();
+                    cads_probe_puts("# forensic ring cleared\r\n");
+                    break;
+                }
 #ifdef CADS_TARGET_ITSBOARD
                 static const char* const reset_cause_names[] = {
                     "unknown", "power-on", "pin/NRST", "software",

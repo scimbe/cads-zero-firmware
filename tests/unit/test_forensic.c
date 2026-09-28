@@ -128,6 +128,19 @@ static void test_uptime_is_captured_at_record_time(void) {
     TEST_ASSERT_EQUAL_UINT32(12345u, out.uptime_ms);
 }
 
+static void test_clear_empties_the_ring_and_recording_resumes(void) {
+    TEST_ASSERT_EQUAL_UINT32(CADS_FORENSIC_RING_DEPTH, cads_forensic_count());
+    cads_forensic_clear();
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_forensic_count());
+    cads_forensic_record_t out;
+    TEST_ASSERT_FALSE(cads_forensic_get(0u, &out));
+
+    cads_forensic_record("after-clear", NULL, 0u, 0u, false, 0u, false, 0u, 0u, 0u);
+    TEST_ASSERT_EQUAL_UINT32(1u, cads_forensic_count());
+    TEST_ASSERT_TRUE(cads_forensic_get(0u, &out));
+    TEST_ASSERT_EQUAL_STRING("after-clear", out.reason);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_empty_ring_reports_zero);
@@ -137,5 +150,6 @@ int main(void) {
     RUN_TEST(test_sequence_is_monotonic_across_the_ring);
     RUN_TEST(test_eviction_beyond_depth_keeps_newest_and_count_capped);
     RUN_TEST(test_uptime_is_captured_at_record_time);
+    RUN_TEST(test_clear_empties_the_ring_and_recording_resumes);
     return UNITY_END();
 }
