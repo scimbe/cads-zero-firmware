@@ -12,3 +12,6 @@ bool cads_cli_tcp_start(uint16_t port) {
     (void)port;
     return false;
 }
+
+void cads_cli_tcp_stop(void) {
+}

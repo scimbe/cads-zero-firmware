@@ -118,6 +118,36 @@ typedef struct {
 static cads_http_t s_http;
 static struct tcp_pcb* s_listen_pcb = NULL;
 
+/* Set when a close had to fall back to tcp_abort() inside a callback: that
+ * callback must then return ERR_ABRT to lwIP. */
+static bool s_http_aborted;
+static uint32_t s_http_idle_polls;
+
+/* tcp_poll() every second (2 x TCP_SLOW_INTERVAL). A client that connects
+ * and never sends a request - or vanishes without FIN/RST - is dropped after
+ * CADS_HTTP_IDLE_S; before, it held the one connection slot and every later
+ * browser was refused for the rest of the boot. */
+#define CADS_HTTP_POLL_TICKS 2u
+#define CADS_HTTP_IDLE_S     10u
+
+/* Detach every callback first, so a late event on a closing pcb can never
+ * act on the state of the NEXT connection (s_http is shared). */
+static void cads_http_release(struct tcp_pcb* pcb) {
+    tcp_arg(pcb, NULL);
+    tcp_recv(pcb, NULL);
+    tcp_sent(pcb, NULL);
+    tcp_err(pcb, NULL);
+    tcp_poll(pcb, NULL, 0u);
+    if(pcb == s_http.pcb) {
+        s_http.pcb = NULL;
+        s_http.connected = false;
+    }
+    if(tcp_close(pcb) != ERR_OK) {
+        tcp_abort(pcb); /* lwIP's guidance when close fails (ERR_MEM) */
+        s_http_aborted = true;
+    }
+}
+
 static void cads_http_format_row_uint(const char* label, uint32_t value) {
     size_t pos = cads_str_copy(s_http.row, sizeof(s_http.row), "<tr><td class=l>");
     pos = cads_str_append(s_http.row, sizeof(s_http.row), label);
@@ -309,8 +339,7 @@ static void cads_http_pump(void) {
         default:
             /* Already-queued data is still delivered before the FIN -
              * tcp_close() does not discard it. */
-            tcp_close(s_http.pcb);
-            s_http.connected = false;
+            cads_http_release(s_http.pcb);
             return;
         }
 
@@ -329,17 +358,19 @@ static err_t cads_http_sent(void* arg, struct tcp_pcb* pcb, u16_t length) {
     (void)arg;
     (void)pcb;
     (void)length;
+    s_http_idle_polls = 0u;
+    s_http_aborted = false;
     cads_http_pump();
-    return ERR_OK;
+    return s_http_aborted ? ERR_ABRT : ERR_OK;
 }
 
 static err_t cads_http_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, err_t err) {
     (void)arg;
     (void)err;
+    s_http_aborted = false;
     if(!p) {
-        tcp_close(pcb);
-        s_http.connected = false;
-        return ERR_OK;
+        cads_http_release(pcb);
+        return s_http_aborted ? ERR_ABRT : ERR_OK;
     }
 
     /* No routing, no method check - one page, always the same response.
@@ -348,17 +379,38 @@ static err_t cads_http_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, err_
     tcp_recved(pcb, p->tot_len);
     pbuf_free(p);
 
+    s_http_idle_polls = 0u;
     if(!s_http.request_seen) {
         s_http.request_seen = true;
         cads_http_pump();
     }
-    return ERR_OK;
+    return s_http_aborted ? ERR_ABRT : ERR_OK;
+}
+
+static err_t cads_http_poll(void* arg, struct tcp_pcb* pcb) {
+    (void)arg;
+    if(++s_http_idle_polls < CADS_HTTP_IDLE_S) return ERR_OK;
+    tcp_arg(pcb, NULL);
+    tcp_recv(pcb, NULL);
+    tcp_sent(pcb, NULL);
+    tcp_err(pcb, NULL);
+    tcp_poll(pcb, NULL, 0u);
+    if(pcb == s_http.pcb) {
+        s_http.pcb = NULL;
+        s_http.connected = false;
+    }
+    tcp_abort(pcb);
+    return ERR_ABRT;
 }
 
 static void cads_http_error(void* arg, err_t err) {
-    (void)arg;
     (void)err;
-    s_http.connected = false;
+    /* The pcb is already gone. Only the connection this callback was
+     * installed for (`arg`) may be marked closed - never a newer one. */
+    if(arg != NULL && arg == s_http.pcb) {
+        s_http.pcb = NULL;
+        s_http.connected = false;
+    }
 }
 
 static err_t cads_http_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) {
@@ -369,7 +421,10 @@ static err_t cads_http_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) {
         /* One request in flight at a time - simplest correct thing for a
          * diagnostic status page; a browser retries a refused connection
          * without complaint. */
-        tcp_close(new_pcb);
+        if(tcp_close(new_pcb) != ERR_OK) {
+            tcp_abort(new_pcb);
+            return ERR_ABRT;
+        }
         return ERR_OK;
     }
 
@@ -380,10 +435,12 @@ static err_t cads_http_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) {
     cads_net_status(&s_http.net);
     cads_hal_eth_mmc_read(&s_http.mmc);
 
-    tcp_arg(new_pcb, NULL);
+    s_http_idle_polls = 0u;
+    tcp_arg(new_pcb, new_pcb);
     tcp_recv(new_pcb, cads_http_recv);
     tcp_sent(new_pcb, cads_http_sent);
     tcp_err(new_pcb, cads_http_error);
+    tcp_poll(new_pcb, cads_http_poll, CADS_HTTP_POLL_TICKS);
     return ERR_OK;
 }
 
@@ -407,6 +464,20 @@ static bool cads_http_start(uint16_t port) {
     s_listen_pcb = listening;
     tcp_accept(s_listen_pcb, cads_http_accept);
     return true;
+}
+
+/* Close the listener and any open connection. Without this the page stayed
+ * served on :80 for the rest of the boot from any later cads_net_poll() (the
+ * app tree polls every tick), and held one of MEMP_NUM_TCP_PCB_LISTEN's two
+ * listen slots, so a third TCP demo could no longer start. */
+static void cads_http_stop(void) {
+    if(s_http.pcb != NULL) cads_http_release(s_http.pcb);
+    s_http.connected = false;
+    if(s_listen_pcb != NULL) {
+        tcp_accept(s_listen_pcb, NULL);
+        (void)tcp_close(s_listen_pcb); /* a LISTEN pcb closes synchronously */
+        s_listen_pcb = NULL;
+    }
 }
 
 /*
@@ -501,5 +572,6 @@ void cads_explorer_http_demo(uint32_t seconds) {
         cads_hal_delay_ms(10u);
     }
 
+    cads_http_stop();
     cads_probe_puts("# http: done\r\n");
 }
