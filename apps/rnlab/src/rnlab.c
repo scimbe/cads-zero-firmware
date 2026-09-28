@@ -12,6 +12,7 @@
 
 #include "cads/cli/cli.h"
 #include "cads/cli/cli_tcp.h"
+#include "cads/diag/forensic.h"
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
@@ -51,6 +52,7 @@ static void rnlab_cmd_help(cads_cli_session_t* session) {
         "lab net dhcp                 Adresse per DHCP beziehen\r\n"
         "lab selftest                 Zusagen des Rahmens pruefen (Timer-Reserve)\r\n"
         "lab poll [ms]                Poll-Intervall im App-Baum anzeigen/setzen (1..10)\r\n"
+        "lab forensic [clear]         Absturzprotokoll: Anzahl anzeigen / vor Messungen leeren\r\n"
         "lab NN <cmd> [args]          Lektion NN (01..11), z.B. lab 01 help\r\n");
 }
 
@@ -177,6 +179,17 @@ static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
         cads_cli_write(session, "poll: ");
         cads_cli_write_uint(session, rnlab_poll_ms);
         cads_cli_write(session, " ms\r\n");
+        return;
+    }
+    if(cads_str_equal(argv[0], "forensic")) {
+        if(argc >= 2 && cads_str_equal(argv[1], "clear")) {
+            cads_forensic_clear();
+            cads_cli_write(session, "forensic: geleert\r\n");
+            return;
+        }
+        cads_cli_write(session, "forensic: ");
+        cads_cli_write_uint(session, cads_forensic_count());
+        cads_cli_write(session, " Eintraege (Details: Explorer 'E' ueber UART)\r\n");
         return;
     }
     if(cads_str_equal(argv[0], "selftest")) {

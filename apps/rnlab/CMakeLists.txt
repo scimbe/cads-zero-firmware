@@ -58,4 +58,4 @@ target_include_directories(cads_app_rnlab
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     # core/cads_hal.h (ticks, console write) - same reason as modules/cli.
     PRIVATE ${CADS_ROOT}/core)
-target_link_libraries(cads_app_rnlab PUBLIC cads_rnlab_logic cads_cli cads_net cads_toolbox PRIVATE cads_flags)
+target_link_libraries(cads_app_rnlab PUBLIC cads_rnlab_logic cads_cli cads_net cads_toolbox cads_diag PRIVATE cads_flags)
