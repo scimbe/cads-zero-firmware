@@ -86,9 +86,17 @@ git config user.name >/dev/null || git config user.name "integrate-solutions"
 git config user.email >/dev/null || git config user.email "integrate-solutions@localhost"
 say "base: origin/praktikum/start $(git rev-parse --short HEAD), worktree $WT"
 
-if [ -f scripts/cads_env.sh ]; then
-    # shellcheck disable=SC1091
-    set +u; source scripts/cads_env.sh; set -euo pipefail
+# The gates need arm-none-eabi-nm. On a developer machine it lives in the
+# vcpkg tree Keil Studio manages (scripts/build.sh finds it via cads_env.sh);
+# not sourced here, because cads_env.sh exits under `set -e` wherever that
+# tree does not exist (CI). Absent globs stay literal and fail the -d test.
+if ! command -v arm-none-eabi-nm >/dev/null; then
+    for d in "$HOME"/.vcpkg/artifacts/*/compilers.arm.arm.none.eabi.gcc/*/bin \
+             "$HOME"/.vcpkg/artifacts/*/tools.ninja.build.ninja/* \
+             "$HOME"/.vcpkg/artifacts/*/tools.kitware.cmake/*/bin; do
+        [ -d "$d" ] && PATH="$d:$PATH"
+    done
+    export PATH
 fi
 NM_ARGS=()
 command -v arm-none-eabi-nm >/dev/null && NM_ARGS=(--nm arm-none-eabi-nm)
