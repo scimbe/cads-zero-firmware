@@ -38,6 +38,18 @@ uint32_t cads_lwip_rand(void) {
     return x;
 }
 
+/* LWIP_HOOK_TCP_ISN, once set in lwipopts.h (PR fix/lwip-rand-hw-rng): tcp.c
+ * is linked via lwip_init(). Harmless before that - just unreferenced. This
+ * test opens no TCP connection. */
+u32_t cads_lwip_tcp_isn(const ip_addr_t* local_ip, u16_t local_port, const ip_addr_t* remote_ip, u16_t remote_port);
+u32_t cads_lwip_tcp_isn(const ip_addr_t* local_ip, u16_t local_port, const ip_addr_t* remote_ip, u16_t remote_port) {
+    (void)local_ip;
+    (void)local_port;
+    (void)remote_ip;
+    (void)remote_port;
+    return 0u;
+}
+
 /* lwipopts.h enables PPP (modules/wifi's ESP32 link); its sources are not
  * part of this host library, and lwip_init() only needs the init hook. */
 void ppp_init(void) {
