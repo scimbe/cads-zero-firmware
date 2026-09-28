@@ -251,16 +251,27 @@
 #include "cads/net/rnlab_hooks.h"
 #define LWIP_HOOK_IP4_INPUT(p, inp) rnlab_hook_ip4_input((p), (inp))
 
-/* With the lab, lwIP's own memory - the MEM_SIZE heap and every memp pool,
- * PBUF_POOL included - goes to CCM (.ccm, NOLOAD) instead of SRAM, freeing
- * ~12 KB of the SRAM budget (scripts/check_ram_budget.py) for the lessons.
- * Safe because nothing DMAs to or from lwIP memory: hal_eth_mac.c copies
- * every frame between its own SRAM descriptor buffers and pbufs
- * ("BUFFERS ARE COPIED, NOT ZERO-COPY"), and the WiFi UART is interrupt-
- * driven. NOLOAD means not zeroed at boot - lwIP does not need it:
- * mem_init() and memp_init() lay out both regions themselves. */
+/* With the lab, lwIP's MEM_SIZE heap always lives in CCM
+ * (LWIP_RAM_HEAP_POINTER -> cads_lwip_ram_heap, modules/net/src/
+ * cads_net_board.c), and so do the memp pools (PBUF_POOL included) as long
+ * as heap + pools fit CCM's lwIP share. The big L08/L09 windows (MSS 1460,
+ * WND 16..32) do not fit there: then the pools go to SRAM instead, which
+ * the lab build can afford because it drops the linker's unused 48K heap
+ * floor (top-level CMakeLists.txt, __cads_heap_floor). Either placement is
+ * safe: nothing DMAs to or from lwIP memory - hal_eth_mac.c copies every
+ * frame between its own SRAM descriptor buffers and pbufs ("BUFFERS ARE
+ * COPIED, NOT ZERO-COPY") - and CCM (.ccm, NOLOAD) not being zeroed at
+ * boot does not matter: mem_init()/memp_init() lay both out themselves.
+ * The estimate is deliberately rough (pool buffer ~ TCP_MSS + 80 B of
+ * headers/alignment, ~4 KB of small pools); the linker's CCM assert is the
+ * exact check behind it. */
+extern unsigned char cads_lwip_ram_heap[];
+#define LWIP_RAM_HEAP_POINTER cads_lwip_ram_heap
+#define CADS_LWIP_MEMP_ESTIMATE ((PBUF_POOL_SIZE * (TCP_MSS + 80)) + 4096)
+#if (CADS_LWIP_MEMP_ESTIMATE + MEM_SIZE) <= (36 * 1024)
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
     u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".ccm"), aligned(4)))
+#endif
 #endif
 
 /* --- PPP: modules/wifi's link to the ESP32 co-processor over USART6 -------

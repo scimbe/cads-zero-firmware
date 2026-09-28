@@ -33,6 +33,10 @@ import sys
 HEAP_FLOOR_BYTES = 48 * 1024
 
 NM_LINE_RE = re.compile(r"^([0-9a-fA-F]+)\s+\S+\s+__cads_heap_size\s*$")
+# A build may lower the linker's floor with -Wl,--defsym=__cads_heap_floor=N
+# (praktikum/start's lab build does, see the top-level CMakeLists.txt); the
+# gate then measures against that same value, not a hard-coded 48K.
+NM_FLOOR_RE = re.compile(r"^([0-9a-fA-F]+)\s+\S+\s+__cads_heap_floor\s*$")
 
 
 def find_nm() -> str:
@@ -42,14 +46,20 @@ def find_nm() -> str:
     sys.exit("error: no arm-none-eabi-nm (or nm) on PATH")
 
 
-def read_heap_size(elf_path: str, nm: str) -> int:
+def read_heap_size(elf_path: str, nm: str) -> tuple[int, int]:
     result = subprocess.run([nm, elf_path], capture_output=True, text=True, timeout=30)
     if result.returncode != 0:
         sys.exit(f"error: `{nm} {elf_path}` failed:\n{result.stderr}")
 
+    heap_size = None
+    floor = HEAP_FLOOR_BYTES
     for line in result.stdout.splitlines():
         if match := NM_LINE_RE.match(line):
-            return int(match.group(1), 16)
+            heap_size = int(match.group(1), 16)
+        elif match := NM_FLOOR_RE.match(line):
+            floor = int(match.group(1), 16)
+    if heap_size is not None:
+        return heap_size, floor
 
     sys.exit(
         "error: __cads_heap_size not found in the symbol table - "
@@ -64,29 +74,30 @@ def main() -> int:
         "--min-margin-bytes",
         type=int,
         default=256,
-        help="fail if __cads_heap_size is within this many bytes of the linker's own 48K floor",
+        help="fail if __cads_heap_size is within this many bytes of the linker's floor (48K, or __cads_heap_floor)",
     )
     parser.add_argument("--nm", help="override the nm binary (auto-detected otherwise)")
     args = parser.parse_args()
 
     nm = args.nm or find_nm()
-    heap_size = read_heap_size(args.elf, nm)
-    margin = heap_size - HEAP_FLOOR_BYTES
+    heap_size, floor = read_heap_size(args.elf, nm)
+    margin = heap_size - floor
 
     print(f"__cads_heap_size = {heap_size} B ({heap_size / 1024:.2f} K)")
-    print(f"floor            = {HEAP_FLOOR_BYTES} B (48 K, the linker's own ASSERT)")
+    source = "the linker's own ASSERT" if floor == HEAP_FLOOR_BYTES else "__cads_heap_floor, set by this build"
+    print(f"floor            = {floor} B ({floor / 1024:.0f} K, {source})")
     print(f"margin           = {margin} B")
 
     if margin < 0:
         # Unreachable in practice - the linker's own ASSERT would already
         # have failed the build before this script ever ran - but checked
         # explicitly rather than trusted, in case that guard is ever loosened.
-        print(f"FAIL: heap size is already below the linker's 48K floor by {-margin} B")
+        print(f"FAIL: heap size is already below the linker's floor by {-margin} B")
         return 1
 
     if margin < args.min_margin_bytes:
         print(
-            f"FAIL: only {margin} B of margin over the 48K floor, "
+            f"FAIL: only {margin} B of margin over the {floor} B floor, "
             f"budget requires at least {args.min_margin_bytes} B.\n"
             f"      This links today, but the next RAM-costing feature might not - "
             f"trim something (see docs/ROADMAP.md's own M5/M6 tasks for the established "

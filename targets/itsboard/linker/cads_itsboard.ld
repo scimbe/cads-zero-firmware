@@ -154,8 +154,15 @@ SECTIONS
     __cads_heap_end = ORIGIN(RAM) + LENGTH(RAM);
     __cads_heap_size = __cads_heap_end - __cads_heap_start;
 
-    ASSERT(__cads_heap_size >= 48K,
-           "Less than 48K of heap left in SRAM - lwIP and the GUI will not fit")
+    /* The floor is 48K unless the build defines __cads_heap_floor
+     * (-Wl,--defsym, top-level CMakeLists.txt). Only praktikum/start's lab
+     * build does, with 0: nothing allocates from this region at run time
+     * (no malloc/_sbrk is linked, lwIP's memory is static pools, the GUI's
+     * framebuffer is static .bss) and the main stack is in CCM, so the lab
+     * may spend it on static lwIP pools. scripts/check_ram_budget.py reads
+     * the same symbol, so its margin gate stays the real guard. */
+    ASSERT(__cads_heap_size >= (DEFINED(__cads_heap_floor) ? __cads_heap_floor : 48K),
+           "SRAM left below the heap floor - lwIP and the GUI will not fit")
 
     /* CCM: FreeRTOS task stacks and kernel objects. NEVER DMA. */
     .ccm (NOLOAD) :

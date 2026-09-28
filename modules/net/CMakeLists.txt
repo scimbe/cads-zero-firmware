@@ -115,13 +115,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
             target_compile_definitions(cads_lwip PUBLIC CADS_RNLAB_LWIP_STATS=1)
         endif()
         # L08/L09 window experiments: TCP_WND / TCP_SND_BUF in multiples of
-        # TCP_MSS (536). Bounds keep lwIP's own sanity checks satisfied and
-        # the CCM-resident pools (lwipopts.h) inside CCM.
-        if(CADS_RNLAB_TCP_WND_MSS LESS 2 OR CADS_RNLAB_TCP_WND_MSS GREATER 16)
-            message(FATAL_ERROR "CADS_RNLAB_TCP_WND_MSS must be 2..16, got ${CADS_RNLAB_TCP_WND_MSS}")
+        # TCP_MSS. Bounds keep lwIP's own sanity checks satisfied; where the
+        # pools land (CCM or SRAM) follows from the size (lwipopts.h).
+        # 32 x 1460 = 46720 B stays below the 64 KB limit of a window without
+        # window scaling (LWIP_WND_SCALE is off).
+        if(CADS_RNLAB_TCP_WND_MSS LESS 2 OR CADS_RNLAB_TCP_WND_MSS GREATER 32)
+            message(FATAL_ERROR "CADS_RNLAB_TCP_WND_MSS must be 2..32, got ${CADS_RNLAB_TCP_WND_MSS}")
         endif()
-        if(CADS_RNLAB_TCP_SND_BUF_MSS LESS 2 OR CADS_RNLAB_TCP_SND_BUF_MSS GREATER 8)
-            message(FATAL_ERROR "CADS_RNLAB_TCP_SND_BUF_MSS must be 2..8, got ${CADS_RNLAB_TCP_SND_BUF_MSS}")
+        if(CADS_RNLAB_TCP_SND_BUF_MSS LESS 2 OR CADS_RNLAB_TCP_SND_BUF_MSS GREATER 16)
+            message(FATAL_ERROR "CADS_RNLAB_TCP_SND_BUF_MSS must be 2..16, got ${CADS_RNLAB_TCP_SND_BUF_MSS}")
         endif()
         if(NOT CADS_RNLAB_TCP_MSS STREQUAL "536" AND NOT CADS_RNLAB_TCP_MSS STREQUAL "1460")
             message(FATAL_ERROR "CADS_RNLAB_TCP_MSS must be 536 or 1460, got ${CADS_RNLAB_TCP_MSS}")

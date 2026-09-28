@@ -76,6 +76,12 @@ static cads_net_config_t cads_net_cfg = {
  * always fits what the driver can actually queue. */
 #define CADS_NET_TX_STAGING_SIZE 1536u
 #ifdef CADS_APP_RNLAB_ENABLED
+/* lwIP's MEM_SIZE heap (lwipopts.h: LWIP_RAM_HEAP_POINTER), in CCM with the
+ * lab regardless of where the memp pools land. mem.c needs MEM_SIZE rounded
+ * up to MEM_ALIGNMENT plus two 8-byte struct mem headers and alignment
+ * slack; 64 B covers that with room to spare. */
+__attribute__((section(".ccm"), aligned(8))) unsigned char cads_lwip_ram_heap[MEM_SIZE + 64];
+
 /* CPU-only copy buffer (the driver copies it into its own DMA buffer), so
  * CCM is fine - the lab moves it there to free SRAM, same as lwIP's pools
  * (lwipopts.h). */
