@@ -41,6 +41,7 @@ static const cads_fake_blit_t R_COND = {16, TOP + 8, 448, 96};
 static const cads_fake_blit_t R_HUM = {144, TOP + 120, 160, 24};
 static const cads_fake_blit_t R_WIND = {144, TOP + 152, 160, 24};
 static const cads_fake_blit_t R_STATUS = {16, TOP + 216, 448, 20};
+static const cads_fake_blit_t R_SOURCE = {144, TOP + 184, 320, 24};
 
 static void tick(uint32_t ms) {
     s_now += ms;
@@ -195,6 +196,18 @@ static void test_age_ticks_redraw_status_line_only(void) {
     TEST_ASSERT_TRUE(s.pixels <= 448u * 20u);
 }
 
+static void test_new_source_redraws_source_line(void) {
+    /* `lab 11 server` changes the config while the app is open: the
+     * "Quelle" line must follow (found on the board: it did not). */
+    rnlab_wx_t* wx = rnlab_l11_app();
+    strcpy(wx->config.host, "192.168.33.1");
+    wx->config.port = 8080;
+    const cads_fake_blit_t* source_only[] = {&R_SOURCE};
+    span_t s = run_and_check(10, source_only, 1);
+    TEST_ASSERT_EQUAL_UINT32(1u, s.frames);
+    TEST_ASSERT_EQUAL_UINT32(320u * 24u, wx->last_redraw_px);
+}
+
 static void test_ok_key_requests_refresh(void) {
     rnlab_wx_t* wx = rnlab_l11_app();
     wx->next_fetch_ms = s_now + 100000u;
@@ -224,6 +237,7 @@ int main(void) {
     RUN_TEST(test_idle_costs_nothing);
     RUN_TEST(test_new_data_redraws_only_fields_one_per_frame);
     RUN_TEST(test_age_ticks_redraw_status_line_only);
+    RUN_TEST(test_new_source_redraws_source_line);
     RUN_TEST(test_ok_key_requests_refresh);
     RUN_TEST(test_exit_stops_controller);
     return UNITY_END();
