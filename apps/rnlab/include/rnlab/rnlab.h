@@ -34,6 +34,22 @@ void rnlab_init(const uint8_t mac[6]);
  *  command loop is idle - the app tree's own loop does both itself. */
 void rnlab_poll(void);
 
+/** Default and bounds of the network poll interval while the app tree
+ *  idles (`lab poll <ms>`). 10 ms is what the app tree always did. */
+#define RNLAB_POLL_MS_DEFAULT 10u
+#define RNLAB_POLL_MS_MIN     1u
+#define RNLAB_POLL_MS_MAX     10u
+
+/**
+ * Wait `ms` (the app tree's 10 ms tick) without leaving the network alone
+ * for all of it: every `lab poll` interval the wait is interrupted for
+ * cads_net_poll() and cads_cli_tcp_service(). With the default of 10 ms
+ * this is exactly the old single delay; with `lab poll 1` a frame waits at
+ * most ~1 ms instead of up to 10 ms (L04 measures that difference in the
+ * ping RTT spread).
+ */
+void rnlab_idle_ms(uint32_t ms);
+
 /** Feed one byte of the serial console into the lab's serial CLI session
  *  (used while the app tree owns the console; plain ASCII there was
  *  ignored before). */

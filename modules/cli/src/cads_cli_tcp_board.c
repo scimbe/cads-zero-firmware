@@ -165,7 +165,11 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
 
     if(s_conn.in_use) {
         /* Refuse a second operator rather than let two sessions dispatch
-         * into the same command table unsynchronised - see cli_tcp.h. */
+         * into the same command table unsynchronised - see cli_tcp.h. Say
+         * why first: a bare close looks like a crashed board. tcp_close()
+         * still delivers what tcp_write() queued. */
+        static const char busy[] = "? belegt: andere Sitzung aktiv - bitte spaeter erneut\r\n";
+        if(tcp_write(new_pcb, busy, sizeof(busy) - 1u, TCP_WRITE_FLAG_COPY) == ERR_OK) tcp_output(new_pcb);
         tcp_close(new_pcb);
         return ERR_OK;
     }

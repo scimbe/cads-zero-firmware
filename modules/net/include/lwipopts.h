@@ -143,7 +143,16 @@
  * `ASSERT(__cads_heap_size >= 48K, ...)` headroom guard is load-bearing,
  * not advisory - see explorer_http_demo.c's file header for the RAM
  * budget lesson that guard already taught once this session). */
+#ifdef CADS_APP_RNLAB_ENABLED
+/* The lab: a lesson's own RAW PCB (L04's echo responder) stays open while
+ * cads_net_ping()/traceroute need one of their own - with one slot, those
+ * failed for as long as the lesson's PCB existed. Two more PCBs are ~70 B,
+ * placed with the lab's other pools (CCM by default, see the end of this
+ * file). */
+#define MEMP_NUM_RAW_PCB            3
+#else
 #define MEMP_NUM_RAW_PCB            1
+#endif
 
 /* Was 8, then 7, then 5 (see the ping and sniffer tasks' own notes on
  * those cuts, still true); now 4, again for

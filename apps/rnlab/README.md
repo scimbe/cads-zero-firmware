@@ -14,10 +14,11 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 | Befehl | Wirkung |
 |---|---|
 | `lab help` | Übersicht |
-| `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand, RX/TX-Frames, Uptime |
+| `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand und `dhcp_naks`, RX/TX-Frames, `rx_ring_overruns` (FIFO), `nested`, `poll`, Uptime |
 | `lab net static [ip mask gw]` | statische Adresse (ohne Argumente: Default oben) |
 | `lab net dhcp` | Adresse per DHCP beziehen (Setup S2) |
 | `lab selftest` | Zusagen des Rahmens auf dem Board prüfen (Timer-Reserve) |
+| `lab poll [ms]` | Poll-Intervall des Netzes im App-Baum anzeigen/setzen, 1..10 ms (Default 10, siehe L04) |
 | `lab NN <cmd> [args]` | Befehl der Lektion `NN` (`01` … `11`) |
 
 Die Adresse wird nur im RAM gehalten; nach einem Reset gilt wieder der
@@ -148,7 +149,12 @@ blockieren, kein `cads_net_poll()` darin aufrufen.
 
 ## Grenzen
 
-- Eine Telnet-Verbindung gleichzeitig (siehe `modules/cli`).
+- Eine Telnet-Verbindung gleichzeitig (siehe `modules/cli`); eine zweite
+  bekommt „? belegt: andere Sitzung aktiv - bitte spaeter erneut“ und wird
+  geschlossen.
+- Der App-Baum tickt alle 10 ms. Das Netz wird darin alle `lab poll` ms
+  bedient (Default 10): Ein Paket wartet also bis zu so lange, bevor lwIP es
+  sieht. Das ist der RTT-Streuanteil, den L04 misst; `lab poll 1` senkt ihn.
 - Solange ein anderes Explorer-Kommando läuft (z. B. `C`-Sniffer), gehört die
   Konsole diesem Kommando.
 - Im App-Baum (Menü auf dem Display, Standard nach dem Boot) gehen alle
