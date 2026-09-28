@@ -106,10 +106,13 @@ SECTIONS
     } > RAM AT > FLASH_APP
 
     /* --- code that must not execute from flash (flash erase/program) --- */
+    /* ALIGN(8) on the section itself, not as the first statement inside
+     * it: padding inside the body would sit between LOADADDR (the section
+     * start) and __cads_ramfunc_start, and Reset_Handler's copy would then
+     * place every RAM function 4 bytes off whenever .data ends at 4 mod 8. */
     __cads_ramfunc_load = LOADADDR(.ramfunc);
-    .ramfunc :
+    .ramfunc : ALIGN(8)
     {
-        . = ALIGN(8);
         __cads_ramfunc_start = .;
         *(.ramfunc)
         *(.ramfunc*)
