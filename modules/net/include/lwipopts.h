@@ -171,9 +171,12 @@
  * bigger window needs pool buffers to hold the in-flight bytes before the app
  * reads them, so the pool grows with it. +4 x ~608 B .bss. */
 /* A larger lab TCP_WND needs the pool to hold one window of full-sized
- * segments (lwIP's own sanity check); 10 covers the default 8 x MSS. */
+ * segments (lwIP's own sanity check), plus one buffer for whatever else
+ * arrives meanwhile (ARP, ICMP); 10 covers the default 8 x MSS. Kept at +1,
+ * not more: at MSS 1460 / WND 16 each buffer is ~1.5 KB of CCM, and that
+ * configuration fills CCM almost completely (apps/rnlab/README.md). */
 #if CADS_RNLAB_TCP_WND_MSS > 8
-#define PBUF_POOL_SIZE              (CADS_RNLAB_TCP_WND_MSS + 2)
+#define PBUF_POOL_SIZE              (CADS_RNLAB_TCP_WND_MSS + 1)
 #else
 #define PBUF_POOL_SIZE              10
 #endif

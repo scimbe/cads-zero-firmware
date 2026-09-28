@@ -13,30 +13,73 @@
 #include "cads/cli/cli_tcp.h"
 
 #include "cads/cli/cli.h"
+#include "cads/cli/cli_stream.h"
 
 #include "lwip/tcp.h"
+
+/* Output that tcp_sndbuf() cannot take yet waits here and goes out from the
+ * tcp_sent callback as ACKs free room. Waiting in place is not an option:
+ * the command writing it runs inside cads_net_poll() (tcp_recv), and the
+ * ACKs that would free the buffer are only processed by that same poll. CCM:
+ * CPU-only (tcp_write copies it), and the SRAM budget is tight. */
+#define CADS_CLI_TCP_OUTQ_SIZE 1024u
+__attribute__((section(".ccm"))) static char s_outq_storage[CADS_CLI_TCP_OUTQ_SIZE];
+
+static const char s_truncated_notice[] = "\r\n? Ausgabe gekuerzt\r\n";
 
 /* One session at a time - see cli_tcp.h's own header comment on why. */
 typedef struct {
     struct tcp_pcb* pcb;
     cads_cli_session_t session;
+    cads_cli_telnet_t telnet;
+    cads_cli_outq_t outq;
     bool in_use;
 } cads_cli_tcp_conn_t;
 
 static cads_cli_tcp_conn_t s_conn;
 static struct tcp_pcb* s_listen_pcb = NULL;
 
+/* Move as much queued output into lwIP as it will take right now. Never
+ * blocks (see cli.h's write_fn contract); whatever is left waits for the
+ * next tcp_sent. Once the queue is empty, a truncation is reported - one
+ * line, so the operator knows output was lost instead of guessing. */
+static void cads_cli_tcp_flush(struct tcp_pcb* pcb) {
+    bool wrote = false;
+    for(;;) {
+        const char* chunk;
+        size_t length = cads_cli_outq_peek(&s_conn.outq, &chunk);
+        if(length == 0u) break;
+        u16_t room = tcp_sndbuf(pcb);
+        if(room == 0u || tcp_sndqueuelen(pcb) >= TCP_SND_QUEUELEN) break;
+        if(length > room) length = room;
+        if(tcp_write(pcb, chunk, (u16_t)length, TCP_WRITE_FLAG_COPY) != ERR_OK) break;
+        cads_cli_outq_consume(&s_conn.outq, length);
+        wrote = true;
+    }
+    if(s_conn.outq.count == 0u && s_conn.outq.truncated &&
+       tcp_sndbuf(pcb) >= sizeof(s_truncated_notice) - 1u &&
+       tcp_write(pcb, s_truncated_notice, sizeof(s_truncated_notice) - 1u, TCP_WRITE_FLAG_COPY) == ERR_OK) {
+        s_conn.outq.truncated = false;
+        wrote = true;
+    }
+    if(wrote) tcp_output(pcb);
+}
+
 static void cads_cli_tcp_write(void* context, const char* text, size_t length) {
     struct tcp_pcb* pcb = (struct tcp_pcb*)context;
     if(!pcb || length == 0u) return;
+    (void)cads_cli_outq_push(&s_conn.outq, text, length);
+    cads_cli_tcp_flush(pcb);
+}
 
-    u16_t available = tcp_sndbuf(pcb);
-    if(available == 0u) return; /* send buffer full: drop rather than block - see cli.h's write_fn contract */
-    if((size_t)available < length) length = (size_t)available;
-
-    if(tcp_write(pcb, text, (u16_t)length, TCP_WRITE_FLAG_COPY) == ERR_OK) {
-        tcp_output(pcb);
-    }
+static err_t cads_cli_tcp_sent(void* arg, struct tcp_pcb* pcb, u16_t len) {
+    (void)arg;
+    (void)len;
+    /* A closed session's pcb can still see ACKs for its last bytes; the
+     * queue may by then belong to the next connection. */
+    if(!s_conn.in_use || pcb != s_conn.pcb) return ERR_OK;
+    cads_cli_tcp_flush(pcb);
+    return ERR_OK;
 }
 
 static err_t cads_cli_tcp_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, err_t err) {
@@ -45,6 +88,7 @@ static err_t cads_cli_tcp_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, e
 
     if(!p) {
         /* The remote end closed its side. */
+        tcp_sent(pcb, NULL);
         tcp_close(pcb);
         s_conn.in_use = false;
         return ERR_OK;
@@ -53,7 +97,9 @@ static err_t cads_cli_tcp_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p, e
     for(struct pbuf* q = p; q != NULL; q = q->next) {
         const uint8_t* data = (const uint8_t*)q->payload;
         for(u16_t i = 0; i < q->len; i++) {
-            cads_cli_session_feed(&s_conn.session, data[i]);
+            if(cads_cli_telnet_filter(&s_conn.telnet, data[i])) {
+                cads_cli_session_feed(&s_conn.session, data[i]);
+            }
         }
     }
 
@@ -85,9 +131,12 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
     s_conn.in_use = true;
     s_conn.pcb = new_pcb;
     cads_cli_session_init(&s_conn.session, cads_cli_tcp_write, new_pcb);
+    cads_cli_telnet_init(&s_conn.telnet);
+    cads_cli_outq_init(&s_conn.outq, s_outq_storage, sizeof(s_outq_storage));
 
     tcp_arg(new_pcb, NULL);
     tcp_recv(new_pcb, cads_cli_tcp_recv);
+    tcp_sent(new_pcb, cads_cli_tcp_sent);
     tcp_err(new_pcb, cads_cli_tcp_error);
 
     cads_cli_write(&s_conn.session, "CaDS Zero CLI - 'help' for commands\r\n> ");

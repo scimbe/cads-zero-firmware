@@ -122,6 +122,7 @@ void cads_cli_session_init(cads_cli_session_t* session, cads_cli_write_fn write,
     session->write = write;
     session->write_context = write_context;
     session->length = 0u;
+    session->last_was_cr = false;
 }
 
 /* Exact match only: `name` is not NUL-terminated at name_length, so the
@@ -184,6 +185,15 @@ static void cads_cli_dispatch(cads_cli_session_t* session) {
 
 void cads_cli_session_feed(cads_cli_session_t* session, uint8_t byte) {
     if(!session) return;
+
+    /* CR LF (Windows telnet, PuTTY, board_cmd.py) and CR NUL (RFC 854's
+     * bare CR) are one line end, not two - otherwise every line got a
+     * second, empty prompt. A lone CR or a lone LF still ends a line. */
+    if(session->last_was_cr && (byte == '\n' || byte == '\0')) {
+        session->last_was_cr = false;
+        return;
+    }
+    session->last_was_cr = (byte == '\r');
 
     if(byte == '\r' || byte == '\n') {
         if(session->length > 0u) {

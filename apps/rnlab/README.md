@@ -129,7 +129,7 @@ blockieren, kein `cads_net_poll()` darin aufrufen.
 
 Maßstab ist `scripts/check_ram_budget.py`: die SRAM-Reserve über dem 48-KB-
 Boden des Linkerskripts; mindestens 256 B müssen immer übrig bleiben (CI-Gate).
-Auf `praktikum/start` beträgt sie **24 768 B (24,2 KB)**. Möglich machen das
+Auf `praktikum/start` beträgt sie **24 736 B (24,2 KB)**. Möglich machen das
 zwei Maßnahmen:
 
 | Maßnahme | SRAM frei | Wo |
@@ -139,7 +139,8 @@ zwei Maßnahmen:
 | lwIP-Speicher (MEM_SIZE-Heap, alle memp-Pools inkl. PBUF_POOL) nach CCM | +12 608 B | `modules/net/include/lwipopts.h` |
 | Kopierpuffer des Netztreibers (RX/TX je 1536 B) nach CCM | +3 072 B | `modules/net/src/cads_net_board.c` |
 | Explorer-Capture-Puffer, FreeRTOS-Idle-/Timer-Stack nach CCM | +3 072 B | `apps/bringup/explorer_capture_buffer.c`, `modules/kernel/src/kernel.c` |
-| **Summe (praktikum/start)** | **24 768 B** | |
+| CLI-Robustheit (Zeilenende-/Telnet-Zustand je Sitzung) | −32 B | `modules/cli` |
+| **Summe (praktikum/start)** | **24 736 B** | |
 
 Alles nach CCM Verschobene wird nur von der CPU angefasst (der Ethernet-
 Treiber kopiert zwischen seinen DMA-Puffern im SRAM und lwIP). Ohne
@@ -169,8 +170,8 @@ Studierenden-Fork alle Lektionen nacheinander enthält:
 Größere, reine CPU-Puffer gehören nach CCM: `RNLAB_CCM static uint8_t
 buf[4096];` (Makro in `rnlab/rnlab_lesson.h`; CCM wird beim Boot **nicht**
 genullt und ist **nie** DMA-Ziel). In CCM sind auf `praktikum/start` noch rund
-31 KB frei (64 KB minus 29,5 KB Sektionen minus 4 KB Hauptstack), bei
-maximalen TCP-Optionen noch rund 24 KB. Lokale Variablen landen auf dem Stack des Konsolen-Tasks (4 KB, CCM):
+30 KB frei (64 KB minus 29,9 KB Sektionen minus 4 KB Hauptstack); wie viel
+bei anderen TCP-Optionen bleibt, steht unter „TCP-Parameter“. Lokale Variablen landen auf dem Stack des Konsolen-Tasks (4 KB, CCM):
 einzelne Puffer über ~1 KB dort vermeiden.
 
 ## TCP-Parameter für L08/L09
@@ -187,15 +188,15 @@ bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=1
 
 Mitwachsende Pools (`PBUF_POOL_SIZE`, `PBUF_POOL_BUFSIZE` über `TCP_MSS`,
 `MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in `lwipopts.h` daraus abgeleitet und
-liegen in CCM. Die SRAM-Reserve bleibt in jeder Kombination bei 24 768 B;
+liegen in CCM. Die SRAM-Reserve bleibt in jeder Kombination bei 24 736 B;
 es wächst nur die CCM-Belegung (Grenze: 60 KB, darüber liegt der 4-KB-Hauptstack):
 
 | MSS / WND / SND_BUF | CCM belegt | CCM frei für Lektionen |
 |---|---:|---:|
-| 536 / 8 / 4 (Default) | 29,0 KB | ~31 KB |
-| 536 / 16 / 8 | 36,1 KB | ~24 KB |
-| 1460 / 8 / 4 | 41,6 KB | ~18 KB |
-| 1460 / 16 / 8 | 59,6 KB | **~0,4 KB** |
+| 536 / 8 / 4 (Default) | 29,9 KB | ~30 KB |
+| 536 / 16 / 8 | 36,5 KB | ~23 KB |
+| 1460 / 8 / 4 | 42,6 KB | ~17 KB |
+| 1460 / 16 / 8 | 59,1 KB | **~0,9 KB** |
 
 Die Kombination 1460/16/8 ist nur für die Messung in L08/L09 gedacht: Sie füllt
 das CCM fast vollständig, andere Lektionen dürfen dann keine `RNLAB_CCM`-Puffer

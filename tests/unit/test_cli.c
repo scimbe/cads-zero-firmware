@@ -132,6 +132,35 @@ static void test_execute_dispatches_without_prompt(void) {
     TEST_ASSERT_EQUAL_STRING("ran\r\n", s_output);
 }
 
+static size_t count(const char* haystack, const char* needle) {
+    size_t n = 0u;
+    for(const char* at = strstr(haystack, needle); at; at = strstr(at + 1, needle)) n++;
+    return n;
+}
+
+/* PuTTY / Windows telnet / board_cmd.py send CR LF, RFC 854 NVT sends CR
+ * NUL, nc on macOS sends LF: each must give exactly one prompt per line. */
+static void test_crlf_is_one_line_end(void) {
+    feed("echo a\r\n");
+    TEST_ASSERT_EQUAL_size_t(1u, count(s_output, "> "));
+    s_output_length = 0u;
+    s_output[0] = '\0';
+    cads_cli_session_feed(&s_session, 'x');
+    cads_cli_session_feed(&s_session, '\r');
+    cads_cli_session_feed(&s_session, '\0');
+    TEST_ASSERT_EQUAL_size_t(1u, count(s_output, "> "));
+    TEST_ASSERT_NOT_NULL(strstr(s_output, "? unknown command: x"));
+}
+
+static void test_lone_lf_and_blank_lines_still_prompt(void) {
+    feed("echo b\n");
+    TEST_ASSERT_EQUAL_size_t(1u, count(s_output, "> "));
+    feed("\r\n\r\n"); /* two blank lines: two prompts */
+    TEST_ASSERT_EQUAL_size_t(3u, count(s_output, "> "));
+    feed("\n\n");       /* LF LF is two lines too */
+    TEST_ASSERT_EQUAL_size_t(5u, count(s_output, "> "));
+}
+
 static void test_builtins_still_work(void) {
     feed("echo hallo\r");
     TEST_ASSERT_NOT_NULL(strstr(s_output, "hallo\r\n"));
@@ -149,5 +178,7 @@ int main(void) {
     RUN_TEST(test_table_is_bounded);
     RUN_TEST(test_execute_dispatches_without_prompt);
     RUN_TEST(test_builtins_still_work);
+    RUN_TEST(test_crlf_is_one_line_end);
+    RUN_TEST(test_lone_lf_and_blank_lines_still_prompt);
     return UNITY_END();
 }

@@ -17,6 +17,7 @@ endif()
 
 add_library(cads_cli STATIC
     src/cads_cli.c
+    src/cads_cli_stream.c
 )
 target_include_directories(cads_cli
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
