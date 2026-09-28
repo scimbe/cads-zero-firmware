@@ -2070,6 +2070,25 @@ _None outstanding._
 
 ## Log
 
+- 2026-09-28 (apps/rnlab: Rahmen für das Rechnernetze-Praktikum, Branch
+  `praktikum/start`) - New `CADS_APP_RNLAB` (default ON on this branch):
+  `rnlab_init()` at the top of `cads_explorer_run()` brings the netif up
+  (static 192.168.33.99/24), registers `lab` with the new
+  `cads_cli_register()` and starts the TCP CLI on :4242, so the board answers
+  ping/telnet straight after reset with no `h`/`j`. Serial `lab ...` works in
+  both modes: the app tree now feeds non-key ASCII bytes to a CLI session
+  (only with RNLAB; exit/key bytes unchanged), the explorer loop checks for
+  `lab` before its letter switch (line buffer 32 -> 96 under RNLAB) and polls
+  the net while idle. modules/net gains weak hook points
+  (`cads/net/rnlab_hooks.h`: rx_frame/rx_drop/tx_frame/tx_drop,
+  `LWIP_HOOK_IP4_INPUT`) and `CADS_RNLAB_LWIP_STATS` (LWIP_STATS=1, ~416 B
+  SRAM). All 11 lesson files + tests (ctest label `rnlab-LNN`) exist as
+  placeholders so lesson branches never touch shared files. RAM margin 384 B
+  (RNLAB=OFF: 896 B), flash 332 KB. HIL on the bench board: ping after reset
+  0 % loss, `lab info` over UART (app tree and explorer) and telnet :4242,
+  `lab net dhcp`/`static` round trip, `V 5` flush throughput unchanged at
+  342 kpixel/s, forensic ring empty.
+
 - 2026-09-01 (Marauder Bluetooth: independently re-verified live, real BLE
   devices found) - The operator pointed out this was already flashed and
   hardware-verified (2026-08-28 entry, `docs/reference/marauder-coprocessor.md`)
