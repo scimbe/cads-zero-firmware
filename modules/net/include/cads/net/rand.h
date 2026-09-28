@@ -43,6 +43,10 @@ typedef struct {
     uint32_t fallbacks; /**< numbers that came from the fallback, not the hardware */
 } cads_net_rand_t;
 
+/** splitmix32-style finaliser: every input bit reaches every output bit.
+ *  Shared by the fallback seed, the TCP ISN hash and the UID-derived MAC. */
+uint32_t cads_net_mix32(uint32_t x);
+
 /** Seed the fallback. `entropy` may be anything (even 0): it is mixed so the
  *  state is never 0 and nearby inputs give unrelated states. */
 void cads_net_rand_seed(cads_net_rand_t* rand, uint32_t entropy);

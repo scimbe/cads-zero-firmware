@@ -902,13 +902,13 @@ void cads_explorer_run(void) {
                 uint32_t chunk_len = 0u;
                 uint32_t start_ms = cads_hal_ticks_ms();
                 while((cads_hal_ticks_ms() - start_ms) < seconds * 1000u) {
-                    uint8_t byte;
-                    while(cads_hal_wifi_uart_read(&byte)) {
+                    uint8_t rx;
+                    while(cads_hal_wifi_uart_read(&rx)) {
                         total_received++;
                         if(echo_len < sizeof(echo_check)) {
-                            echo_check[echo_len++] = (char)byte;
+                            echo_check[echo_len++] = (char)rx;
                         }
-                        chunk[chunk_len++] = (char)byte;
+                        chunk[chunk_len++] = (char)rx;
                         if(chunk_len == sizeof(chunk) - 1u) {
                             chunk[chunk_len] = '\0';
                             cads_probe_puts(chunk);

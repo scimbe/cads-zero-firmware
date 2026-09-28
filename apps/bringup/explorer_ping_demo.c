@@ -28,15 +28,7 @@ void cads_explorer_ping_demo(uint32_t target, uint32_t count) {
      * loop must call cads_net_poll() itself, since cads_net_status() only
      * reports the last poll's cached result and does not detect anything
      * on its own. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     char target_text[16];
     cads_fmt_ipv4(target_text, sizeof(target_text), target);
