@@ -39,6 +39,7 @@
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
+#include "cads/diag/bootguard.h"
 #include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
 #include "tasks.h"       /* cads_tasks_sleep_ms() */
@@ -241,6 +242,10 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
     uint8_t wake_byte = 0u;
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
+        /* Up long enough to trust this boot: an earlier watchdog reset was
+         * not the start of a crash loop (cads/diag/bootguard.h). Cheap and
+         * idempotent, so no "already done" flag. */
+        if(now >= CADS_BOOTGUARD_STABLE_MS) cads_bootguard_stable();
         {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {

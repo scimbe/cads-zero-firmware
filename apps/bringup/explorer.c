@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "cads/diag/bootguard.h"
 #include "cads/diag/forensic.h"
 #include "cads_hal.h"
 #include "canvas.h"
@@ -461,7 +462,20 @@ void cads_explorer_run(void) {
     {
         cads_config_t boot_cfg;
         (void)cads_config_load(&boot_cfg);
-        if(boot_cfg.boot_autostart) {
+#ifdef CADS_TARGET_ITSBOARD
+        cads_bootguard_boot(cads_hal_reset_cause() == CadsResetWatchdogIndependent);
+#else
+        cads_bootguard_boot(false);
+#endif
+        if(boot_cfg.boot_autostart && cads_bootguard_tripped()) {
+            /* Crash loop: the last CADS_BOOTGUARD_LIMIT boots all ended in
+             * a watchdog reset before running stably. Stay at the prompt so
+             * the cause can be read ('E') and fixed (e.g. a config value)
+             * before the ring evicts the first record. NRST retries. */
+            cads_probe_puts("# boot.autostart SKIPPED: ");
+            cads_probe_put_uint(cads_bootguard_count());
+            cads_probe_puts(" watchdog resets in a row - 'E' shows why; press reset to retry\r\n");
+        } else if(boot_cfg.boot_autostart) {
             cads_probe_puts(
                 "# boot.autostart=1: entering the menu - scripts/board_key.py quit returns here\r\n");
             uint8_t wake = cads_explorer_app_demo(0u);
