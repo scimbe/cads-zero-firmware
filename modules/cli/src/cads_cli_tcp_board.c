@@ -182,11 +182,6 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
     cads_cli_outq_init(&s_conn.inq, s_inq_storage, sizeof(s_inq_storage));
     s_conn.remote_closed = false;
 
-    /* Interactive shell: no Nagle. Replies come as several small writes; with
-     * Nagle every write after the first waited for the previous segment's
-     * (often delayed) ACK - hundreds of ms per line on a Telnet client. */
-    tcp_nagle_disable(new_pcb);
-
     tcp_arg(new_pcb, NULL);
     tcp_recv(new_pcb, cads_cli_tcp_recv);
     tcp_sent(new_pcb, cads_cli_tcp_sent);
