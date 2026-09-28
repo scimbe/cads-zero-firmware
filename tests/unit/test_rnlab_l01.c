@@ -452,10 +452,10 @@ static void test_bad_transport_headers(void) {
     TEST_ASSERT_EQUAL_INT(RNLAB_L01_ERR_BAD_UPPER, info.status);
 }
 
-/* The board's RX hook currently hands over frames with the 4-byte FCS
- * still attached (seen on hardware 2026-09-28: a 106-B ping arrives as
- * 110 B). Whatever follows the IPv4 packet must end up behind it - never in
- * a header or the payload. */
+/* Until praktikum/start 41d52e9 the board's RX hook handed over Ethernet II
+ * frames with the 4-byte FCS still attached (a 106-B ping arrived as
+ * 110 B). Whatever follows the IPv4 packet - padding or such a trailer -
+ * must end up behind it, never in a header or the payload. */
 static void test_trailing_fcs_stays_behind_the_packet(void) {
     uint8_t f[sizeof(cap_icmp_echo_req_64) + 4u];
     memcpy(f, cap_icmp_echo_req_64, sizeof(cap_icmp_echo_req_64));
