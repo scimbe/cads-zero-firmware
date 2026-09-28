@@ -137,6 +137,20 @@
  * reads them, so the pool grows with it. +4 x ~608 B .bss. */
 #define PBUF_POOL_SIZE              10
 
+/* 2026-09-28: inbound IPv4 reassembly off. Every received frame comes from
+ * PBUF_POOL (cads_net_board.c), a full-size frame spans three pool pbufs,
+ * and lwIP holds an incomplete datagram's pbufs until IP_REASS_MAXAGE
+ * (~15 s). With the defaults (IP_REASS_MAX_PBUFS 10 == PBUF_POOL_SIZE)
+ * three large + one small fragment with distinct IDs, never completed,
+ * took the whole pool: every later frame - ARP, DHCP, TCP - failed
+ * pbuf_alloc, and four packets every 15 s kept the board off the network
+ * (tests/unit/test_lwip_reass.c). A budget small enough to be safe here
+ * (opt.h asks for PBUF_POOL_SIZE > 2 * IP_REASS_MAX_PBUFS, i.e. 4) could
+ * not hold even one two-fragment datagram, and nothing on this device
+ * needs inbound fragments: TCP uses MSS, DHCP/DNS/SSDP fit one frame.
+ * Outbound fragmentation (IP_FRAG) is unaffected. */
+#define IP_REASSEMBLY               0
+
 #define LWIP_ARP                    1
 #define LWIP_ETHERNET               1
 #define LWIP_IPV4                   1
