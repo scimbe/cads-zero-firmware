@@ -24,7 +24,9 @@
 #     delta cannot stand in for this: praktikum/start already carries every
 #     lesson's stub, so a delta only shows solution-over-stub;
 #   - host build, full ctest - everything outside rnlab-L* green,
-#     and rnlab-LNN green for every merged lesson. Lessons without a solution
+#     and rnlab-LNN green for every merged lesson; so is its optional
+#     deep-dive label rnlab-LNN-vertiefung where a lesson has one (reported
+#     in its own column, "-" when the lesson has none). Lessons without a solution
 #     branch are reported, not failed (their stubs are expected red).
 #
 # Usage: scripts/integrate_solutions.sh [--worktree DIR] [--quick] [--skip NN[,NN]] [--list]
@@ -149,7 +151,7 @@ gates() { # $1 = ELF (default: the default build)
 }
 
 # Indexed arrays, index = lesson number (bash 3.2 on macOS has no -A).
-MERGED=(); RAMD=(); FLASHD=(); RESULT=(); MISSING=(); SKIPPED=()
+MERGED=(); RAMD=(); FLASHD=(); RESULT=(); VRESULT=(); MISSING=(); SKIPPED=()
 PREV_RAM=""; PREV_FLASH=""
 if [ "$QUICK" = 0 ]; then
     fw_build base || fail "firmware build of the base fails ($LOGDIR/base.log)"
@@ -230,6 +232,17 @@ for nn in $LESSONS; do
         RESULT[$i]="RED"
         [ -z "${MERGED[$i]:-}" ] || STATUS=1
     fi
+    # Deep-dive tests are optional for students, not for the solution: a
+    # merged lesson that has them must pass them. Anchored label, so L10 does
+    # not pick up a future L100 - and "-" when the lesson has none.
+    if ctest --test-dir build/host -N -L "^rnlab-L$nn-vertiefung\$" 2>/dev/null | grep -q "Total Tests: [1-9]"; then
+        if ctest --test-dir build/host -L "^rnlab-L$nn-vertiefung\$" >"$LOGDIR/ctest-$nn-v.log" 2>&1; then
+            VRESULT[$i]="green"
+        else
+            VRESULT[$i]="RED"
+            [ -z "${MERGED[$i]:-}" ] || STATUS=1
+        fi
+    fi
 done
 
 # --- per-lesson SRAM guideline (warning only) ------------------------------------------
@@ -287,7 +300,7 @@ done
 
 # --- table -------------------------------------------------------------------------
 say
-printf '%-4s %-36s %-14s %10s %12s %16s\n' "L" "solution branch" "rnlab-LNN" "RAM delta" "flash delta" "SRAM/guideline"
+printf '%-4s %-36s %-14s %-12s %10s %12s %16s\n' "L" "solution branch" "rnlab-LNN" "-vertiefung" "RAM delta" "flash delta" "SRAM/guideline"
 for nn in $LESSONS; do
     i=$((10#$nn))
     b="${MERGED[$i]:-}"
@@ -299,7 +312,9 @@ for nn in $LESSONS; do
         t="${RESULT[$i]} (stub)"; r=""; f=""
     fi
     sg="-"; [ -z "${SRAM[$i]:-}" ] || sg="${SRAM[$i]}/${GUIDE[$i]:-?} B"
-    printf '%-4s %-36s %-14s %10s %12s %16s\n' "L$nn" "${b#origin/}" "$t" "${r:--}" "${f:--}" "$sg"
+    v="${VRESULT[$i]:--}"
+    [ -n "${MERGED[$i]:-}" ] || [ "$v" = "-" ] || v="$v (stub)"
+    printf '%-4s %-36s %-14s %-12s %10s %12s %16s\n' "L$nn" "${b#origin/}" "$t" "$v" "${r:--}" "${f:--}" "$sg"
 done
 say "total: RAM margin $(ram_margin) B, flash $(flash_used) B"
 

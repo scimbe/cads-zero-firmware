@@ -156,7 +156,9 @@ jobs:
       # once a lesson ships its student stubs, so they are excluded there. A
       # solution branch loesung/lNN-<slug> must additionally have its OWN
       # label green - the other lessons' tests stay excluded, since their
-      # stubs are still red on that branch.
+      # stubs are still red on that branch. "Own" includes the lesson's
+      # optional deep-dive tests (label rnlab-LNN-vertiefung, e.g. L10's
+      # test_v_*): red on the stub, but the solution must pass them too.
       - name: Unit tests
         env:
           BRANCH: ${{ github.head_ref || github.ref_name }}
@@ -164,7 +166,7 @@ jobs:
           ctest --test-dir build/host --output-on-failure -LE '^rnlab-L'
           if [[ "$BRANCH" =~ ^loesung/l([0-9][0-9])- ]]; then
             ctest --test-dir build/host --output-on-failure --no-tests=error \
-              -L "^rnlab-L${BASH_REMATCH[1]}\$"
+              -L "^rnlab-L${BASH_REMATCH[1]}(-vertiefung)?\$"
           fi
 
   generated:
