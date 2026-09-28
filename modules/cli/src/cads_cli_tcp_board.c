@@ -108,7 +108,19 @@ static void cads_cli_tcp_write(void* context, const char* text, size_t length) {
         cads_hal_delay_ms(1u);
     }
     (void)cads_cli_outq_push(&s_conn.outq, text, length);
-    cads_cli_tcp_flush(pcb);
+    /* While a command runs, collect: its reply leaves as one segment when
+     * the line is done (cads_cli_session_feed() -> cads_cli_flush()), not
+     * as dozens of tiny ones. With Nagle off (below), tiny segments each
+     * drew an ACK, and that burst overran the 8-frame RX ring while the
+     * console task was still busy (rx_ring_overruns, found by lek-03-04).
+     * Outside a command (the accept banner) and once half the queue is
+     * used, send right away. */
+    if(!s_servicing || s_conn.outq.count >= s_conn.outq.size / 2u) cads_cli_tcp_flush(pcb);
+}
+
+static void cads_cli_tcp_session_flush(void* context) {
+    struct tcp_pcb* pcb = (struct tcp_pcb*)context;
+    if(pcb && cads_cli_tcp_alive(pcb)) cads_cli_tcp_flush(pcb);
 }
 
 static err_t cads_cli_tcp_sent(void* arg, struct tcp_pcb* pcb, u16_t len) {
@@ -177,6 +189,7 @@ static err_t cads_cli_tcp_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) 
     s_conn.in_use = true;
     s_conn.pcb = new_pcb;
     cads_cli_session_init(&s_conn.session, cads_cli_tcp_write, new_pcb);
+    s_conn.session.flush = cads_cli_tcp_session_flush;
     cads_cli_telnet_init(&s_conn.telnet);
     cads_cli_outq_init(&s_conn.outq, s_outq_storage, sizeof(s_outq_storage));
     cads_cli_outq_init(&s_conn.inq, s_inq_storage, sizeof(s_inq_storage));
@@ -230,6 +243,7 @@ void cads_cli_tcp_service(void) {
     s_servicing = true;
     (void)cads_cli_input_drain(&s_conn.inq, &s_conn.session);
     s_servicing = false;
+    if(cads_cli_tcp_alive(pcb)) cads_cli_tcp_flush(pcb); /* a partial line's output, if any */
 
     if(cads_cli_tcp_alive(pcb) && s_conn.remote_closed && s_conn.inq.count == 0u) {
         tcp_sent(pcb, NULL);

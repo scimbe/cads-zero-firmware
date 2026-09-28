@@ -225,6 +225,7 @@ static void rnlab_cmd_key(cads_cli_session_t* session, int argc, char* argv[]) {
     }
     cads_str_append(reply, sizeof(reply), "\r\n");
     cads_cli_write(session, reply);
+    cads_cli_flush(session); /* out before the blit makes the network deaf */
 
     for(uint32_t i = 0; i < count && rnlab_key_injector; i++) {
         (void)rnlab_key_injector(code);

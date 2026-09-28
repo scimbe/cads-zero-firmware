@@ -41,9 +41,14 @@ extern "C" {
  *  stall the command that produced them. */
 typedef void (*cads_cli_write_fn)(void* context, const char* text, size_t length);
 
+/** Push out what a buffering transport has collected (optional, may be
+ *  NULL). Called once per completed line and by cads_cli_flush(). */
+typedef void (*cads_cli_flush_fn)(void* context);
+
 typedef struct {
     cads_cli_write_fn write;
     void* write_context;
+    cads_cli_flush_fn flush; /**< NULL after cads_cli_session_init(); a transport sets it itself */
     char line[CADS_CLI_LINE_MAX];
     size_t length;
     bool last_was_cr; /**< CR just ended a line: a following LF (or telnet's NUL) belongs to it */
@@ -101,6 +106,16 @@ bool cads_cli_register(const cads_cli_command_t* command);
  *  transport that already assembles lines itself (the hardware explorer's
  *  own serial loop). */
 void cads_cli_execute(cads_cli_session_t* session, const char* line);
+
+/**
+ * Send what the transport has buffered now, instead of at the end of the
+ * command. The TCP transport collects a command's writes and sends them
+ * as one segment when the line is done - many tiny segments made the
+ * client's ACK burst overrun the 8-frame receive ring (DMAMFBOCR.MFC).
+ * A command that is about to make the network briefly deaf (`lab key`
+ * switching views: the display blit borrows PA7) calls this first.
+ */
+void cads_cli_flush(cads_cli_session_t* session);
 
 /** Write a NUL-terminated string of any length through the session's
  *  transport (handed over in pieces of at most CADS_CLI_LINE_MAX * 4 bytes). */

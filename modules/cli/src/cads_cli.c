@@ -21,6 +21,10 @@ void cads_cli_write(cads_cli_session_t* session, const char* text) {
     }
 }
 
+void cads_cli_flush(cads_cli_session_t* session) {
+    if(session && session->flush) session->flush(session->write_context);
+}
+
 void cads_cli_write_uint(cads_cli_session_t* session, uint32_t value) {
     char digits[CADS_FMT_BUFFER];
     size_t length = cads_fmt_uint(digits, sizeof(digits), value);
@@ -130,6 +134,7 @@ void cads_cli_session_init(cads_cli_session_t* session, cads_cli_write_fn write,
     if(!session) return;
     session->write = write;
     session->write_context = write_context;
+    session->flush = NULL;
     session->length = 0u;
     session->last_was_cr = false;
 }
@@ -210,6 +215,7 @@ void cads_cli_session_feed(cads_cli_session_t* session, uint8_t byte) {
             session->length = 0u;
         }
         cads_cli_write(session, "> ");
+        cads_cli_flush(session); /* one segment per line, reply and prompt together */
         return;
     }
 
@@ -220,6 +226,7 @@ void cads_cli_session_feed(cads_cli_session_t* session, uint8_t byte) {
          * plausible-looking wrong answer applies here too. */
         session->length = 0u;
         cads_cli_write(session, "? line too long, discarded\r\n> ");
+        cads_cli_flush(session);
         return;
     }
 

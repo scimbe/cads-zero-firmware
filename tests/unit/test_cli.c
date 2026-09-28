@@ -171,6 +171,31 @@ static void test_long_write_is_not_truncated(void) {
     TEST_ASSERT_EQUAL_MEMORY(text, s_output, sizeof(text) - 1u);
 }
 
+static unsigned s_flushes;
+static size_t s_output_at_flush;
+
+static void count_flush(void* context) {
+    (void)context;
+    s_flushes++;
+    s_output_at_flush = s_output_length;
+}
+
+/* A buffering transport gets exactly one flush per completed line - after
+ * the prompt, so reply and prompt leave together - and none per write. */
+static void test_flush_once_per_line_after_prompt(void) {
+    s_session.flush = count_flush;
+    s_flushes = 0u;
+    feed("help\r\n");
+    TEST_ASSERT_EQUAL_UINT(1u, s_flushes);
+    TEST_ASSERT_EQUAL_size_t(s_output_length, s_output_at_flush);
+    TEST_ASSERT_EQUAL_STRING("> ", s_output + s_output_length - 2u);
+
+    cads_cli_flush(&s_session);
+    TEST_ASSERT_EQUAL_UINT(2u, s_flushes);
+    s_session.flush = NULL;
+    cads_cli_flush(&s_session); /* no transport hook: harmless */
+}
+
 static void test_builtins_still_work(void) {
     feed("echo hallo\r");
     TEST_ASSERT_NOT_NULL(strstr(s_output, "hallo\r\n"));
@@ -189,6 +214,7 @@ int main(void) {
     RUN_TEST(test_execute_dispatches_without_prompt);
     RUN_TEST(test_builtins_still_work);
     RUN_TEST(test_long_write_is_not_truncated);
+    RUN_TEST(test_flush_once_per_line_after_prompt);
     RUN_TEST(test_crlf_is_one_line_end);
     RUN_TEST(test_lone_lf_and_blank_lines_still_prompt);
     return UNITY_END();
