@@ -236,6 +236,15 @@ if(CADS_APP_RNLAB)
         target_link_libraries(test_rnlab_l${nn} PRIVATE cads_rnlab_logic)
         set_tests_properties(test_rnlab_l${nn} PROPERTIES LABELS rnlab-L${nn})
     endforeach()
+
+    # L10 is split: test_rnlab_l10 (rnlab-L10) runs the required tests only,
+    # this second build of the same file the optional ones (test_v_*: chunked,
+    # 1xx/204, JSON escapes/exponents). Anchor the label when selecting:
+    # ctest -L '^rnlab-L10$' - unanchored it also matches this one.
+    cads_add_unit_test(test_rnlab_l10_vertiefung test_rnlab_l10.c)
+    target_compile_definitions(test_rnlab_l10_vertiefung PRIVATE RNLAB_L10_VERTIEFUNG=1)
+    target_link_libraries(test_rnlab_l10_vertiefung PRIVATE cads_rnlab_logic)
+    set_tests_properties(test_rnlab_l10_vertiefung PROPERTIES LABELS rnlab-L10-vertiefung)
 endif()
 
 # --- security -------------------------------------------------------------

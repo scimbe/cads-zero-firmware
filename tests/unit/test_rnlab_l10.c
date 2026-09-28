@@ -3,8 +3,12 @@
  *
  * PFLICHT vs. VERTIEFUNG: Tests mit `test_v_` im Namen gehoeren zur
  * Vertiefung (chunked/Trailer/1xx/204 aus HTTP/1.1, JSON-Escapes und
- * Exponenten, kaputte Zahlen). Der Versuch verlangt einen HTTP/1.0-Client;
- * dafuer reichen alle Tests OHNE `_v_`. Die Musterloesung erfuellt beide.
+ * Exponenten, kaputte Zahlen). Der Versuch verlangt einen HTTP/1.0-Client.
+ * Diese Datei wird zweimal gebaut: test_rnlab_l10 (Label rnlab-L10) fuehrt
+ * nur die Pflicht-Tests aus, test_rnlab_l10_vertiefung (Label
+ * rnlab-L10-vertiefung, -DRNLAB_L10_VERTIEFUNG=1) nur die test_v_*.
+ * Pflicht pruefen: ctest --test-dir build/host -L '^rnlab-L10$'
+ * (verankert - ohne ^...$ passt das Muster auch auf ...-vertiefung).
  *
  * The two canned responses are byte-for-byte what api.open-meteo.com sent
  * on 2026-09-28 (HTTP/1.0 request: plain body until close; HTTP/1.1
@@ -627,53 +631,67 @@ static void test_fmt_milli(void) {
     TEST_ASSERT_EQUAL_STRING("123", small); /* truncated, still terminated */
 }
 
+#ifndef RNLAB_L10_VERTIEFUNG
+#define RNLAB_L10_VERTIEFUNG 0
+#endif
+/* Both sets stay referenced in either build (no unused-function warnings);
+ * the constant condition picks which ones run. */
+#define RUN_PFLICHT(t)                          \
+    do {                                        \
+        if(!RNLAB_L10_VERTIEFUNG) RUN_TEST(t); \
+    } while(0)
+#define RUN_VERTIEFUNG(t)                      \
+    do {                                       \
+        if(RNLAB_L10_VERTIEFUNG) RUN_TEST(t); \
+    } while(0)
+
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_target_host_default_port);
-    RUN_TEST(test_target_ip_and_port);
-    RUN_TEST(test_target_rejects_garbage);
-    RUN_TEST(test_build_get_http10);
-    RUN_TEST(test_build_get_http11_with_port);
-    RUN_TEST(test_build_get_default_request_size);
-    RUN_TEST(test_build_get_too_small_and_injection);
-    RUN_TEST(test_http10_real_response_whole);
-    RUN_TEST(test_v_http11_chunked_real_response_whole);
-    RUN_TEST(test_every_split_point);
-    RUN_TEST(test_v_every_split_point_chunked);
-    RUN_TEST(test_byte_by_byte_and_odd_pieces);
-    RUN_TEST(test_v_byte_by_byte_chunked);
-    RUN_TEST(test_content_length_stops_exactly);
-    RUN_TEST(test_content_length_truncated);
-    RUN_TEST(test_content_length_zero);
-    RUN_TEST(test_v_204_no_body);
-    RUN_TEST(test_header_names_case_and_spaces);
-    RUN_TEST(test_conflicting_content_length_rejected);
-    RUN_TEST(test_v_transfer_encoding_wins_over_length);
-    RUN_TEST(test_v_chunked_is_only_last_coding);
-    RUN_TEST(test_v_chunked_bad_size_and_missing_crlf);
-    RUN_TEST(test_v_chunked_truncated);
-    RUN_TEST(test_bare_lf_tolerated);
-    RUN_TEST(test_bad_status_lines);
-    RUN_TEST(test_non_200_is_parsed_not_failed);
-    RUN_TEST(test_v_interim_100_continue_skipped);
-    RUN_TEST(test_long_header_line_truncated_not_fatal);
-    RUN_TEST(test_header_flood_bounded);
-    RUN_TEST(test_truncated_in_headers);
-    RUN_TEST(test_empty_connection_is_truncated);
-    RUN_TEST(test_json_real_body_every_piece_size);
-    RUN_TEST(test_json_units_object_not_mistaken);
-    RUN_TEST(test_json_value_string_current_is_not_the_object);
-    RUN_TEST(test_json_current_prefix_and_array);
-    RUN_TEST(test_v_json_escapes_in_strings_and_keys);
-    RUN_TEST(test_v_json_number_formats);
-    RUN_TEST(test_v_json_malformed_numbers_dropped);
-    RUN_TEST(test_json_literals_and_nulls);
-    RUN_TEST(test_json_truncated_number_not_reported);
-    RUN_TEST(test_json_every_truncation_of_real_body);
-    RUN_TEST(test_json_garbage_and_depth);
-    RUN_TEST(test_json_too_many_fields_and_long_keys);
-    RUN_TEST(test_json_whitespace_everywhere);
-    RUN_TEST(test_weather_code_must_be_integer);
-    RUN_TEST(test_fmt_milli);
+    RUN_PFLICHT(test_target_host_default_port);
+    RUN_PFLICHT(test_target_ip_and_port);
+    RUN_PFLICHT(test_target_rejects_garbage);
+    RUN_PFLICHT(test_build_get_http10);
+    RUN_PFLICHT(test_build_get_http11_with_port);
+    RUN_PFLICHT(test_build_get_default_request_size);
+    RUN_PFLICHT(test_build_get_too_small_and_injection);
+    RUN_PFLICHT(test_http10_real_response_whole);
+    RUN_VERTIEFUNG(test_v_http11_chunked_real_response_whole);
+    RUN_PFLICHT(test_every_split_point);
+    RUN_VERTIEFUNG(test_v_every_split_point_chunked);
+    RUN_PFLICHT(test_byte_by_byte_and_odd_pieces);
+    RUN_VERTIEFUNG(test_v_byte_by_byte_chunked);
+    RUN_PFLICHT(test_content_length_stops_exactly);
+    RUN_PFLICHT(test_content_length_truncated);
+    RUN_PFLICHT(test_content_length_zero);
+    RUN_VERTIEFUNG(test_v_204_no_body);
+    RUN_PFLICHT(test_header_names_case_and_spaces);
+    RUN_PFLICHT(test_conflicting_content_length_rejected);
+    RUN_VERTIEFUNG(test_v_transfer_encoding_wins_over_length);
+    RUN_VERTIEFUNG(test_v_chunked_is_only_last_coding);
+    RUN_VERTIEFUNG(test_v_chunked_bad_size_and_missing_crlf);
+    RUN_VERTIEFUNG(test_v_chunked_truncated);
+    RUN_PFLICHT(test_bare_lf_tolerated);
+    RUN_PFLICHT(test_bad_status_lines);
+    RUN_PFLICHT(test_non_200_is_parsed_not_failed);
+    RUN_VERTIEFUNG(test_v_interim_100_continue_skipped);
+    RUN_PFLICHT(test_long_header_line_truncated_not_fatal);
+    RUN_PFLICHT(test_header_flood_bounded);
+    RUN_PFLICHT(test_truncated_in_headers);
+    RUN_PFLICHT(test_empty_connection_is_truncated);
+    RUN_PFLICHT(test_json_real_body_every_piece_size);
+    RUN_PFLICHT(test_json_units_object_not_mistaken);
+    RUN_PFLICHT(test_json_value_string_current_is_not_the_object);
+    RUN_PFLICHT(test_json_current_prefix_and_array);
+    RUN_VERTIEFUNG(test_v_json_escapes_in_strings_and_keys);
+    RUN_VERTIEFUNG(test_v_json_number_formats);
+    RUN_VERTIEFUNG(test_v_json_malformed_numbers_dropped);
+    RUN_PFLICHT(test_json_literals_and_nulls);
+    RUN_PFLICHT(test_json_truncated_number_not_reported);
+    RUN_PFLICHT(test_json_every_truncation_of_real_body);
+    RUN_PFLICHT(test_json_garbage_and_depth);
+    RUN_PFLICHT(test_json_too_many_fields_and_long_keys);
+    RUN_PFLICHT(test_json_whitespace_everywhere);
+    RUN_PFLICHT(test_weather_code_must_be_integer);
+    RUN_PFLICHT(test_fmt_milli);
     return UNITY_END();
 }
