@@ -158,3 +158,10 @@ bool cads_forensic_get(uint32_t index, cads_forensic_record_t* out) {
     }
     return false;
 }
+
+void cads_forensic_clear(void) {
+    for(uint32_t i = 0; i < CADS_FORENSIC_RING_DEPTH; i++) {
+        cads_forensic_ring[i].magic_a = 0u;
+        cads_forensic_ring[i].magic_b = 0u;
+    }
+}
