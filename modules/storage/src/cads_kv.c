@@ -85,6 +85,24 @@ int cads_kv_open(const char* path) {
         return CADS_STORAGE_ERR_CORRUPT;
     }
 
+    /* The entries come off the volume byte for byte, and every lookup
+     * below runs strcmp/strlen over them: a key or string value with no
+     * terminator inside its array (a bit flip, or a file written by
+     * tools/cads_fs) would read past the entry - past the table, for the
+     * last one. Reject the whole file, same as a bad header. */
+    for(uint32_t i = 0; i < header.count; i++) {
+        const cads_kv_entry_t* entry = &cads_kv_table[i];
+        bool type_ok = entry->type == CADS_KV_TYPE_I32 || entry->type == CADS_KV_TYPE_BOOL ||
+                       entry->type == CADS_KV_TYPE_STR;
+        bool key_ok = memchr(entry->key, '\0', sizeof(entry->key)) != NULL;
+        bool str_ok = entry->type != CADS_KV_TYPE_STR ||
+                      memchr(entry->value.str, '\0', sizeof(entry->value.str)) != NULL;
+        if(!type_ok || !key_ok || !str_ok) {
+            cads_kv_reset();
+            return CADS_STORAGE_ERR_CORRUPT;
+        }
+    }
+
     cads_kv_entry_count = header.count;
     strncpy(cads_kv_path, path, sizeof(cads_kv_path) - 1u);
     cads_kv_path[sizeof(cads_kv_path) - 1u] = '\0';

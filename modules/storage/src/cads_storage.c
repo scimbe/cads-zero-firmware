@@ -282,6 +282,9 @@ int cads_storage_open(cads_storage_file_t** file, const char* path, uint32_t fla
 int cads_storage_close(cads_storage_file_t* file) {
     if(!file) return CADS_STORAGE_OK;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    /* A double close would hand littlefs an already-closed lfs_file_t; with
+     * LFS_NO_ASSERT that corrupts its open-file list instead of stopping. */
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     int rc = lfs_file_close(&cads_lfs, &handle->lfs_file);
     handle->in_use = false;
@@ -291,6 +294,7 @@ int cads_storage_close(cads_storage_file_t* file) {
 int32_t cads_storage_read(cads_storage_file_t* file, void* buffer, uint32_t size) {
     if(!file || (!buffer && size != 0u)) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     lfs_ssize_t rc = lfs_file_read(&cads_lfs, &handle->lfs_file, buffer, size);
     return (rc < 0) ? (int32_t)cads_map_lfs_error((int)rc) : (int32_t)rc;
@@ -299,6 +303,7 @@ int32_t cads_storage_read(cads_storage_file_t* file, void* buffer, uint32_t size
 int32_t cads_storage_write(cads_storage_file_t* file, const void* data, uint32_t size) {
     if(!file || (!data && size != 0u)) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     lfs_ssize_t rc = lfs_file_write(&cads_lfs, &handle->lfs_file, data, size);
     return (rc < 0) ? (int32_t)cads_map_lfs_error((int)rc) : (int32_t)rc;
@@ -307,6 +312,7 @@ int32_t cads_storage_write(cads_storage_file_t* file, const void* data, uint32_t
 int32_t cads_storage_seek(cads_storage_file_t* file, int32_t offset, cads_storage_whence_t whence) {
     if(!file) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     int lfs_whence;
     switch(whence) {
@@ -323,6 +329,7 @@ int32_t cads_storage_seek(cads_storage_file_t* file, int32_t offset, cads_storag
 int32_t cads_storage_tell(cads_storage_file_t* file) {
     if(!file) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     lfs_soff_t rc = lfs_file_tell(&cads_lfs, &handle->lfs_file);
     return (rc < 0) ? (int32_t)cads_map_lfs_error((int)rc) : (int32_t)rc;
@@ -331,6 +338,7 @@ int32_t cads_storage_tell(cads_storage_file_t* file) {
 int32_t cads_storage_size(cads_storage_file_t* file) {
     if(!file) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     lfs_soff_t rc = lfs_file_size(&cads_lfs, &handle->lfs_file);
     return (rc < 0) ? (int32_t)cads_map_lfs_error((int)rc) : (int32_t)rc;
@@ -339,6 +347,7 @@ int32_t cads_storage_size(cads_storage_file_t* file) {
 int cads_storage_sync(cads_storage_file_t* file) {
     if(!file) return CADS_STORAGE_ERR_INVAL;
     struct cads_storage_file* handle = (struct cads_storage_file*)file;
+    if(!handle->in_use) return CADS_STORAGE_ERR_INVAL;
 
     int rc = lfs_file_sync(&cads_lfs, &handle->lfs_file);
     return (rc == 0) ? CADS_STORAGE_OK : cads_map_lfs_error(rc);
