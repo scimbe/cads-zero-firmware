@@ -63,6 +63,34 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
         endif()
     endif()
 
+    # Second vendored fix, same mechanism: after a DHCPNAK lwIP rediscovered
+    # at once, and two servers on one segment (one OFFERing, one NAKing) made
+    # that a wire-speed DHCP storm - 31,908 packets in 140 s on the bench,
+    # 2026-09-28. See the patch's own header for the back-off it adds.
+    set(LWIP_DHCP_C ${CADS_ROOT}/lib/lwip/src/core/ipv4/dhcp.c)
+    file(STRINGS ${LWIP_DHCP_C} LWIP_DHCP_FIX_MARKER REGEX "dhcp->nak_backoff = 0;")
+    if(NOT LWIP_DHCP_FIX_MARKER)
+        message(STATUS "Applying lib/patches/lwip-dhcp-nak-backoff.patch to lib/lwip")
+        execute_process(
+            COMMAND git apply ${CADS_ROOT}/lib/patches/lwip-dhcp-nak-backoff.patch
+            WORKING_DIRECTORY ${CADS_ROOT}/lib/lwip
+            RESULT_VARIABLE LWIP_DHCP_PATCH_RESULT
+            ERROR_VARIABLE LWIP_DHCP_PATCH_ERROR
+        )
+        if(NOT LWIP_DHCP_PATCH_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "lib/patches/lwip-dhcp-nak-backoff.patch failed to apply "
+                "(lib/lwip's pinned commit probably moved) - re-check by hand:\n"
+                "${LWIP_DHCP_PATCH_ERROR}")
+        endif()
+        file(STRINGS ${LWIP_DHCP_C} LWIP_DHCP_FIX_MARKER REGEX "dhcp->nak_backoff = 0;")
+        if(NOT LWIP_DHCP_FIX_MARKER)
+            message(FATAL_ERROR
+                "lib/patches/lwip-dhcp-nak-backoff.patch applied cleanly but its own "
+                "fix marker is still missing from ${LWIP_DHCP_C} - the patch itself needs a look")
+        endif()
+    endif()
+
     # lwIP's own file lists (lwipcore/lwipcore4/lwipnetif) - only the pieces
     # this build actually turns on in lwipopts.h: core + IPv4 + the Ethernet
     # netif glue (ethernet.c). No lwipcore6 (LWIP_IPV6=0), no lwipapi
