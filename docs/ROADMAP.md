@@ -2070,6 +2070,19 @@ _None outstanding._
 
 ## Log
 
+- 2026-09-28 (`golden_splash`/`golden_boot_desktop`: host-dependent, fixed
+  at the source) - CI's host job had failed on these two since `3c038cb`
+  (2026-09-01) while macOS passed. The 2026-09-01 entry below had the right
+  symptom (1-LSB deltas on anti-aliased pixels only) but regenerated the
+  goldens instead of removing the cause, so they just flipped to failing on
+  Linux. Diffing the pre-`3c038cb` (Linux-captured) goldens against the
+  current ones: every pair is truncation vs. bit replication of the same
+  RGB565 value (red 22 -> 180 vs. 181, green 49 -> 198 vs. 199) - Ubuntu's
+  libsdl2 and macOS's sdl2-compat/SDL3 widen 565 differently inside
+  `SDL_SaveBMP`. `hal_sim.c` now widens by bit replication itself and saves
+  a BGR24 surface, so SDL no longer converts anything. Goldens unchanged
+  (already bit-replicated); no threshold added.
+
 - 2026-09-01 (Marauder Bluetooth: independently re-verified live, real BLE
   devices found) - The operator pointed out this was already flashed and
   hardware-verified (2026-08-28 entry, `docs/reference/marauder-coprocessor.md`)
