@@ -200,6 +200,31 @@ target_link_libraries(test_config PRIVATE cads_config)
 cads_add_unit_test(test_net_mac test_net_mac.c)
 target_link_libraries(test_net_mac PRIVATE cads_net)
 
+# --- net: lwIP's random source (cads/net/rand.h) ------------------------------
+cads_add_unit_test(test_net_rand test_net_rand.c)
+target_link_libraries(test_net_rand PRIVATE cads_net)
+
+# --- lwIP DHCP (vendored, patched) ---------------------------------------------
+# The real lwIP core on the host - only here, the simulator itself has no
+# stack - to test lib/patches/lwip-dhcp-nak-backoff.patch (applied by
+# modules/net/CMakeLists.txt for both targets) against synthetic OFFER/NAK/ACK
+# packets. Same lwipopts.h as the board; lwIP's own warnings are not ours to
+# fix, so no cads_flags on the library.
+set(LWIP_DIR ${CADS_ROOT}/lib/lwip)
+include(${LWIP_DIR}/src/Filelists.cmake)
+add_library(cads_lwip_host STATIC ${lwipcore_SRCS} ${lwipcore4_SRCS} ${LWIP_DIR}/src/netif/ethernet.c)
+target_include_directories(cads_lwip_host PUBLIC
+    ${CADS_ROOT}/modules/net/include
+    ${LWIP_DIR}/src/include
+    ${CADS_ROOT}/core)
+# lwIP's own htons()/ntohl() convenience macros collide with the host libc's
+# (macOS sys/_endian.h, pulled in by <string.h>): -Wmacro-redefined. lwIP
+# itself only uses lwip_htons() & co, so the plain names are simply not
+# provided here - the board build, with no libc versions, keeps them.
+target_compile_definitions(cads_lwip_host PUBLIC LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS=1)
+cads_add_unit_test(test_lwip_dhcp_nak test_lwip_dhcp_nak.c)
+target_link_libraries(test_lwip_dhcp_nak PRIVATE cads_lwip_host cads_fake_hal)
+
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)

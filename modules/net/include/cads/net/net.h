@@ -29,9 +29,11 @@ typedef struct {
     uint32_t gw_addr;    /**< host byte order, 0 when none configured yet */
     uint32_t dns_addr;   /**< host byte order, 0 when none configured yet */
     bool dhcp_bound;     /**< true when ip_addr came from a DHCP lease, not a static address */
+    uint32_t dhcp_naks;  /**< DHCPNAKs received since the client last started (lib/patches/lwip-dhcp-nak-backoff.patch) */
     uint32_t rx_frames;
     uint32_t tx_frames;
     uint32_t rx_dropped; /**< frames the MAC handed up but this layer discarded */
+    uint32_t rand_fallbacks; /**< lwIP random numbers that could not come from the hardware RNG (cads/net/rand.h) */
 } cads_net_status_t;
 
 /**

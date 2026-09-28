@@ -4,6 +4,7 @@
 # Usage: scripts/build.sh [Debug|Release] [extra cmake args...]
 
 source "$(dirname "${BASH_SOURCE[0]}")/cads_env.sh"
+cads_require_arm_gcc
 
 BUILD_TYPE="${1:-Debug}"
 shift || true
