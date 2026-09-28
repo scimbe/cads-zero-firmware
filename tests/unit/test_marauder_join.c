@@ -1,9 +1,12 @@
 /* apps/marauder's join-by-SSID scan-and-match state machine - see
  * apps/marauder/cads_marauder_join.h for the full protocol reasoning. */
 
+#include <string.h>
+
 #include "unity.h"
 
 #include "cads_marauder_join.h"
+#include "cads_marauder_reader.h"
 
 void setUp(void) {
 }
@@ -57,6 +60,24 @@ static void test_prefix_ssid_does_not_false_match(void) {
     cads_marauder_join_feed_line(&st, "-50 Ch: 6 aa:bb:cc:dd:ee:ff ESSID: HomeNetwork 11 14");
     TEST_ASSERT_EQUAL_INT(CADS_MARAUDER_JOIN_SEARCHING, st.status); /* not FOUND */
     TEST_ASSERT_EQUAL_UINT32(1u, st.ap_count); /* line still counted as an AP */
+}
+
+static void test_force_split_line_does_not_match_a_prefix(void) {
+    /* 47 chars = CADS_MARAUDER_LINE_LEN - 1: the reader force-split a longer
+     * "ESSID: HomeNetwork1-Guest 11 14" line exactly after the target. */
+    const char* split = "-76 Ch: 2 fc:34:97:30:ad:21 ESSID: HomeNetwork1";
+    TEST_ASSERT_EQUAL_UINT32(CADS_MARAUDER_LINE_LEN - 1u, (uint32_t)strlen(split));
+    cads_marauder_join_state_t st;
+    cads_marauder_join_start(&st, "HomeNetwork1");
+    cads_marauder_join_feed_line(&st, split);
+    TEST_ASSERT_EQUAL_INT(CADS_MARAUDER_JOIN_SEARCHING, st.status);
+}
+
+static void test_short_line_ending_at_essid_still_matches(void) {
+    cads_marauder_join_state_t st;
+    cads_marauder_join_start(&st, "Target");
+    cads_marauder_join_feed_line(&st, "-50 Ch: 1 aa:aa:aa:aa:aa:aa ESSID: Target");
+    TEST_ASSERT_EQUAL_INT(CADS_MARAUDER_JOIN_FOUND, st.status);
 }
 
 static void test_no_match_stays_searching(void) {
@@ -121,5 +142,7 @@ int main(void) {
     RUN_TEST(test_feed_after_found_is_noop);
     RUN_TEST(test_timeout_only_while_searching);
     RUN_TEST(test_timeout_not_yet_reached);
+    RUN_TEST(test_force_split_line_does_not_match_a_prefix);
+    RUN_TEST(test_short_line_ending_at_essid_still_matches);
     return UNITY_END();
 }
