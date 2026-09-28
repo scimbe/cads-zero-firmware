@@ -194,7 +194,15 @@ void cads_hal_eth_mac_init(const uint8_t mac_address[6], bool full_duplex, bool 
     maccr &= ~(ETH_MACCR_DM | ETH_MACCR_FES | ETH_MACCR_LM);
     if(full_duplex) maccr |= ETH_MACCR_DM;
     if(speed_100) maccr |= ETH_MACCR_FES;
-    maccr |= ETH_MACCR_APCS; /* strip pad/FCS on receive - lwIP wants the payload, not padding */
+    /* Strip the 4-byte FCS from every received frame. APCS alone does that
+     * only for IEEE 802.3 length-field frames (type/length < 0x0600) -
+     * every IPv4/ARP frame is Ethernet II and kept its FCS, so lwIP, the lab
+     * hooks and the capture tools all saw 4 trailing CRC bytes (ping -s 64:
+     * 110 B received for 106 B sent, found by the L00-02 lesson agent).
+     * CSTF (RM0090 ETH_MACCR bit 25, F42x/F43x) strips it for type frames
+     * too. Pad bytes of a minimum-size type frame stay (60 B frames);
+     * lwIP trims them via the IP total length. */
+    maccr |= ETH_MACCR_APCS | ETH_MACCR_CSTF;
     ETH->MACCR = maccr;
 
     cads_eth_desc_rings_init();
@@ -253,7 +261,8 @@ uint16_t cads_hal_eth_mac_receive(uint8_t* buffer, uint16_t buffer_size) {
 
     /* FS+LS both set is the only shape this driver hands to lwIP: a whole
      * frame in one buffer. CADS_ETH_BUF_SIZE (1536) exceeds the largest
-     * frame this MAC can receive with APCS stripping pad/FCS, so a frame
+     * frame this MAC can receive (1518 B with FCS, 1514 B once CSTF/APCS
+     * have stripped it - see cads_hal_eth_mac_init()), so a frame
      * spanning multiple descriptors would mean something is misconfigured
      * upstream - dropped, not stitched back together, same as any other
      * frame this driver does not recognise as complete and well-formed. */
