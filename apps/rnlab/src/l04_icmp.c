@@ -19,10 +19,11 @@
  * again. The replies are told apart on the wire by their TTL: ours 64, lwIP's
  * ICMP_TTL 255 - `ping` prints it for every reply.
  *
- * The same pcb also catches the echo REPLIES to `lab 04 ping`, because this
- * firmware has exactly one raw pcb (MEMP_NUM_RAW_PCB 1, lwipopts.h): while
- * the responder is on, cads_net_ping() (explorer, `lab 03 probe`) finds no
- * free pcb, so `lab 04 ping` reuses ours instead of asking for a second.
+ * While the responder is on, the same pcb also catches the echo REPLIES to
+ * `lab 04 ping` - one pcb per protocol is enough, and it leaves the other
+ * raw pcbs (MEMP_NUM_RAW_PCB 3 with the lab, lwipopts.h) to cads_net_ping()
+ * and traceroute. Note that every raw ICMP pcb sees every ICMP packet: a
+ * callback that is not sure a packet is its own must return 0.
  */
 
 #include "rnlab/rnlab_lesson.h"
