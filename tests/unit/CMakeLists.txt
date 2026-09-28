@@ -137,6 +137,8 @@ target_link_libraries(test_input PRIVATE cads_fake_hal)
 
 cads_add_unit_test(test_forensic test_forensic.c)
 target_link_libraries(test_forensic PRIVATE cads_diag cads_fake_hal)
+cads_add_unit_test(test_bootguard test_bootguard.c)
+target_link_libraries(test_bootguard PRIVATE cads_diag cads_fake_hal)
 
 # --- M6 app tree ---------------------------------------------------------------
 #

@@ -14,7 +14,7 @@ if(NOT TARGET cads_flags)
     target_compile_options(cads_flags INTERFACE -Wall -Wextra -Wshadow -Wundef -Wno-unused-parameter)
 endif()
 
-add_library(cads_diag STATIC src/cads_forensic.c)
+add_library(cads_diag STATIC src/cads_forensic.c src/cads_bootguard.c)
 
 target_include_directories(cads_diag
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
