@@ -202,6 +202,21 @@ static void test_format_is_refused_while_a_handle_is_open(void) {
     cads_storage_close(file);
 }
 
+static void test_use_after_close_is_refused(void) {
+    cads_storage_file_t* file = NULL;
+    TEST_ASSERT_EQUAL_INT(
+        CADS_STORAGE_OK,
+        cads_storage_open(&file, "/closed.txt", CADS_STORAGE_WRONLY | CADS_STORAGE_CREAT));
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_storage_close(file));
+
+    char byte = 'x';
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_ERR_INVAL, cads_storage_close(file));
+    TEST_ASSERT_EQUAL_INT32(CADS_STORAGE_ERR_INVAL, cads_storage_write(file, &byte, 1u));
+    TEST_ASSERT_EQUAL_INT32(CADS_STORAGE_ERR_INVAL, cads_storage_read(file, &byte, 1u));
+    TEST_ASSERT_EQUAL_INT32(CADS_STORAGE_ERR_INVAL, cads_storage_size(file));
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_ERR_INVAL, cads_storage_sync(file));
+}
+
 static void test_close_of_null_is_a_harmless_no_op(void) {
     TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_storage_close(NULL));
     TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_storage_dir_close(NULL));
@@ -225,6 +240,7 @@ int main(void) {
     RUN_TEST(test_file_handle_pool_is_exhausted_not_grown);
     RUN_TEST(test_format_is_refused_while_a_handle_is_open);
     RUN_TEST(test_close_of_null_is_a_harmless_no_op);
+    RUN_TEST(test_use_after_close_is_refused);
     RUN_TEST(test_status_text_is_never_null);
     return UNITY_END();
 }
