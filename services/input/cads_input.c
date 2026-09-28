@@ -159,7 +159,7 @@ static void cads_tick_buttons(uint32_t now) {
             cads_emit(CadsInputLong, cads_key_for_button(index), now, held);
         }
 
-        if(now >= button->next_repeat) {
+        if((int32_t)(now - button->next_repeat) >= 0) { /* wrap safe, like the debounce */
             button->next_repeat = now + CADS_INPUT_REPEAT_PERIOD_MS;
             cads_emit(CadsInputRepeat, cads_key_for_button(index), now, held);
         }
