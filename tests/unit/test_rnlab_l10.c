@@ -1,6 +1,11 @@
 /* rnlab L10 (HTTP-Client (Wetter 1)): host tests for l10_http_wetter_1_logic.c
  * - ctest label rnlab-L10.
  *
+ * PFLICHT vs. VERTIEFUNG: Tests mit `test_v_` im Namen gehoeren zur
+ * Vertiefung (chunked/Trailer/1xx/204 aus HTTP/1.1, JSON-Escapes und
+ * Exponenten, kaputte Zahlen). Der Versuch verlangt einen HTTP/1.0-Client;
+ * dafuer reichen alle Tests OHNE `_v_`. Die Musterloesung erfuellt beide.
+ *
  * The two canned responses are byte-for-byte what api.open-meteo.com sent
  * on 2026-09-28 (HTTP/1.0 request: plain body until close; HTTP/1.1
  * request: Transfer-Encoding: chunked). Every parser test is also run with
@@ -191,7 +196,7 @@ static void test_http10_real_response_whole(void) {
     assert_weather_ok();
 }
 
-static void test_http11_chunked_real_response_whole(void) {
+static void test_v_http11_chunked_real_response_whole(void) {
     size_t len = strlen(k_resp11);
     TEST_ASSERT_EQUAL_size_t(len, feed_text(k_resp11, len, 0));
     TEST_ASSERT_TRUE(rnlab_http_done(&f.http)); /* the 0-chunk ends it, no close needed */
@@ -205,9 +210,8 @@ static void test_http11_chunked_real_response_whole(void) {
 }
 
 /* Every split point of both responses into two pieces. */
-static void test_every_split_point(void) {
-    const char* resp[2] = {k_resp10, k_resp11};
-    for(int r = 0; r < 2; r++) {
+static void split_points(const char* const* resp, int count) {
+    for(int r = 0; r < count; r++) {
         size_t len = strlen(resp[r]);
         for(size_t cut = 0; cut <= len; cut++) {
             fixture_reset();
@@ -222,10 +226,19 @@ static void test_every_split_point(void) {
     }
 }
 
-static void test_byte_by_byte_and_odd_pieces(void) {
-    const char* resp[2] = {k_resp10, k_resp11};
+static void test_every_split_point(void) {
+    const char* resp[1] = {k_resp10};
+    split_points(resp, 1);
+}
+
+static void test_v_every_split_point_chunked(void) {
+    const char* resp[1] = {k_resp11};
+    split_points(resp, 1);
+}
+
+static void odd_pieces(const char* const* resp, int count) {
     const size_t pieces[] = {1, 2, 3, 7, 13, 64, 536};
-    for(int r = 0; r < 2; r++) {
+    for(int r = 0; r < count; r++) {
         for(size_t p = 0; p < sizeof(pieces) / sizeof(pieces[0]); p++) {
             fixture_reset();
             size_t len = strlen(resp[r]);
@@ -236,6 +249,16 @@ static void test_byte_by_byte_and_odd_pieces(void) {
             assert_weather_ok();
         }
     }
+}
+
+static void test_byte_by_byte_and_odd_pieces(void) {
+    const char* resp[1] = {k_resp10};
+    odd_pieces(resp, 1);
+}
+
+static void test_v_byte_by_byte_chunked(void) {
+    const char* resp[1] = {k_resp11};
+    odd_pieces(resp, 1);
 }
 
 static void test_content_length_stops_exactly(void) {
@@ -255,11 +278,13 @@ static void test_content_length_truncated(void) {
     TEST_ASSERT_EQUAL_INT(RNLAB_HTTP_ERR_TRUNCATED, f.http.error);
 }
 
-static void test_content_length_zero_and_204(void) {
+static void test_content_length_zero(void) {
     const char* r = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n";
     feed_text(r, strlen(r), 0);
     TEST_ASSERT_TRUE(rnlab_http_done(&f.http));
-    fixture_reset();
+}
+
+static void test_v_204_no_body(void) {
     const char* r2 = "HTTP/1.1 204 No Content\r\n\r\n";
     feed_text(r2, strlen(r2), 0);
     TEST_ASSERT_TRUE(rnlab_http_done(&f.http));
@@ -287,7 +312,7 @@ static void test_conflicting_content_length_rejected(void) {
     TEST_ASSERT_EQUAL_INT(RNLAB_HTTP_ERR_HEADER, f.http.error);
 }
 
-static void test_transfer_encoding_wins_over_length(void) {
+static void test_v_transfer_encoding_wins_over_length(void) {
     const char* r =
         "HTTP/1.1 200 OK\r\nContent-Length: 999\r\nTransfer-Encoding: gzip, Chunked\r\n\r\n"
         "3\r\nabc\r\n2;ext=1\r\nde\r\n0\r\nX-Trailer: 1\r\n\r\n";
@@ -299,7 +324,7 @@ static void test_transfer_encoding_wins_over_length(void) {
     TEST_ASSERT_FALSE(f.http.has_length);
 }
 
-static void test_chunked_is_only_last_coding(void) {
+static void test_v_chunked_is_only_last_coding(void) {
     const char* r = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, gzip\r\n\r\nraw";
     feed_text(r, strlen(r), 0);
     TEST_ASSERT_FALSE(f.http.chunked);
@@ -307,7 +332,7 @@ static void test_chunked_is_only_last_coding(void) {
     TEST_ASSERT_EQUAL_STRING("raw", f.body);
 }
 
-static void test_chunked_bad_size_and_missing_crlf(void) {
+static void test_v_chunked_bad_size_and_missing_crlf(void) {
     const char* r = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n";
     feed_text(r, strlen(r), 0);
     TEST_ASSERT_EQUAL_INT(RNLAB_HTTP_ERR_CHUNK, f.http.error);
@@ -321,7 +346,7 @@ static void test_chunked_bad_size_and_missing_crlf(void) {
     TEST_ASSERT_EQUAL_INT(RNLAB_HTTP_ERR_CHUNK, f.http.error);
 }
 
-static void test_chunked_truncated(void) {
+static void test_v_chunked_truncated(void) {
     const char* r = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nab";
     feed_text(r, strlen(r), 0);
     rnlab_http_finish(&f.http);
@@ -359,7 +384,7 @@ static void test_non_200_is_parsed_not_failed(void) {
     TEST_ASSERT_EQUAL_UINT16(400, f.http.status);
 }
 
-static void test_interim_100_continue_skipped(void) {
+static void test_v_interim_100_continue_skipped(void) {
     const char* r = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx";
     feed_text(r, strlen(r), 3);
     TEST_ASSERT_TRUE(rnlab_http_done(&f.http));
@@ -458,7 +483,7 @@ static void test_json_current_prefix_and_array(void) {
     TEST_ASSERT_FALSE(j.error);
 }
 
-static void test_json_escapes_in_strings_and_keys(void) {
+static void test_v_json_escapes_in_strings_and_keys(void) {
     json_feed_str(
         "{\"s\":\"a\\\"}{,\\\\\",\"current\":{\"x\\\"\":7,\"\\u0074emp\":8,\"t\\u00e9\":9,"
         "\"str\":\"}\\\"{\",\"n\":10}}");
@@ -471,9 +496,11 @@ static void test_json_escapes_in_strings_and_keys(void) {
     TEST_ASSERT_EQUAL_INT32(10000, v);
     TEST_ASSERT_EQUAL_UINT8(4, j.field_count); /* "t\u00e9" stored under a key nobody asks for */
     TEST_ASSERT_TRUE(j.target_closed);
+    json_feed_str("{\"current\":{\"a\":\"\\q\"}}"); /* unknown escape */
+    TEST_ASSERT_TRUE(j.error);
 }
 
-static void test_json_number_formats(void) {
+static void test_v_json_number_formats(void) {
     json_feed_str(
         "{\"current\":{\"a\":0,\"b\":-0.0004,\"c\":12.3456,\"d\":1e3,\"e\":2.5E-2,\"f\":-7,"
         "\"g\":1.0005,\"h\":3e+0}}");
@@ -488,7 +515,7 @@ static void test_json_number_formats(void) {
     TEST_ASSERT_TRUE(rnlab_json_number(&j, "h", &v)); TEST_ASSERT_EQUAL_INT32(3000, v);
 }
 
-static void test_json_malformed_numbers_dropped(void) {
+static void test_v_json_malformed_numbers_dropped(void) {
     json_feed_str(
         "{\"current\":{\"a\":1.,\"b\":1e,\"c\":1.2.3,\"d\":-,\"e\":99999999,"
         "\"f\":1234567890123456789012,\"ok\":5}}");
@@ -548,8 +575,6 @@ static void test_json_garbage_and_depth(void) {
     memset(deep, '[', 40);
     deep[40] = '\0';
     json_feed_str(deep);
-    TEST_ASSERT_TRUE(j.error);
-    json_feed_str("{\"current\":{\"a\":\"\\q\"}}");
     TEST_ASSERT_TRUE(j.error);
 }
 
@@ -612,22 +637,25 @@ int main(void) {
     RUN_TEST(test_build_get_default_request_size);
     RUN_TEST(test_build_get_too_small_and_injection);
     RUN_TEST(test_http10_real_response_whole);
-    RUN_TEST(test_http11_chunked_real_response_whole);
+    RUN_TEST(test_v_http11_chunked_real_response_whole);
     RUN_TEST(test_every_split_point);
+    RUN_TEST(test_v_every_split_point_chunked);
     RUN_TEST(test_byte_by_byte_and_odd_pieces);
+    RUN_TEST(test_v_byte_by_byte_chunked);
     RUN_TEST(test_content_length_stops_exactly);
     RUN_TEST(test_content_length_truncated);
-    RUN_TEST(test_content_length_zero_and_204);
+    RUN_TEST(test_content_length_zero);
+    RUN_TEST(test_v_204_no_body);
     RUN_TEST(test_header_names_case_and_spaces);
     RUN_TEST(test_conflicting_content_length_rejected);
-    RUN_TEST(test_transfer_encoding_wins_over_length);
-    RUN_TEST(test_chunked_is_only_last_coding);
-    RUN_TEST(test_chunked_bad_size_and_missing_crlf);
-    RUN_TEST(test_chunked_truncated);
+    RUN_TEST(test_v_transfer_encoding_wins_over_length);
+    RUN_TEST(test_v_chunked_is_only_last_coding);
+    RUN_TEST(test_v_chunked_bad_size_and_missing_crlf);
+    RUN_TEST(test_v_chunked_truncated);
     RUN_TEST(test_bare_lf_tolerated);
     RUN_TEST(test_bad_status_lines);
     RUN_TEST(test_non_200_is_parsed_not_failed);
-    RUN_TEST(test_interim_100_continue_skipped);
+    RUN_TEST(test_v_interim_100_continue_skipped);
     RUN_TEST(test_long_header_line_truncated_not_fatal);
     RUN_TEST(test_header_flood_bounded);
     RUN_TEST(test_truncated_in_headers);
@@ -636,9 +664,9 @@ int main(void) {
     RUN_TEST(test_json_units_object_not_mistaken);
     RUN_TEST(test_json_value_string_current_is_not_the_object);
     RUN_TEST(test_json_current_prefix_and_array);
-    RUN_TEST(test_json_escapes_in_strings_and_keys);
-    RUN_TEST(test_json_number_formats);
-    RUN_TEST(test_json_malformed_numbers_dropped);
+    RUN_TEST(test_v_json_escapes_in_strings_and_keys);
+    RUN_TEST(test_v_json_number_formats);
+    RUN_TEST(test_v_json_malformed_numbers_dropped);
     RUN_TEST(test_json_literals_and_nulls);
     RUN_TEST(test_json_truncated_number_not_reported);
     RUN_TEST(test_json_every_truncation_of_real_body);
