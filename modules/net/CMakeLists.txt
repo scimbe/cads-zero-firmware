@@ -21,7 +21,7 @@ endif()
 
 # cads_net_rand.c is portable (both targets, host tested); the board glue
 # around it is in cads_net_board.c.
-add_library(cads_net STATIC src/cads_net_rand.c)
+add_library(cads_net STATIC src/cads_net_rand.c src/cads_net_mac.c)
 target_include_directories(cads_net PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(cads_net PRIVATE cads_flags)
 
