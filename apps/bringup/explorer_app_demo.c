@@ -170,6 +170,30 @@ static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
  * never by accident. scripts/board_key.py's "quit" sends it. */
 #define CADS_APP_DEMO_EXIT_BYTE 0x88u
 
+#ifdef CADS_APP_RNLAB_ENABLED
+/* `lab key` (apps/rnlab): the same reserved codes as the console bytes above,
+ * handed over from a `lab` command - which runs inside this loop's own call
+ * chain (serial feed or TCP service), so pressing into s_gui directly is the
+ * same thing the byte path does. The exit code only raises a flag: the loop
+ * ends at its next turn, not inside the command that asked for it. */
+static bool s_app_demo_exit_requested = false;
+
+static bool cads_explorer_app_demo_inject(uint8_t code) {
+    if(code == CADS_APP_DEMO_EXIT_BYTE) {
+        s_app_demo_exit_requested = true;
+        return true;
+    }
+    cads_key_t key = cads_explorer_app_demo_decode_key(code);
+    if(key == CadsKeyNone) return false;
+    uint32_t now = cads_hal_ticks_ms();
+    cads_input_event_t press = {.type = CadsInputPress, .key = key, .timestamp = now};
+    cads_gui_input(&s_gui, &press);
+    cads_input_event_t release = {.type = CadsInputRelease, .key = key, .timestamp = now};
+    cads_gui_input(&s_gui, &release);
+    return true;
+}
+#endif
+
 uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
 
@@ -218,8 +242,18 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
      * always wins even against a byte that also happens to decode as a
      * key. A bounded run additionally times out on its own below. */
     uint8_t wake_byte = 0u;
+#ifdef CADS_APP_RNLAB_ENABLED
+    s_app_demo_exit_requested = false;
+    rnlab_set_key_injector(cads_explorer_app_demo_inject);
+#endif
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
+#ifdef CADS_APP_RNLAB_ENABLED
+        if(s_app_demo_exit_requested) { /* `lab key quit` */
+            wake_byte = CADS_APP_DEMO_EXIT_BYTE;
+            break;
+        }
+#endif
         {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {
@@ -302,6 +336,9 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
     }
 
     uint32_t end_generation = cads_view_dispatcher_generation(&s_dispatcher);
+#ifdef CADS_APP_RNLAB_ENABLED
+    rnlab_set_key_injector(NULL);
+#endif
     cads_gui_detach_input();
 
     cads_probe_puts("# app demo done: ");

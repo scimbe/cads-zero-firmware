@@ -31,6 +31,20 @@ bool rnlab_parse_ipv4(const char* text, uint32_t* ip);
 /** Parse a lesson number "1".."11" or "01".."11". False otherwise. */
 bool rnlab_parse_lesson(const char* text, uint32_t* lesson);
 
+/** Reserved console bytes of the app tree's headless key injection
+ *  (apps/bringup/explorer_app_demo.c, scripts/board_key.py): 0x80..0x87 are
+ *  the eight logical keys, 0x88 leaves the app tree. */
+#define RNLAB_KEY_CODE_QUIT 0x88u
+
+/** Look up a `lab key` name - up, down, left, right, ok, back, f1, f2, quit
+ *  (scripts/board_key.py's names) or s0..s7 (the physical buttons, bound
+ *  positionally: Sn = key n), case-insensitive. False for anything else. */
+bool rnlab_key_lookup(const char* name, uint8_t* code);
+
+/** The names rnlab_key_lookup() accepts, for `lab key help`: a NULL-
+ *  terminated list, canonical names first. */
+extern const char* const rnlab_key_names[];
+
 #ifdef __cplusplus
 }
 #endif

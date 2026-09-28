@@ -52,6 +52,19 @@ void rnlab_poll(void);
  */
 void rnlab_idle_ms(uint32_t ms);
 
+/**
+ * `lab key`: the app tree registers this while it runs (NULL once it has
+ * left), so rnlab needs no link to apps/bringup. `code` is one of the
+ * reserved key bytes 0x80..0x88 of scripts/board_key.py; returns false if
+ * the code is not a key.
+ */
+typedef bool (*rnlab_key_injector_fn)(uint8_t code);
+void rnlab_set_key_injector(rnlab_key_injector_fn inject);
+
+/** True once after `lab key menu` asked to (re)enter the app tree from the
+ *  explorer prompt; the explorer's idle loop polls it. */
+bool rnlab_take_menu_request(void);
+
 /** Feed one byte of the serial console into the lab's serial CLI session
  *  (used while the app tree owns the console; plain ASCII there was
  *  ignored before). */

@@ -18,6 +18,7 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 | `lab net static [ip mask gw]` | statische Adresse (ohne Argumente: Default oben) |
 | `lab net dhcp` | Adresse per DHCP beziehen (Setup S2) |
 | `lab selftest` | Zusagen des Rahmens auf dem Board prüfen (Timer-Reserve) |
+| `lab key <name> [n]` | Taste im Menü drücken, n-mal (1..20): `up down left right ok back f1 f2` oder `s0`…`s7` (Taster, positional = dieselben Tasten); `quit` verlässt das Menü zum Explorer-Prompt (Netz läuft weiter), `menu` kehrt vom Prompt zurück; `lab key help` listet alles. OS-neutraler Ersatz für `scripts/board_key.py`, über UART und Telnet |
 | `lab poll [ms]` | Poll-Intervall des Netzes im App-Baum anzeigen/setzen, 1..10 ms (Default 10, siehe L04) |
 | `lab NN <cmd> [args]` | Befehl der Lektion `NN` (`01` … `11`) |
 

@@ -34,6 +34,8 @@ static const rnlab_lesson_fn rnlab_lessons[11] = {
 static cads_cli_session_t rnlab_serial;
 static const char* rnlab_mac_source = "?";
 static uint32_t rnlab_poll_ms = RNLAB_POLL_MS_DEFAULT;
+static rnlab_key_injector_fn rnlab_key_injector = NULL;
+static bool rnlab_menu_requested = false;
 
 static void rnlab_write_ipv4(cads_cli_session_t* session, uint32_t ip) {
     if(ip == 0u) {
@@ -54,6 +56,7 @@ static void rnlab_cmd_help(cads_cli_session_t* session) {
         "lab selftest                 Zusagen des Rahmens pruefen (Timer-Reserve)\r\n"
         "lab poll [ms]                Poll-Intervall im App-Baum anzeigen/setzen (1..10)\r\n"
         "lab forensic [clear]         Absturzprotokoll: Anzahl anzeigen / vor Messungen leeren\r\n"
+        "lab key <name> [n]           Taste im Menue druecken (n-mal), 'lab key help' listet die Namen\r\n"
         "lab NN <cmd> [args]          Lektion NN (01..11), z.B. lab 01 help\r\n");
 }
 
@@ -155,6 +158,68 @@ static void rnlab_cmd_net(cads_cli_session_t* session, int argc, char* argv[]) {
     cads_cli_write(session, "? Aufruf: lab net static [ip mask gw] | lab net dhcp\r\n");
 }
 
+static void rnlab_cmd_key_help(cads_cli_session_t* session) {
+    cads_cli_write(session, "lab key <name> [n]: ");
+    for(uint32_t i = 0; rnlab_key_names[i] != NULL; i++) {
+        cads_cli_write(session, rnlab_key_names[i]);
+        cads_cli_write(session, " ");
+    }
+    cads_cli_write(session,
+        "s0..s7 menu\r\n"
+        "  s0..s7 = Taster S0..S7 (= up down left right ok back f1 f2)\r\n"
+        "  quit   = Menue verlassen, zurueck zum Explorer-Prompt (Netz laeuft weiter)\r\n"
+        "  menu   = vom Prompt zurueck ins Menue\r\n");
+}
+
+/* `lab key <name> [n]` - the OS-neutral replacement for scripts/board_key.py
+ * (which needs termios): the same reserved key codes, handed to the app tree
+ * through its injector, from UART and Telnet alike. */
+static void rnlab_cmd_key(cads_cli_session_t* session, int argc, char* argv[]) {
+    if(argc == 0 || cads_str_equal(argv[0], "help")) {
+        rnlab_cmd_key_help(session);
+        return;
+    }
+    if(cads_str_equal(argv[0], "menu")) {
+        if(rnlab_key_injector) {
+            cads_cli_write(session, "key: Menue laeuft bereits\r\n");
+        } else {
+            rnlab_menu_requested = true;
+            cads_cli_write(session, "key: Menue wird gestartet\r\n");
+        }
+        return;
+    }
+
+    uint8_t code;
+    if(!rnlab_key_lookup(argv[0], &code)) {
+        cads_cli_write(session, "? unbekannte Taste: ");
+        cads_cli_write(session, argv[0]);
+        cads_cli_write(session, " ('lab key help')\r\n");
+        return;
+    }
+    uint32_t count = 1u;
+    if(argc >= 2) {
+        const char* end;
+        if(!cads_str_to_uint(argv[1], &count, &end) || *end != '\0' || count < 1u || count > 20u) {
+            cads_cli_write(session, "? Anzahl 1..20\r\n");
+            return;
+        }
+    }
+    if(!rnlab_key_injector) {
+        cads_cli_write(session, "? Menue laeuft nicht - erst 'lab key menu'\r\n");
+        return;
+    }
+    for(uint32_t i = 0; i < count && rnlab_key_injector; i++) {
+        (void)rnlab_key_injector(code);
+    }
+    cads_cli_write(session, "key: ");
+    cads_cli_write(session, argv[0]);
+    if(count > 1u) {
+        cads_cli_write(session, " x");
+        cads_cli_write_uint(session, count);
+    }
+    cads_cli_write(session, "\r\n");
+}
+
 static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
     char buffer[CADS_CLI_LINE_MAX];
     cads_str_copy(buffer, sizeof(buffer), args);
@@ -183,6 +248,10 @@ static void rnlab_cmd_lab(cads_cli_session_t* session, const char* args) {
         cads_cli_write(session, "poll: ");
         cads_cli_write_uint(session, rnlab_poll_ms);
         cads_cli_write(session, " ms\r\n");
+        return;
+    }
+    if(cads_str_equal(argv[0], "key")) {
+        rnlab_cmd_key(session, argc - 1, argv + 1);
         return;
     }
     if(cads_str_equal(argv[0], "forensic")) {
@@ -256,6 +325,16 @@ void rnlab_idle_ms(uint32_t ms) {
         cads_net_poll();
         cads_cli_tcp_service();
     }
+}
+
+void rnlab_set_key_injector(rnlab_key_injector_fn inject) {
+    rnlab_key_injector = inject;
+}
+
+bool rnlab_take_menu_request(void) {
+    bool requested = rnlab_menu_requested;
+    rnlab_menu_requested = false;
+    return requested;
 }
 
 void rnlab_serial_feed(uint8_t byte) {

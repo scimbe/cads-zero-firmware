@@ -69,6 +69,37 @@ static void test_lesson_number(void) {
     TEST_ASSERT_FALSE(rnlab_parse_lesson("1a", &lesson));
 }
 
+/* `lab key`: the same codes as scripts/board_key.py, plus S0..S7. */
+static void test_key_names_match_board_key_py(void) {
+    static const struct { const char* name; uint8_t code; } expected[] = {
+        {"up", 0x80}, {"down", 0x81}, {"left", 0x82}, {"right", 0x83},
+        {"ok", 0x84}, {"back", 0x85}, {"f1", 0x86}, {"f2", 0x87}, {"quit", 0x88},
+    };
+    for(size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+        uint8_t code = 0u;
+        TEST_ASSERT_TRUE_MESSAGE(rnlab_key_lookup(expected[i].name, &code), expected[i].name);
+        TEST_ASSERT_EQUAL_HEX8(expected[i].code, code);
+    }
+}
+
+static void test_key_buttons_and_case(void) {
+    uint8_t code = 0u;
+    TEST_ASSERT_TRUE(rnlab_key_lookup("s0", &code));
+    TEST_ASSERT_EQUAL_HEX8(0x80, code);
+    TEST_ASSERT_TRUE(rnlab_key_lookup("S4", &code));
+    TEST_ASSERT_EQUAL_HEX8(0x84, code); /* S4 = ok, positional binding */
+    TEST_ASSERT_TRUE(rnlab_key_lookup("S7", &code));
+    TEST_ASSERT_EQUAL_HEX8(0x87, code);
+    TEST_ASSERT_TRUE(rnlab_key_lookup("OK", &code));
+    TEST_ASSERT_EQUAL_HEX8(0x84, code);
+
+    TEST_ASSERT_FALSE(rnlab_key_lookup("s8", &code));
+    TEST_ASSERT_FALSE(rnlab_key_lookup("s10", &code));
+    TEST_ASSERT_FALSE(rnlab_key_lookup("okay", &code));
+    TEST_ASSERT_FALSE(rnlab_key_lookup("", &code));
+    TEST_ASSERT_FALSE(rnlab_key_lookup(NULL, &code));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_split_words);
@@ -76,5 +107,7 @@ int main(void) {
     RUN_TEST(test_split_bounded);
     RUN_TEST(test_ipv4);
     RUN_TEST(test_lesson_number);
+    RUN_TEST(test_key_names_match_board_key_py);
+    RUN_TEST(test_key_buttons_and_case);
     return UNITY_END();
 }

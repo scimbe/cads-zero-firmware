@@ -503,6 +503,13 @@ void cads_explorer_run(void) {
             /* Keep ping, ARP and TCP :4242 answering between commands too,
              * not only while the app tree runs. */
             rnlab_poll();
+            /* `lab key menu` (UART or Telnet): back into the app tree
+             * without a reset. */
+            if(rnlab_take_menu_request()) {
+                (void)cads_explorer_app_demo(0u);
+                cads_probe_puts("# back at the explorer prompt, '?' for help\r\n");
+                length = 0u;
+            }
 #endif
             /* Yield rather than spin: under the scheduler a busy wait here
              * would starve nothing (this is the lowest priority task) but it
