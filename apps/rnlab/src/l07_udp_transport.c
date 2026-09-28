@@ -20,7 +20,6 @@
 #include "cads/net/net.h"
 #include "cads/toolbox/str.h"
 #include "cads_hal.h"
-#include "hal_eth_mac.h"
 #include "lwip/pbuf.h"
 #include "lwip/udp.h"
 
@@ -41,22 +40,15 @@ typedef struct {
     uint64_t last_us;
     uint16_t echo_port; /* 0 = no echo */
     uint32_t echo_errors;
-    /* Driver/MAC counters at `start`/`reset`, to report only this run's share.
-     * DMAMFBOCR clears on read, so the MAC's are accumulated, not snapshotted. */
+    /* Driver/MAC counters (totals since boot) at `start`/`reset`, so that
+     * `stats` reports only this run's share. */
     uint32_t rx_dropped_base;
-    uint32_t mac_no_desc;
-    uint32_t mac_fifo;
+    uint32_t ring_base;
+    uint32_t fifo_base;
 } l07_state_t;
 
 static l07_state_t l07;
 static uint16_t l07_blit_pixels[L07_BLIT_W * L07_BLIT_H];
-
-static void l07_mac_accumulate(void) {
-    uint32_t no_desc = 0u, fifo = 0u;
-    cads_hal_eth_mac_missed_frames(&no_desc, &fifo);
-    l07.mac_no_desc += no_desc;
-    l07.mac_fifo += fifo;
-}
 
 static void l07_reset_counters(void) {
     cads_net_status_t status;
@@ -68,9 +60,8 @@ static void l07_reset_counters(void) {
     l07.last_us = 0u;
     l07.echo_errors = 0u;
     l07.rx_dropped_base = status.rx_dropped;
-    cads_hal_eth_mac_missed_frames(NULL, NULL); /* discard what happened before */
-    l07.mac_no_desc = 0u;
-    l07.mac_fifo = 0u;
+    l07.ring_base = status.rx_ring_overruns;
+    l07.fifo_base = status.rx_fifo_overruns;
 }
 
 static void l07_recv(void* arg, struct udp_pcb* pcb, struct pbuf* p, const ip_addr_t* addr, u16_t port) {
@@ -154,7 +145,6 @@ static void l07_cmd_stats(cads_cli_session_t* s) {
     const rnlab_seq_tracker_t* t = &l07.tracker;
     cads_net_status_t status;
     cads_net_status(&status);
-    l07_mac_accumulate();
 
     cads_cli_write(s, l07.pcb ? "senke:      aktiv, Port 7007\r\n" : "senke:      aus\r\n");
     cads_cli_write(s, "empfangen:  ");
@@ -203,9 +193,9 @@ static void l07_cmd_stats(cads_cli_session_t* s) {
     cads_cli_write(s, "\r\ntreiber:    ");
     cads_cli_write_uint(s, status.rx_dropped - l07.rx_dropped_base);
     cads_cli_write(s, " verworfen (kein pbuf/Hook)\r\nmac:        ");
-    cads_cli_write_uint(s, l07.mac_no_desc);
+    cads_cli_write_uint(s, status.rx_ring_overruns - l07.ring_base);
     cads_cli_write(s, " ohne RX-Deskriptor, ");
-    cads_cli_write_uint(s, l07.mac_fifo);
+    cads_cli_write_uint(s, status.rx_fifo_overruns - l07.fifo_base);
     cads_cli_write(s, " FIFO-Ueberlauf\r\n");
 }
 
