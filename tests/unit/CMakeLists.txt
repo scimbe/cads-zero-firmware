@@ -209,6 +209,11 @@ target_include_directories(cads_lwip_host PUBLIC
     ${CADS_ROOT}/modules/net/include
     ${LWIP_DIR}/src/include
     ${CADS_ROOT}/core)
+# lwIP's own htons()/ntohl() convenience macros collide with the host libc's
+# (macOS sys/_endian.h, pulled in by <string.h>): -Wmacro-redefined. lwIP
+# itself only uses lwip_htons() & co, so the plain names are simply not
+# provided here - the board build, with no libc versions, keeps them.
+target_compile_definitions(cads_lwip_host PUBLIC LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS=1)
 cads_add_unit_test(test_lwip_dhcp_nak test_lwip_dhcp_nak.c)
 target_link_libraries(test_lwip_dhcp_nak PRIVATE cads_lwip_host cads_fake_hal)
 
