@@ -2070,6 +2070,25 @@ _None outstanding._
 
 ## Log
 
+- 2026-09-28 (praktikum/start: 24 KB SRAM for the lessons) - With RNLAB,
+  everything CPU-only moves to CCM: lwIP's MEM_SIZE heap + all memp pools
+  (`LWIP_DECLARE_MEMORY_ALIGNED` in lwipopts.h), cads_net_board.c's RX/TX
+  copy buffers, the explorer capture buffer, FreeRTOS idle/timer stacks
+  (+15.7 KB; nothing there is a DMA target - hal_eth_mac.c copies). This
+  branch also defaults MARAUDER/ACTIVE/GAME/FILEBROWSER to OFF (+5.6 KB; no
+  offensive tools in the student image). Margin 384 B -> 24 768 B, CCM
+  29.5 KB/64 KB. New `CADS_RNLAB_TCP_WND_MSS` (2..16) /
+  `CADS_RNLAB_TCP_SND_BUF_MSS` (2..8), defaults = main's 8/4, derived pools
+  in CCM (16/8 builds, SRAM unchanged). Found + fixed along the way:
+  `cads_lightorgan.c` was built unconditionally, so every
+  `-DCADS_APP_MARAUDER=OFF` build failed (CI's minimal job never turns
+  Marauder off). Gotcha: `CADS_CCM_SECTION` is empty unless the TU has
+  `CADS_TARGET_ITSBOARD` - cads_kernel does not, so kernel.c spells the
+  attribute out; check `nm` addresses (0x1000xxxx) after any CCM move.
+  test_app_tree/cads_gallery now build only with the full app set. HIL:
+  ping (incl. 50x 1472 B), `lab info` UART+telnet, iperf2 29.7 Mbit/s
+  against `I`, `V 5` 342 kpixel/s, forensic ring empty.
+
 - 2026-09-28 (apps/rnlab: Rahmen für das Rechnernetze-Praktikum, Branch
   `praktikum/start`) - New `CADS_APP_RNLAB` (default ON on this branch):
   `rnlab_init()` at the top of `cads_explorer_run()` brings the netif up
