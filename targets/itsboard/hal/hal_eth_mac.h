@@ -103,4 +103,9 @@ void cads_hal_eth_mac_set_promiscuous(bool enable);
  */
 void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow);
 
+/** The same two counters as running totals since boot, independent of
+ *  cads_hal_eth_mac_missed_frames()'s since-last-call view (both share one
+ *  clear-on-read register without stealing each other's counts). */
+void cads_hal_eth_mac_missed_totals(uint32_t* no_descriptor, uint32_t* fifo_overflow);
+
 #endif /* CADS_HAL_ETH_MAC_H */

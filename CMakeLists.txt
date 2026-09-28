@@ -150,6 +150,9 @@ set(CADS_RNLAB_TCP_SND_BUF_MSS 4 CACHE STRING "apps/rnlab: TCP_SND_BUF in multip
 # TCP_MSS itself: 536 (lwIP's default, what main runs) or 1460 (1500-byte MTU).
 set(CADS_RNLAB_TCP_MSS 536 CACHE STRING "apps/rnlab: TCP_MSS in bytes (536|1460)")
 set_property(CACHE CADS_RNLAB_TCP_MSS PROPERTY STRINGS 536 1460)
+# Ethernet RX DMA ring depth (hal_eth_mac.c). 8 = main; up to 32, each
+# descriptor is 1536 B of SRAM (DMA - never CCM).
+set(CADS_RNLAB_ETH_RX_COUNT 8 CACHE STRING "apps/rnlab: Ethernet RX descriptors (4..32)")
 
 # --- warnings ----------------------------------------------------------------
 # Firmware that silently truncates an integer is firmware that fails in the
@@ -481,6 +484,15 @@ if(CADS_TARGET STREQUAL "itsboard")
     # (and however many times) the final executable actually needs it,
     # instead of trusting a fixed position in the hand-written link list.
     target_link_libraries(cads_net PUBLIC cads_hal_itsboard)
+    if(CADS_APP_RNLAB)
+        if(CADS_RNLAB_ETH_RX_COUNT LESS 4 OR CADS_RNLAB_ETH_RX_COUNT GREATER 32)
+            message(FATAL_ERROR "CADS_RNLAB_ETH_RX_COUNT must be 4..32, got ${CADS_RNLAB_ETH_RX_COUNT}")
+        endif()
+        # The driver sizes its ring from it; cads_net_board.c its per-poll
+        # drain budget.
+        target_compile_definitions(cads_hal_itsboard PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
+        target_compile_definitions(cads_net PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
+    endif()
 
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)
 

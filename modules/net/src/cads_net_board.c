@@ -94,7 +94,13 @@ static uint8_t cads_net_tx_staging[CADS_NET_TX_STAGING_SIZE];
  * ring depth) clears any realistic burst in one pass while capping the worst
  * case, so a sustained line-rate flood cannot keep cads_net_receive_pump()
  * refilling forever and starve the single bare-metal loop. See its own note. */
+#if defined(CADS_RNLAB_ETH_RX_COUNT) && (CADS_RNLAB_ETH_RX_COUNT > 16)
+/* The lab's deeper ring (CADS_RNLAB_ETH_RX_COUNT): one poll may drain all of
+ * it, so the ring - not this budget - is what L08/L09 measure. */
+#define CADS_NET_RX_BUDGET_PER_POLL ((uint32_t)CADS_RNLAB_ETH_RX_COUNT)
+#else
 #define CADS_NET_RX_BUDGET_PER_POLL 16u
+#endif
 
 static err_t cads_netif_linkoutput(struct netif* netif, struct pbuf* p) {
     (void)netif;
@@ -336,6 +342,8 @@ void cads_net_status(cads_net_status_t* status) {
         status->gw_addr = lwip_ntohl(ip4_addr_get_u32(netif_ip4_gw(&cads_netif)));
         status->netmask = lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(&cads_netif)));
         status->dhcp_bound = dhcp_supplied_address(&cads_netif) != 0u;
+        /* Only once the MAC has been initialised (first link-up). */
+        cads_hal_eth_mac_missed_totals(&status->rx_ring_overruns, &status->rx_fifo_overruns);
         const struct dhcp* dhcp = netif_dhcp_data(&cads_netif);
         if(dhcp) status->dhcp_naks = dhcp->naks_total;
 

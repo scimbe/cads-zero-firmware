@@ -59,7 +59,15 @@
  * the ring doubles the burst absorbed between drains; affordable now that
  * gui/canvas.c reclaimed 15 KB (issue #59). Normal traffic never came near the
  * old depth of 4. Costs CADS_ETH_BUF_SIZE (1536 B) per added descriptor. */
+/* praktikum/start's lab build may deepen it (CMake CADS_RNLAB_ETH_RX_COUNT,
+ * 4..32): L08/L09 show when the receive ring rather than the TCP window
+ * limits throughput. Descriptors and buffers stay in SRAM regardless - the
+ * DMA cannot reach CCM. */
+#ifdef CADS_RNLAB_ETH_RX_COUNT
+#define CADS_ETH_RX_COUNT ((uint32_t)CADS_RNLAB_ETH_RX_COUNT)
+#else
 #define CADS_ETH_RX_COUNT 8u
+#endif
 /* 2, not 4: cads_hal_eth_mac_transmit() copies one frame into the next TX
  * buffer and hands it to the DMA, which drains a 1522-byte frame in ~123us
  * at 100Mbit - far faster than this software-checksummed, single-loop TX
@@ -279,8 +287,35 @@ void cads_hal_eth_mac_set_promiscuous(bool enable) {
     }
 }
 
-void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+/* DMAMFBOCR clears on read, and two readers want it: the sniff demo (counts
+ * since its own last call) and the running totals behind
+ * cads_hal_eth_mac_missed_totals(). Every read lands in both, so neither
+ * steals the other's counts. */
+static uint32_t cads_eth_missed_pending_nodesc = 0u;
+static uint32_t cads_eth_missed_pending_fifo = 0u;
+static uint32_t cads_eth_missed_total_nodesc = 0u;
+static uint32_t cads_eth_missed_total_fifo = 0u;
+
+static void cads_eth_missed_collect(void) {
     uint32_t reg = ETH->DMAMFBOCR; /* reading this clears both fields (RM0090: rc_r) */
-    if(no_descriptor) *no_descriptor = reg & ETH_DMAMFBOCR_MFC_Msk;
-    if(fifo_overflow) *fifo_overflow = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
+    uint32_t nodesc = reg & ETH_DMAMFBOCR_MFC_Msk;
+    uint32_t fifo = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
+    cads_eth_missed_pending_nodesc += nodesc;
+    cads_eth_missed_pending_fifo += fifo;
+    cads_eth_missed_total_nodesc += nodesc;
+    cads_eth_missed_total_fifo += fifo;
+}
+
+void cads_hal_eth_mac_missed_totals(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+    cads_eth_missed_collect();
+    if(no_descriptor) *no_descriptor = cads_eth_missed_total_nodesc;
+    if(fifo_overflow) *fifo_overflow = cads_eth_missed_total_fifo;
+}
+
+void cads_hal_eth_mac_missed_frames(uint32_t* no_descriptor, uint32_t* fifo_overflow) {
+    cads_eth_missed_collect();
+    if(no_descriptor) *no_descriptor = cads_eth_missed_pending_nodesc;
+    if(fifo_overflow) *fifo_overflow = cads_eth_missed_pending_fifo;
+    cads_eth_missed_pending_nodesc = 0u;
+    cads_eth_missed_pending_fifo = 0u;
 }

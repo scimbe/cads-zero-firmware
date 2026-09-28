@@ -138,7 +138,7 @@ blockieren, kein `cads_net_poll()` darin aufrufen.
 Maßstab ist `scripts/check_ram_budget.py`: die SRAM-Reserve über dem Boden
 des Linkerskripts; mindestens 256 B müssen immer übrig bleiben (CI-Gate).
 Auf `praktikum/start` liegt der Boden bei **0 statt 48 KB**, und die Reserve
-beträgt im Default **73 856 B (72,1 KB)**.
+beträgt im Default **73 824 B (72,1 KB)**.
 
 | Maßnahme | SRAM frei | Wo |
 |---|---:|---|
@@ -149,7 +149,8 @@ beträgt im Default **73 856 B (72,1 KB)**.
 | Explorer-Capture-Puffer, FreeRTOS-Idle-/Timer-Stack nach CCM | +3 072 B | `apps/bringup/explorer_capture_buffer.c`, `modules/kernel/src/kernel.c` |
 | CLI-Robustheit und entkoppelte Ausführung (Zustand je Sitzung) | −64 B | `modules/cli` |
 | 48-KB-„Heap“-Boden auf 0 (CTO-Freigabe 2026-09-28, nur dieser Branch) | +49 152 B | `targets/itsboard/linker/cads_itsboard.ld`, `CMakeLists.txt` |
-| **Summe (praktikum/start, Default-TCP)** | **73 856 B** | |
+| RX-Überlaufzähler (Summen im HAL) | −32 B | `targets/itsboard/hal/hal_eth_mac.c` |
+| **Summe (praktikum/start, Default-TCP)** | **73 824 B** | |
 
 **Warum der 48-KB-Boden fallen darf:** Nichts belegt diesen Bereich zur
 Laufzeit. Im Image ist kein `malloc`/`_sbrk`/`free` gelinkt (`nm`), lwIP
@@ -200,6 +201,7 @@ Konsolen-Tasks (4 KB, CCM): einzelne Puffer über ~1 KB dort vermeiden.
 | `CADS_RNLAB_TCP_MSS` | 536 | 536 oder 1460 | `TCP_MSS` (1460 = MTU 1500 − 40 B IP/TCP) |
 | `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..32 | `TCP_WND = n * TCP_MSS` (max. 46 720 B, ohne Window Scaling < 64 KB) |
 | `CADS_RNLAB_TCP_SND_BUF_MSS` | 4 | 2..16 | `TCP_SND_BUF = n * TCP_MSS` |
+| `CADS_RNLAB_ETH_RX_COUNT` | 8 | 4..32 | Tiefe des Ethernet-RX-DMA-Rings (`hal_eth_mac.c`); je Deskriptor 1536 B **SRAM** (DMA, nie CCM) |
 
 ```bash
 bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=32 -DCADS_RNLAB_TCP_SND_BUF_MSS=16
@@ -213,15 +215,25 @@ solange beides zusammen ins CCM passt; sonst wandern die Pools ins SRAM
 
 | MSS / WND / SND_BUF | Pools | SRAM-Reserve | CCM belegt | CCM frei¹ |
 |---|---|---:|---:|---:|
-| 536 / 2 / 2 | CCM | 73 856 B | 30,1 KB | 30,6 KB |
-| 536 / 8 / 4 (Default) | CCM | 73 856 B | 30,4 KB | 30,3 KB |
-| 536 / 16 / 8 | CCM | 73 856 B | 36,9 KB | 23,1 KB |
-| 536 / 32 / 16 | CCM | 73 856 B | 51,2 KB | 8,8 KB |
-| 1460 / 8 / 4 | CCM | 73 856 B | 43,0 KB | 17,0 KB |
-| 1460 / 16 / 8 | SRAM | 45 056 B | 31,4 KB | 28,6 KB |
-| 1460 / 32 / 16 | SRAM | 19 904 B | 42,8 KB | 17,1 KB |
+| 536 / 2 / 2 | CCM | 73 824 B | 30,1 KB | 30,6 KB |
+| 536 / 8 / 4 (Default) | CCM | 73 824 B | 30,4 KB | 30,3 KB |
+| 536 / 16 / 8 | CCM | 73 824 B | 36,9 KB | 23,1 KB |
+| 536 / 32 / 16 | CCM | 73 824 B | 51,2 KB | 8,8 KB |
+| 1460 / 8 / 4 | CCM | 73 824 B | 43,0 KB | 17,0 KB |
+| 1460 / 16 / 8 | SRAM | 45 024 B | 31,4 KB | 28,6 KB |
+| 1460 / 32 / 16 | SRAM | 19 872 B | 42,8 KB | 17,1 KB |
 
 ¹ 64 KB minus belegt minus 4 KB Hauptstack.
+
+**RX-Ring:** Jeder Deskriptor über 8 kostet 1 536 B SRAM-Reserve. Messwerte:
+536/8/4 mit RX 8 hat 73 824 B Reserve, 536/32/16 mit RX 32 hat 36 576 B,
+1460/16/8 mit RX 32 hat 7 808 B. **1460/32/16 verträgt höchstens RX 20**
+(1 280 B Reserve; ab RX 21 läuft das SRAM über, der Linker bricht ab).
+Framebuffer (75 KB), Display-Stage (15 KB, DMA) und der PBUF_POOL (50 KB bei
+33 × 1 460 B) lassen daneben keinen Platz. Solche Kombinationen sind reine
+L08/L09-Messbuilds, in denen die Lektions-Richtmaße oben nicht mehr passen.
+Überläufe zeigt `lab info` als `rx_ring_overruns` (kein freier Deskriptor,
+DMAMFBOCR.MFC) und `FIFO` (DMAMFBOCR.MFA), jeweils seit dem Boot.
 
 Die Optionen gelten für den ganzen Build-Ordner, danach also wieder auf die
 Defaults zurücksetzen
