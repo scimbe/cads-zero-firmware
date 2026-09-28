@@ -66,6 +66,19 @@ not of a timer - and that held up under repeated, empirical testing (above).
 A threshold would exist to absorb noise that this mechanism does not have;
 adding one anyway would just make a real regression easier to miss.
 
+**The RGB565 -> 24 bpp step is the simulator's, not SDL's.** Until
+2026-09 `--screenshot` handed SDL_SaveBMP an RGB565 surface and let SDL
+widen it, and SDL builds disagree on how: Ubuntu's `libsdl2-dev` (CI)
+truncates (5-bit red 22 -> 180), macOS's `sdl2-compat` on SDL3 replicates
+bits (22 -> 181). Every anti-aliased pixel came out 1 LSB apart, so
+`splash` (18866 px) and `boot_desktop` (14273 px) only ever passed on the
+host that last ran `update_golden` - and they were regenerated back and
+forth once (`3c038cb`) without fixing that. `hal_sim.c` now expands the
+channels itself by bit replication and hands SDL a BGR24 surface, which a
+24 bpp BMP stores as is, so the bytes no longer depend on which SDL is
+installed. The goldens here were already bit-replicated (captured on
+macOS), so they did not change.
+
 **PNG, indexed colour where possible, via Python's `zlib` rather than a
 hand-rolled or vendored compressor.** Every pixel any of these scenes can
 produce comes from the canvas's fixed palette
