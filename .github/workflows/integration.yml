@@ -1,0 +1,80 @@
+name: Integration
+
+# Every lab solution (loesung/lNN-*) is developed alone against praktikum/start,
+# but a student fork ends the semester with all of them at once. This merges
+# all of them into one local branch and builds/tests after each merge
+# (scripts/integrate_solutions.sh), so a commit that breaks the combination -
+# a merge conflict, a shared-file clash, a RAM/flash budget overrun, a test
+# that only fails next to another lesson - is caught and pinned to a lesson.
+#
+# Triggers: pushes to praktikum/start and solution branches, PRs into
+# praktikum/start, manual dispatch, nightly. A solution branch runs this only
+# once it contains this file (after taking praktikum/start in). GitHub runs
+# `schedule` only from the default branch's copy of a workflow, so the
+# nightly trigger takes effect only if main carries this file (or a small
+# workflow on main dispatches this one).
+
+on:
+  push:
+    branches: [praktikum/start, 'loesung/**']
+  # A PR into praktikum/start is checked before it lands.
+  pull_request:
+    branches: [praktikum/start]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+
+# One integration at a time per trigger branch; a newer push supersedes.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    name: All solutions on praktikum/start
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and every branch: the script merges origin/loesung/l*
+      # into origin/praktikum/start, whatever ref triggered the run.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '13.3.Rel1'
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libsdl2-dev
+
+      # Same configuration as ci.yml's firmware job, but into build/itsboard
+      # (where the script and scripts/build.sh expect the ELF). The toolchain
+      # dir is resolved inside the command: scripts/cads_env.sh (sourced by
+      # the script) would otherwise export an empty CADS_ARM_TOOLCHAIN_BIN on
+      # a runner without the vcpkg toolchain.
+      - name: Integrate all solutions
+        env:
+          INTEG_FW_BUILD: >-
+            cmake -S . -B build/itsboard -G Ninja
+            -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake
+            -DCMAKE_BUILD_TYPE=Release
+            -DCADS_ARM_TOOLCHAIN_BIN=$(dirname $(which arm-none-eabi-gcc))
+            && cmake --build build/itsboard
+        run: |
+          set -o pipefail
+          bash scripts/integrate_solutions.sh --worktree "$RUNNER_TEMP/cz-integ" | tee integration.txt
+          {
+            echo '### Integration of all solutions'
+            echo '```'
+            cat integration.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: ${{ runner.temp }}/cz-integ/build/integ-logs
+          if-no-files-found: ignore
