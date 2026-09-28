@@ -11,6 +11,7 @@
 
 #include "rnlab/rnlab_lesson.h"
 
+#include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
 #include "cads_hal.h"
@@ -20,7 +21,20 @@ static void l11_write_status(cads_cli_session_t* s) {
     rnlab_wx_t* wx = rnlab_l11_app();
     uint32_t now = cads_hal_ticks_ms();
     rnlab_wx_view_t v;
-    rnlab_wx_view(wx, now, &v);
+    if(wx->view_open) {
+        rnlab_wx_view(wx, now, &v);
+    } else {
+        /* The app updates link/address only while it is shown; closed, the
+         * stored state may be stale ("Kein Link" right after boot). Show the
+         * live network state - on a copy, so the app still sees the
+         * "network came back" transition when it opens. */
+        rnlab_wx_t live = *wx;
+        cads_net_status_t net;
+        cads_net_status(&net);
+        live.link_up = net.link_up;
+        live.has_ip = net.ip_addr != 0u;
+        rnlab_wx_view(&live, now, &v);
+    }
 
     cads_cli_write(s, "L11 ");
     cads_cli_write(s, v.status);
