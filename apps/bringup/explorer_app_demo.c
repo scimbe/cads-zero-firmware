@@ -163,6 +163,27 @@ static cads_key_t cads_explorer_app_demo_decode_key(uint8_t byte) {
  * never by accident. scripts/board_key.py's "quit" sends it. */
 #define CADS_APP_DEMO_EXIT_BYTE 0x88u
 
+#define CADS_APP_DEMO_POLL_SLICE_MS 2u
+
+/* Wait `ms`, servicing the network every CADS_APP_DEMO_POLL_SLICE_MS - with
+ * the same "a promiscuous M9 tool owns the RX ring" exception as the loop's
+ * own poll below. */
+static void cads_app_demo_idle(uint32_t ms) {
+    uint32_t start = cads_hal_ticks_ms();
+    for(;;) {
+        uint32_t elapsed = cads_hal_ticks_ms() - start;
+        if(elapsed >= ms) return;
+        uint32_t step = ms - elapsed;
+        if(step > CADS_APP_DEMO_POLL_SLICE_MS) step = CADS_APP_DEMO_POLL_SLICE_MS;
+        cads_hal_delay_ms(step);
+        if(cads_hal_ticks_ms() - start >= ms) return; /* the loop polls next anyway */
+#ifdef CADS_APP_ACTIVE_ENABLED
+        if(!cads_active_owns_rx())
+#endif
+            cads_net_poll();
+    }
+}
+
 uint8_t cads_explorer_app_demo(uint32_t seconds) {
     cads_net_init(cads_explorer_net_mac());
 
@@ -273,7 +294,12 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
             total_pixels += pixels;
             frames++;
         }
-        cads_hal_delay_ms(10u);
+        /* The 10 ms tick above, but not one 10 ms block: a frame arriving
+         * right after the poll used to wait up to 10 ms before lwIP saw it,
+         * which showed as a flat 0..10 ms spread in every ping RTT (mean
+         * ~5.8 ms on the bench). Polling every CADS_APP_DEMO_POLL_SLICE_MS
+         * inside the wait caps that at ~2 ms; the GUI still ticks at 10 ms. */
+        cads_app_demo_idle(10u);
     }
 
     uint32_t end_generation = cads_view_dispatcher_generation(&s_dispatcher);
