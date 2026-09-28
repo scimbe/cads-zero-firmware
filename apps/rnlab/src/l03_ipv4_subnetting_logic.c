@@ -110,7 +110,7 @@ bool rnlab_l03_parse_cidr(const char* text, uint32_t* network, uint32_t* mask) {
     if(!slash) return false;
     *slash = '\0';
 
-    uint32_t ip, m;
+    uint32_t ip = 0u, m = 0u; /* -Wmaybe-uninitialized (Release) cannot see through parse_mask */
     if(!rnlab_parse_ipv4(buffer, &ip) || !rnlab_l03_parse_mask(slash + 1, &m)) return false;
     *network = rnlab_l03_network(ip, m);
     *mask = m;

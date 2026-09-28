@@ -145,7 +145,18 @@ static void l03_write_route(cads_cli_session_t* session, uint32_t dst, uint32_t*
         cads_cli_write(session, "keiner (kein Gateway)\r\n");
     } else {
         l03_write_ip(session, *next_hop);
-        cads_cli_write(session, *next_hop == dst ? " (direkt)\r\n" : " (Gateway)\r\n");
+        /* "direkt" only when dst itself is on-link. With /30 the gateway .1
+         * is off-link too, yet next_hop == dst - comparing the two would
+         * call that "direkt" and hide exactly what the lesson asks about. */
+        bool on_link = cls == RNLAB_L03_DST_BROADCAST || rnlab_same_subnet(dst, st.ip_addr, st.netmask);
+        if(on_link) {
+            cads_cli_write(session, " (direkt)\r\n");
+        } else if(rnlab_same_subnet(st.gw_addr, st.ip_addr, st.netmask)) {
+            cads_cli_write(session, " (Gateway)\r\n");
+        } else {
+            /* lwIP ARPs for it anyway (etharp_output does not check). */
+            cads_cli_write(session, " (Gateway, selbst nicht im Netz)\r\n");
+        }
     }
 }
 
