@@ -85,6 +85,8 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     } else {
         cads_cli_write(session, status.dhcp_bound ? "an (gebunden)" : "an (wartet auf Lease)");
     }
+    cads_cli_write(session, "\r\ndhcp_naks: ");
+    cads_cli_write_uint(session, status.dhcp_naks);
 
     cads_cli_write(session, "\r\nrx:     ");
     cads_cli_write_uint(session, status.rx_frames);
