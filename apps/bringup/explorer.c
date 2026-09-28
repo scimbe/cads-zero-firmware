@@ -459,7 +459,7 @@ void cads_explorer_run(void) {
     /* The lab needs the board reachable straight after reset, with no
      * console command: network up, `lab` registered, TCP :4242 listening -
      * before boot.autostart hands the console to the app tree below. */
-    rnlab_init(cads_explorer_net_mac());
+    rnlab_init(cads_explorer_net_mac(), cads_explorer_net_mac_source());
 #else
     char line[32];
     uint32_t length = 0u;

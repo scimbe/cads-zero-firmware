@@ -22,13 +22,15 @@ extern "C" {
 #define RNLAB_CLI_TCP_PORT 4242u
 
 /**
- * Bring the network up (cads_net_init() with `mac`), register the `lab`
+ * Bring the network up (cads_net_init() with `mac`; `mac_source` - "uid",
+ * "random" or "fixed", see cads_explorer_net_mac_source() - is only shown by
+ * `lab info`), register the `lab`
  * command with cads_cli and start the TCP CLI listener. Idempotent. The
  * address is whatever cads_net already defaults to (static
  * 192.168.33.99/24, gateway 192.168.33.1) unless /config.txt or
  * `lab net ...` changes it.
  */
-void rnlab_init(const uint8_t mac[6]);
+void rnlab_init(const uint8_t mac[6], const char* mac_source);
 
 /** Pump the network and run pending TCP CLI commands while the explorer's
  *  command loop is idle - the app tree's own loop does both itself. */

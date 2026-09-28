@@ -32,6 +32,7 @@ static const rnlab_lesson_fn rnlab_lessons[11] = {
 };
 
 static cads_cli_session_t rnlab_serial;
+static const char* rnlab_mac_source = "?";
 static uint32_t rnlab_poll_ms = RNLAB_POLL_MS_DEFAULT;
 
 static void rnlab_write_ipv4(cads_cli_session_t* session, uint32_t ip) {
@@ -75,6 +76,9 @@ static void rnlab_cmd_info(cads_cli_session_t* session) {
     cads_fmt_mac(mac, sizeof(mac), status.mac);
     cads_cli_write(session, "\r\nmac:    ");
     cads_cli_write(session, mac);
+    cads_cli_write(session, " (");
+    cads_cli_write(session, rnlab_mac_source);
+    cads_cli_write(session, ")");
 
     cads_cli_write(session, "\r\nlink:   ");
     if(status.link_up) {
@@ -220,10 +224,11 @@ static void rnlab_serial_write(void* context, const char* text, size_t length) {
     cads_hal_console_write(text, length);
 }
 
-void rnlab_init(const uint8_t mac[6]) {
+void rnlab_init(const uint8_t mac[6], const char* mac_source) {
     static bool initialised = false;
     if(initialised) return;
     initialised = true;
+    if(mac_source) rnlab_mac_source = mac_source;
 
     cads_net_init(mac);
     (void)cads_cli_register(&rnlab_command);

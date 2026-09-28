@@ -14,7 +14,7 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 | Befehl | Wirkung |
 |---|---|
 | `lab help` | Übersicht |
-| `lab info` | IP, Maske, Gateway, DNS, MAC, Link, DHCP-Zustand und `dhcp_naks`, RX/TX-Frames, `rx_ring_overruns` (FIFO), `nested`, `poll`, Uptime |
+| `lab info` | IP, Maske, Gateway, DNS, MAC mit Quelle (`uid` = aus der MCU-UID, Default; `random` = `net.mac_random`), Link, DHCP-Zustand und `dhcp_naks`, RX/TX-Frames, `rx_ring_overruns` (FIFO), `nested`, `poll`, Uptime |
 | `lab net static [ip mask gw]` | statische Adresse (ohne Argumente: Default oben) |
 | `lab net dhcp` | Adresse per DHCP beziehen (Setup S2) |
 | `lab selftest` | Zusagen des Rahmens auf dem Board prüfen (Timer-Reserve) |
