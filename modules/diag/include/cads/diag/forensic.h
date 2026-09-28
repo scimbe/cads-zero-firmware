@@ -31,6 +31,9 @@ extern "C" {
  * here and would not be in ordinary RAM. */
 #define CADS_FORENSIC_RING_DEPTH 6u
 
+/** Bytes reserved for the reason text in each record, including the NUL. */
+#define CADS_FORENSIC_REASON_MAX 48u
+
 /** The Cortex-M4 exception frame, in the order the core pushes it
  * automatically (PM0214 2.3.7). Mirrors fault_handlers.c's own local
  * cads_fault_frame_t - duplicated rather than shared because that type is
@@ -42,7 +45,14 @@ typedef struct {
 
 typedef struct {
     uint32_t sequence;    /**< Monotonic across the ring's lifetime; higher = more recent. */
-    const char* reason;   /**< Static string: "HardFault", "MemManage", a cads_hal_panic() reason, etc. */
+    /** "HardFault", "MemManage", a cads_hal_panic() reason, etc. Copied into
+     *  the record, not pointed to: the strings it comes from are not all
+     *  static (cads_kernel_assert()'s file:line lives in .bss, which the
+     *  next Reset_Handler zeroes; a stack-overflow reason is a task's name
+     *  inside its TCB), and a pointer into the previous image's layout is
+     *  meaningless after a reflash. Longer reasons keep their tail - the
+     *  "file.c:line" end of an assert location is the useful part. */
+    char reason[CADS_FORENSIC_REASON_MAX];
     uint32_t uptime_ms;   /**< cads_hal_ticks_ms() at the moment of the record. */
     bool has_frame;       /**< False for a panic() call with no exception frame available. */
     cads_forensic_frame_t frame;
@@ -87,9 +97,9 @@ bool cads_forensic_get(uint32_t index, cads_forensic_record_t* out);
 /**
  * Empties the ring (invalidates every slot's magic). The ring survives warm
  * resets on purpose, so before a measurement the operator needs a way to
- * start from zero - otherwise an old record (or one from an image with a
- * different CCM layout, whose reason pointers no longer point at its
- * strings) is indistinguishable from a new one. Not for fault context.
+ * start from zero - otherwise an old record is indistinguishable from a new
+ * one. (Records from an image with a different record layout are already
+ * rejected by their magic, see the .c file.) Not for fault context.
  */
 void cads_forensic_clear(void);
 

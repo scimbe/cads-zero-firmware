@@ -606,7 +606,7 @@ void cads_explorer_run(void) {
                     cads_probe_puts(" t=");
                     cads_probe_put_uint(record.uptime_ms);
                     cads_probe_puts("ms reason=");
-                    cads_probe_puts(record.reason ? record.reason : "(none)");
+                    cads_probe_puts(record.reason[0] != '\0' ? record.reason : "(none)");
                     cads_probe_puts("\r\n");
                     if(record.has_frame) {
                         cads_probe_puts("#     PC=0x");
