@@ -17,10 +17,16 @@ void Reset_Handler(void);
  *
  * Halting rather than resetting is deliberate: an unexpected interrupt leaves
  * the machine intact for the attached ST-Link, and IPSR still names the vector
- * that fired.
+ * that fired. The bkpt only runs with a debugger attached (DHCSR.C_DEBUGEN,
+ * PM0214 / ARMv7-M C1.6.2): without one it escalates to HardFault instead of
+ * halting - and from NMI to a lockup - the same trap already fixed in
+ * fault_handlers.c and hal_io.c. The raw address keeps this file free of
+ * CMSIS includes.
  */
 __attribute__((noreturn)) void Default_Handler(void) {
-    __asm volatile("bkpt #0" ::: "memory");
+    if((*(volatile const uint32_t*)0xE000EDF0u & 1u) != 0u) { /* DHCSR.C_DEBUGEN */
+        __asm volatile("bkpt #0" ::: "memory");
+    }
     for(;;) {
     }
 }

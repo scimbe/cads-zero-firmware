@@ -134,7 +134,7 @@ bool cads_hal_freqcounter_poll(uint32_t* period_ticks) {
 
     bool overcaptured = (TIM2->SR & TIM_SR_CC3OF) != 0u;
     uint32_t capture = TIM2->CCR3; /* reading CCR3 clears CC3IF */
-    if(overcaptured) TIM2->SR &= ~TIM_SR_CC3OF; /* CC3OF needs an explicit clear */
+    if(overcaptured) TIM2->SR = ~TIM_SR_CC3OF; /* rc_w0: write 0 to clear, 1s leave other flags alone */
 
     return cads_freqcounter_capture(&s_freqcounter, capture, overcaptured, period_ticks);
 }
@@ -144,7 +144,7 @@ bool cads_hal_freqcounter_poll_high(uint32_t* high_ticks) {
 
     bool overcaptured = (TIM2->SR & TIM_SR_CC4OF) != 0u;
     uint32_t capture = TIM2->CCR4; /* reading CCR4 clears CC4IF */
-    if(overcaptured) TIM2->SR &= ~TIM_SR_CC4OF; /* CC4OF needs an explicit clear */
+    if(overcaptured) TIM2->SR = ~TIM_SR_CC4OF; /* rc_w0: write 0 to clear, 1s leave other flags alone */
 
     return cads_freqcounter_capture_high(&s_freqcounter, capture, overcaptured, high_ticks);
 }
