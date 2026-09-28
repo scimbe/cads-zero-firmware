@@ -22,6 +22,9 @@
 #ifdef CADS_APP_NETTOOLS_ENABLED
 #include "cads_nettools.h"
 #endif
+#ifdef CADS_APP_WETTER_ENABLED
+#include "cads_wetter.h"
+#endif
 #ifdef CADS_APP_ACTIVE_ENABLED
 #include "cads_active.h"
 #endif
@@ -271,6 +274,9 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
 #endif
 #ifdef CADS_APP_NETTOOLS_ENABLED
         cads_nettools_tick(now);
+#endif
+#ifdef CADS_APP_WETTER_ENABLED
+        cads_wetter_tick(now);
 #endif
 #ifdef CADS_APP_ACTIVE_ENABLED
         cads_active_tick(now);
