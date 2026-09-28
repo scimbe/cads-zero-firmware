@@ -8,11 +8,12 @@ name: Integration
 # that only fails next to another lesson - is caught and pinned to a lesson.
 #
 # Triggers: pushes to praktikum/start and solution branches, PRs into
-# praktikum/start, manual dispatch, nightly. A solution branch runs this only
-# once it contains this file (after taking praktikum/start in). GitHub runs
-# `schedule` only from the default branch's copy of a workflow, so the
-# nightly trigger takes effect only if main carries this file (or a small
-# workflow on main dispatches this one).
+# praktikum/start, manual dispatch - and workflow_call, for the nightly run:
+# GitHub evaluates `schedule` (and allows workflow_dispatch) only for workflow
+# files on the default branch (main), where this file does not live. So
+# main's integration-nightly.yml calls this one at @praktikum/start instead
+# of keeping a second copy there. A solution branch runs this on push only
+# once it contains this file (after taking praktikum/start in).
 
 on:
   push:
@@ -21,8 +22,12 @@ on:
   pull_request:
     branches: [praktikum/start]
   workflow_dispatch:
-  schedule:
-    - cron: '17 2 * * *'
+  workflow_call:
+    inputs:
+      ref:
+        description: Ref to check out (a called workflow otherwise gets the caller's, i.e. main)
+        type: string
+        default: praktikum/start
 
 # One integration at a time per trigger branch; a newer push supersedes.
 concurrency:
@@ -38,6 +43,8 @@ jobs:
       # into origin/praktikum/start, whatever ref triggered the run.
       - uses: actions/checkout@v4
         with:
+          # Empty for push/PR/dispatch (-> the triggering ref); set when called.
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           submodules: recursive
 
