@@ -65,8 +65,9 @@ def read_bmp_rgb24(path: Path) -> tuple[int, int, bytes]:
     Verified empirically against the simulator's own output (see
     targets/sim/golden/README.md): BITMAPFILEHEADER (14 bytes) +
     BITMAPINFOHEADER (40 bytes), 24 bpp, BI_RGB (no compression, no bitfield
-    masks) - SDL converts the surface's native RGB565 up to 24 bpp itself
-    because plain BI_RGB has no way to describe a 5-6-5 layout. Rows are
+    masks). The simulator widens its RGB565 framebuffer to 24 bpp itself,
+    by bit replication, before SDL sees it - SDL's own conversion rounds
+    differently between SDL builds (targets/sim/golden/README.md). Rows are
     BGR, one byte per channel, stored bottom-up per the BMP convention
     (positive height), padded to a 4-byte boundary; 480*3 = 1440 is already
     a multiple of 4, so in practice there is no padding to strip, but the
