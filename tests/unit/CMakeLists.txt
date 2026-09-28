@@ -147,19 +147,27 @@ target_link_libraries(test_forensic PRIVATE cads_diag cads_fake_hal)
 # to work around - the exact link graph cads-zero-sim itself already
 # proves works on host, with cads_fake_hal standing in for cads_hal_sim.
 
-cads_add_unit_test(test_app_tree test_app_tree.c)
-target_link_libraries(test_app_tree PRIVATE
-    cads_fake_hal
-    cads_app_desktop
-    cads_app_menu
-    cads_app_settings
-    cads_app_about
-    cads_app_gpio
-    cads_app_netinfo
-    cads_app_filebrowser
-    cads_app_game
-    cads_app_active
-)
+# The FULL tree only: its assertions (every view registers, the arcade is
+# reachable, 7 slots are too few) are about exactly this set of apps. A build
+# that leaves some of them out - praktikum/start's student defaults, or the
+# CI "minimal" firmware config - skips it rather than asserting views that
+# were never built.
+if(CADS_APP_SETTINGS AND CADS_APP_ABOUT AND CADS_APP_GPIO AND CADS_APP_NETINFO AND
+   CADS_APP_FILEBROWSER AND CADS_APP_GAME AND CADS_APP_ACTIVE)
+    cads_add_unit_test(test_app_tree test_app_tree.c)
+    target_link_libraries(test_app_tree PRIVATE
+        cads_fake_hal
+        cads_app_desktop
+        cads_app_menu
+        cads_app_settings
+        cads_app_about
+        cads_app_gpio
+        cads_app_netinfo
+        cads_app_filebrowser
+        cads_app_game
+        cads_app_active
+    )
+endif()
 
 # --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------
 #

@@ -63,8 +63,13 @@ add_subdirectory(unit)
 # PPM, for reviewing all of the firmware's surfaces at once. Only wired up when
 # the app targets exist (the full top-level host build), and it borrows
 # cads_fake_hal from tests/unit as its HAL backend, so it is added after
-# add_subdirectory(unit).
-if(TARGET cads_app_menu AND TARGET cads_gui AND TARGET cads_fake_hal)
+# add_subdirectory(unit). It renders every app's views by name, so it also
+# needs every one of those apps built (not the case with praktikum/start's
+# student defaults, which leave filebrowser/game/active out).
+if(TARGET cads_app_menu AND TARGET cads_gui AND TARGET cads_fake_hal AND
+   TARGET cads_app_settings AND TARGET cads_app_about AND TARGET cads_app_gpio AND
+   TARGET cads_app_netinfo AND TARGET cads_app_filebrowser AND TARGET cads_app_game AND
+   TARGET cads_app_active)
     add_executable(cads_gallery gallery/gallery.c)
     target_link_libraries(cads_gallery PRIVATE
         cads_gui cads_gui_view cads_gui_widgets

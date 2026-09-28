@@ -119,16 +119,22 @@ endif()
 # authoritative for the apps it names and these option() calls only supply
 # the default for apps the profile did not mention; without a profile, a
 # -DCADS_APP_X on the command line overrides the ON default as usual.
+# Branch praktikum/start (student build): FILEBROWSER, GAME, ACTIVE and
+# MARAUDER default OFF here, unlike main - the offensive M9 tools and the
+# ESP32/WiFi bridge do not belong in a student image, and together with the
+# lab's CCM placement of lwIP (modules/net/include/lwipopts.h) this frees the
+# SRAM the lessons need (apps/rnlab/README.md, "RAM-Budget"). -D...=ON still
+# turns any of them back on.
 option(CADS_APP_SETTINGS "Include the Settings app" ON)
 option(CADS_APP_ABOUT "Include the About app" ON)
 option(CADS_APP_GPIO "Include the GPIO app" ON)
 option(CADS_APP_NETINFO "Include the Network Info app" ON)
-option(CADS_APP_FILEBROWSER "Include the file browser app" ON)
-option(CADS_APP_GAME "Include the Reflex Test game" ON)
+option(CADS_APP_FILEBROWSER "Include the file browser app" OFF)
+option(CADS_APP_GAME "Include the Reflex Test game" OFF)
 option(CADS_APP_NETIPERF "Include the iperf server/client app" ON)
 option(CADS_APP_NETTOOLS "Include the network tools menu (ping/ARP/traceroute)" ON)
-option(CADS_APP_ACTIVE "Include the Active Net Tools (M9) offensive suite" ON)
-option(CADS_APP_MARAUDER "Include the ESP32Marauder co-processor CLI bridge" ON)
+option(CADS_APP_ACTIVE "Include the Active Net Tools (M9) offensive suite" OFF)
+option(CADS_APP_MARAUDER "Include the ESP32Marauder co-processor CLI bridge" OFF)
 # The computer-networks lab (apps/rnlab, branch praktikum/start): network up
 # at boot, the `lab` CLI command on UART and TCP :4242, and the RX/TX/IPv4
 # hook points in modules/net (cads/net/rnlab_hooks.h). OFF builds none of it

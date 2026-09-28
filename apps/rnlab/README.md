@@ -121,6 +121,69 @@ Hook, muss eine Lektion ihn übernehmen und an die andere weiterreichen.
 - Im App-Baum (Menü auf dem Display, Standard nach dem Boot) gehen alle
   Konsolenzeichen < 0x80 an die `lab`-Sitzung; `scripts/board_key.py quit`
   verlässt den App-Baum wie bisher.
-- RAM ist knapp (`scripts/check_ram_budget.py`, ca. 380 B Reserve auf
-  `praktikum/start`): große Puffer gehören auf den Stack des Konsolen-Tasks
-  (CCM) oder in bestehende lwIP-Pools, nicht in neue statische Arrays.
+- Siehe „RAM-Budget“ unten, bevor eine Lektion statische Puffer anlegt.
+
+## RAM-Budget
+
+Maßstab ist `scripts/check_ram_budget.py`: die SRAM-Reserve über dem 48-KB-
+Boden des Linkerskripts; mindestens 256 B müssen immer übrig bleiben (CI-Gate).
+Auf `praktikum/start` beträgt sie **24 768 B (24,2 KB)**. Möglich machen das
+zwei Maßnahmen:
+
+| Maßnahme | SRAM frei | Wo |
+|---|---:|---|
+| Stand vor dem Umbau (alle Apps, lwIP im SRAM) | 384 B | — |
+| Nicht-lehrrelevante Apps aus: `CADS_APP_MARAUDER`, `CADS_APP_ACTIVE` (offensive M9-Tools), `CADS_APP_GAME`, `CADS_APP_FILEBROWSER` | +5 632 B | `CMakeLists.txt`, Defaults auf diesem Branch `OFF` |
+| lwIP-Speicher (MEM_SIZE-Heap, alle memp-Pools inkl. PBUF_POOL) nach CCM | +12 608 B | `modules/net/include/lwipopts.h` |
+| Kopierpuffer des Netztreibers (RX/TX je 1536 B) nach CCM | +3 072 B | `modules/net/src/cads_net_board.c` |
+| Explorer-Capture-Puffer, FreeRTOS-Idle-/Timer-Stack nach CCM | +3 072 B | `apps/bringup/explorer_capture_buffer.c`, `modules/kernel/src/kernel.c` |
+| **Summe (praktikum/start)** | **24 768 B** | |
+
+Alles nach CCM Verschobene wird nur von der CPU angefasst (der Ethernet-
+Treiber kopiert zwischen seinen DMA-Puffern im SRAM und lwIP). Ohne
+`CADS_APP_RNLAB` bleibt die Platzierung wie auf main. Die ausgeschalteten
+Apps lassen sich mit `-DCADS_APP_<NAME>=ON` wieder einschalten, das kostet
+dann entsprechend Reserve.
+
+**Richtmaß je Lektion** (SRAM, statisch). Die Werte summieren sich, weil ein
+Studierenden-Fork alle Lektionen nacheinander enthält:
+
+| Lektion | Richtmaß | Wofür typischerweise |
+|---|---:|---|
+| L01 schichten-kapselung | 1 KB | Trace-Ring der Frame-Zusammenfassungen |
+| L02 ethernet-arp | 0,5 KB | Parser-Zustand, kleine Tabelle |
+| L03 ipv4-subnetting | 0,5 KB | Zähler/Filter im IPv4-Hook |
+| L04 icmp | 1 KB | RTT-Statistik, RAW-PCB-Kontext |
+| L05 dhcp | 0,5 KB | Zustandsprotokoll |
+| L06 dns-nat | 1 KB | DNS-Antwortpuffer |
+| L07 udp-transport | 2 KB | Sequenz-/Verlustfenster |
+| L08 tcp-flusskontrolle | 3 KB | Sink-Zustand, Messreihen |
+| L09 congestion-control | 2 KB | cwnd/ssthresh-Trace |
+| L10 http-wetter-1 | 4 KB | HTTP-Antwortpuffer (~2 KB) + JSON |
+| L11 wetter-app | 6 KB | GUI-View-Zustand, Texte |
+| Reserve | 2,5 KB | nicht verplanen |
+| **Summe** | **24 KB** | |
+
+Größere, reine CPU-Puffer gehören nach CCM: `RNLAB_CCM static uint8_t
+buf[4096];` (Makro in `rnlab/rnlab_lesson.h`; CCM wird beim Boot **nicht**
+genullt und ist **nie** DMA-Ziel). In CCM sind auf `praktikum/start` noch rund
+31 KB frei (64 KB minus 29,5 KB Sektionen minus 4 KB Hauptstack), bei
+maximalen TCP-Optionen noch rund 24 KB. Lokale Variablen landen auf dem Stack des Konsolen-Tasks (4 KB, CCM):
+einzelne Puffer über ~1 KB dort vermeiden.
+
+## TCP-Fenster für L08/L09
+
+| CMake-Option | Default (wie main) | Bereich | lwIP |
+|---|---:|---|---|
+| `CADS_RNLAB_TCP_WND_MSS` | 8 | 2..16 | `TCP_WND = n * TCP_MSS` (MSS 536 B) |
+| `CADS_RNLAB_TCP_SND_BUF_MSS` | 4 | 2..8 | `TCP_SND_BUF = n * TCP_MSS` |
+
+```bash
+bash scripts/build.sh Debug -DCADS_RNLAB_TCP_WND_MSS=16 -DCADS_RNLAB_TCP_SND_BUF_MSS=8
+```
+
+Mitwachsende Pools (`PBUF_POOL_SIZE`, `MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in
+`lwipopts.h` daraus abgeleitet und liegen in CCM. Die SRAM-Reserve ändert sich
+dadurch nicht; auch bei 16/8 bleibt sie bei 24 768 B (CCM dann 36,1 KB belegt).
+Die Option gilt für den ganzen Build-Ordner, also nach dem Test wieder auf den
+Default zurücksetzen (`-DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4`).
