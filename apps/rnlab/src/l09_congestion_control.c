@@ -24,7 +24,9 @@
  * a whole RTO later and with the wrong state - a 1 ms lwIP timer, which
  * runs at the end of the same poll that processed the ACK, closes it.
  *
- * The trace ring lives in CCM (CPU-only, never DMA) and stops when full;
+ * The trace ring (7.5 KB) lives in plain SRAM, not CCM: the measurement
+ * build (MSS 1460, SND_BUF 8) grows lwIP's CCM pools until the CCM overflows
+ * together with the other lessons' buffers. It stops when full;
  * `lab 09 trace [from]` prints it as CSV in pages that fit one TCP send
  * buffer of the telnet session.
  */
@@ -83,7 +85,7 @@ typedef struct {
 
 static l09_state_t l09;
 static bool l09_ticking; /* outside l09: survives the reset in cc start */
-RNLAB_CCM static rnlab_l09_trace_entry_t l09_trace[L09_TRACE_LEN];
+static rnlab_l09_trace_entry_t l09_trace[L09_TRACE_LEN];
 static const uint8_t l09_block[L09_BLOCK]; /* the payload: zeros, from flash */
 
 static uint16_t l09_sat16(uint32_t v) {
