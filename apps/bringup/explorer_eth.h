@@ -80,4 +80,11 @@ const uint8_t* cads_explorer_net_mac(void);
  *  unique ID), "random" (config net.mac_random) or "fixed" (simulator). */
 const char* cads_explorer_net_mac_source(void);
 
+/**
+ * Poll the netif until the PHY reports link or `timeout_ms` passes; true if
+ * the link came up. Call after cads_net_init(). Portable (board and host) -
+ * explorer_net_link.c.
+ */
+bool cads_explorer_net_link_wait(uint32_t timeout_ms);
+
 #endif /* CADS_EXPLORER_ETH_H */

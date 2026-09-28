@@ -55,15 +55,7 @@ void cads_explorer_trafficstats_demo(uint32_t seconds) {
      * every other explorer_*_demo.c this session: this loop must call
      * cads_net_poll() itself to actually detect the link, not just check
      * its cached status. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     cads_trafficstats_t stats;
     cads_trafficstats_init(&stats);

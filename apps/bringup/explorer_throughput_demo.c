@@ -53,15 +53,7 @@ void cads_explorer_throughput_demo(uint32_t seconds) {
     /* Same link-wait shape as every other M5 command - see
      * explorer_trafficstats_demo.c's own header for why this loop calls
      * cads_net_poll() itself rather than trusting a cached status. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     cads_probe_puts("# throughput: full-screen flush under scheduler+network contention, ");
     cads_probe_put_uint(seconds);
