@@ -26,14 +26,17 @@ one byte at a time into `cads_cli_session_feed()`. Putting the buffering
 inside the session means both transports share the exact same line-assembly
 and error-handling path instead of each inventing its own.
 
-**One command table, compiled once, not exposed in `cli.h`.** The header's own
-comment states the split plainly: neither transport knows what a command
-does, and this file knows nothing about UARTs or sockets — the same
-"transport vs. logic" separation `modules/net`'s `cads_net_board.c` /
-`cads_net_sim.c` split already established. `cads_cli_command_t` and
-`cads_cli_commands[]` are `static` in `cads_cli.c` for exactly that reason:
-nothing outside this file adds or removes a command, so the type has no
-business being public.
+**One command table: built-ins compiled in, plus a few registered slots.**
+The header's own comment states the split plainly: neither transport knows
+what a command does, and this file knows nothing about UARTs or sockets — the
+same "transport vs. logic" separation `modules/net`'s `cads_net_board.c` /
+`cads_net_sim.c` split already established. The built-ins stay a `static`
+array in `cads_cli.c`; an app that needs its own command (`apps/rnlab`'s
+`lab`) calls `cads_cli_register()` once at init with a pointer to its own
+`static const cads_cli_command_t`, and from then on every transport
+dispatches it. Only the pointer is stored (`CADS_CLI_REGISTERED_MAX` = 4
+slots), and a name that is already taken — built-in or registered — is
+refused rather than shadowed.
 
 **Command lookup is exact-match, not prefix-match.** `cads_cli_dispatch()`
 checks both `cads_str_compare_n(name, cmd.name, name_length) == 0` *and*
@@ -130,9 +133,11 @@ up `cads_cli_session_init()` internally.
 
 ## What are the limits?
 
-- **Five built-in commands, fixed at compile time.** `help`, `version`,
-  `uptime`, `net`, `echo` — adding a sixth means editing `cads_cli_commands[]`
-  in `cads_cli.c` itself; there is no registration API.
+- **Five built-in commands plus at most `CADS_CLI_REGISTERED_MAX` (4)
+  registered ones.** `help`, `version`, `uptime`, `net`, `echo` are compiled
+  in; `cads_cli_register()` adds more at runtime and never removes them
+  again. `cads_cli_execute()` dispatches an already-assembled line (the
+  hardware explorer's serial loop uses it for `lab ...`).
 - **96-byte line cap, whole-line discard on overflow** — see above. Long
   arguments (a file path, a hex blob) do not fit and are not meant to.
 - **One TCP connection at a time, board only.** `cads_cli_tcp_start()` always

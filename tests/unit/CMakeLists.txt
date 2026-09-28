@@ -196,6 +196,14 @@ target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)
 cads_add_unit_test(test_config test_config.c)
 target_link_libraries(test_config PRIVATE cads_config)
 
+# --- cli ---------------------------------------------------------------------
+# The command table's registration hook (cads_cli_register()) - what apps/rnlab
+# uses to add `lab` to every transport at once. cads_hal_ticks_ms() (the
+# built-in `uptime`) comes from the fake HAL; cads_net resolves to the
+# simulator stub on the host.
+cads_add_unit_test(test_cli test_cli.c)
+target_link_libraries(test_cli PRIVATE cads_cli cads_fake_hal)
+
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)
 target_link_libraries(test_secure_link PRIVATE cads_security)

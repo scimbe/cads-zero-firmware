@@ -65,6 +65,40 @@ void cads_cli_session_init(cads_cli_session_t* session, cads_cli_write_fn write,
  */
 void cads_cli_session_feed(cads_cli_session_t* session, uint8_t byte);
 
+/** One command: the first word of a line, and the handler that gets the
+ *  rest of it as `args` (never NULL; "" when there were no arguments). */
+typedef void (*cads_cli_handler_fn)(cads_cli_session_t* session, const char* args);
+
+typedef struct {
+    const char* name;
+    cads_cli_handler_fn handler;
+    const char* help;
+} cads_cli_command_t;
+
+/** How many commands cads_cli_register() accepts on top of the built-in
+ *  ones. Small on purpose: every slot is a pointer of static RAM, and the
+ *  only caller today (apps/rnlab's `lab`) needs one. */
+#define CADS_CLI_REGISTERED_MAX 4u
+
+/**
+ * Add `command` to the shared table, for every transport at once.
+ *
+ * `command` must stay valid for the life of the firmware (a `static const`
+ * in the caller) - only the pointer is stored. Returns false, and changes
+ * nothing, when `command` or its name/handler is NULL, when the name is
+ * already taken (built-in or registered - a second `help` would silently
+ * shadow the first), or when all CADS_CLI_REGISTERED_MAX slots are used.
+ * Registering the very same pointer twice is a no-op that returns true, so
+ * an idempotent init function can call this unconditionally.
+ */
+bool cads_cli_register(const cads_cli_command_t* command);
+
+/** Dispatch one complete line (no trailing newline needed) exactly as
+ *  cads_cli_session_feed() would on '\r', minus the "> " prompt - for a
+ *  transport that already assembles lines itself (the hardware explorer's
+ *  own serial loop). */
+void cads_cli_execute(cads_cli_session_t* session, const char* line);
+
 /** Write a NUL-terminated string through the session's transport. */
 void cads_cli_write(cads_cli_session_t* session, const char* text);
 
