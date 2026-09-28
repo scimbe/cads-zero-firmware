@@ -13,7 +13,11 @@
 #   - after EVERY merge: firmware build + RAM/flash/FS gates, so a break or a
 #     budget overrun is pinned to the lesson that caused it (and each lesson's
 #     RAM/flash delta falls out of it);
-#   - at the end: host build, full ctest - everything outside rnlab-L* green,
+#   - at the end: the largest TCP configuration the lab offers (L08/L09
+#     measurement builds: TCP_MSS 1460, WND 32, SND_BUF 16) once more through
+#     build + gates - lwIP's pools grow in CCM there, on top of every lesson's
+#     own CCM buffers, so an overflow only shows with all lessons merged;
+#   - host build, full ctest - everything outside rnlab-L* green,
 #     and rnlab-LNN green for every merged lesson. Lessons without a solution
 #     branch are reported, not failed (their stubs are expected red).
 #
@@ -23,7 +27,8 @@
 #   --skip NN,...   leave these lessons out (e.g. until a conflict is fixed)
 #   --list          only show which solution branches exist
 # Exit 0 = everything green. Used by .github/workflows/integration.yml.
-# Commands can be overridden (CI, tests): INTEG_FW_BUILD, INTEG_HOST_BUILD.
+# Commands can be overridden (CI, tests): INTEG_FW_BUILD, INTEG_FW_BUILD_MAX
+# (the max-TCP build; empty = skip it), INTEG_HOST_BUILD.
 # The lab's private docs repo has the same check plus a hardware smoke test.
 set -euo pipefail
 
@@ -47,6 +52,8 @@ done
 
 [ -n "$WT" ] || WT="$(dirname "$FW")/cz-integ"
 FW_BUILD="${INTEG_FW_BUILD:-bash scripts/build.sh Release}"
+MAX_ARGS="-DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=32 -DCADS_RNLAB_TCP_SND_BUF_MSS=16"
+FW_BUILD_MAX="${INTEG_FW_BUILD_MAX-bash scripts/build.sh Release $MAX_ARGS}"
 HOST_BUILD="${INTEG_HOST_BUILD:-cmake --preset host --fresh && cmake --build build/host}"
 ELF="build/itsboard/cads-zero.elf"
 
@@ -86,25 +93,31 @@ git config user.name >/dev/null || git config user.name "integrate-solutions"
 git config user.email >/dev/null || git config user.email "integrate-solutions@localhost"
 say "base: origin/praktikum/start $(git rev-parse --short HEAD), worktree $WT"
 
-# The gates need arm-none-eabi-nm. On a developer machine it lives in the
-# vcpkg tree Keil Studio manages (scripts/build.sh finds it via cads_env.sh);
-# not sourced here, because cads_env.sh exits under `set -e` wherever that
-# tree does not exist (CI). Absent globs stay literal and fail the -d test.
-if ! command -v arm-none-eabi-nm >/dev/null; then
-    for d in "$HOME"/.vcpkg/artifacts/*/compilers.arm.arm.none.eabi.gcc/*/bin \
-             "$HOME"/.vcpkg/artifacts/*/tools.ninja.build.ninja/* \
-             "$HOME"/.vcpkg/artifacts/*/tools.kitware.cmake/*/bin; do
-        [ -d "$d" ] && PATH="$d:$PATH"
+# Tools the builds and gates need (arm-none-eabi-nm, ninja, cmake). On a
+# developer machine they may live only in the vcpkg tree Keil Studio manages
+# (scripts/build.sh finds them via cads_env.sh). cads_env.sh itself is not
+# sourced: it exits under `set -e` wherever that tree is missing (CI). Each
+# tool is looked up on its own - having one on PATH says nothing about the
+# others. Globs that match nothing stay literal and fail the -d test.
+tool_dir() { # $1 = tool, $2 = glob of candidate bin dirs
+    command -v "$1" >/dev/null && return 0
+    local d
+    for d in $2; do
+        [ -d "$d" ] && [ -x "$d/$1" ] && { PATH="$d:$PATH"; return 0; }
     done
-    export PATH
-fi
+    return 0
+}
+tool_dir arm-none-eabi-nm "$HOME/.vcpkg/artifacts/*/compilers.arm.arm.none.eabi.gcc/*/bin"
+tool_dir ninja "$HOME/.vcpkg/artifacts/*/tools.ninja.build.ninja/*"
+tool_dir cmake "$HOME/.vcpkg/artifacts/*/tools.kitware.cmake/*/bin"
+export PATH
 NM_ARGS=()
 command -v arm-none-eabi-nm >/dev/null && NM_ARGS=(--nm arm-none-eabi-nm)
 
 LOGDIR="$WT/build/integ-logs"
 mkdir -p "$LOGDIR"
 
-fw_build() { (eval "$FW_BUILD") >"$LOGDIR/$1.log" 2>&1; }
+fw_build() { (eval "${2:-$FW_BUILD}") >"$LOGDIR/$1.log" 2>&1; } # $1 log name, $2 command
 ram_margin() { python3 scripts/check_ram_budget.py ${NM_ARGS[@]+"${NM_ARGS[@]}"} "$ELF" 2>/dev/null |
     sed -nE 's/^margin *= *([0-9]+) B.*/\1/p'; }
 flash_used() { python3 scripts/check_flash_budget.py "$ELF" 2>/dev/null |
@@ -220,6 +233,20 @@ for nn in $LESSONS; do
     printf '%-4s %-36s %-14s %10s %12s\n' "L$nn" "${b#origin/}" "$t" "${r:--}" "${f:--}"
 done
 say "total: RAM margin $(ram_margin) B, flash $(flash_used) B"
+
+# Last, because it reconfigures the firmware build directory the numbers above
+# came from.
+if [ -n "$FW_BUILD_MAX" ]; then
+    if ! fw_build max-tcp "$FW_BUILD_MAX"; then
+        say "FAIL max-TCP build (MSS 1460, WND 32, SND_BUF 16) - $LOGDIR/max-tcp.log:"
+        grep -E "overflow|error|Error" "$LOGDIR/max-tcp.log" | head -5 | sed 's/^/  /'
+        STATUS=1
+    elif gates; then
+        say "max-TCP build (MSS 1460, WND 32, SND_BUF 16): gates ok, RAM margin $(ram_margin) B"
+    else
+        say "FAIL max-TCP build: gate"; STATUS=1
+    fi
+fi
 [ ${#MISSING[@]} -eq 0 ] || say "missing solutions: ${MISSING[*]}"
 [ ${#SKIPPED[@]} -eq 0 ] || say "skipped (--skip): ${SKIPPED[*]}"
 say
