@@ -10,14 +10,14 @@
  *
  * WHY ASYNCHRONOUS
  * ----------------
- * A `lab` command can arrive over Telnet (TCP :4242), and then its handler
- * already runs INSIDE cads_net_poll() -> tcp_input() -> the CLI's recv
- * callback. Waiting there by calling cads_net_poll() again would run
- * tcp_input() recursively and clobber lwIP's per-segment state. So
- * rnlab_l10_fetch_start() only starts the fetch and returns; DNS, connect,
- * receive and close happen in lwIP callbacks during the normal
- * cads_net_poll() of the main loop, and the caller looks at
- * rnlab_l10_fetch_result() later (`lab 10 show`, or the app's tick).
+ * A fetch over the internet takes a few hundred milliseconds, a dead server
+ * up to RNLAB_L10_TIMEOUT_MS. A `lab` handler or an app tick that waited
+ * for it would stop the whole main loop - display, keys, every other
+ * connection - for that long. So rnlab_l10_fetch_start() only starts the
+ * fetch and returns; DNS, connect, receive and close happen in lwIP
+ * callbacks during the normal cads_net_poll() of the main loop, and the
+ * caller looks at rnlab_l10_fetch_result() later (`lab 10 show`, or the
+ * app's tick).
  */
 
 #ifndef RNLAB_L10_HTTP_WETTER_1_H
