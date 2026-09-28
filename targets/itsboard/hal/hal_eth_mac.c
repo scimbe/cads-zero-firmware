@@ -46,6 +46,7 @@
  */
 
 #include "hal_eth_mac.h"
+#include "hal_eth_missed.h"
 
 #include <string.h>
 
@@ -306,13 +307,13 @@ static uint32_t cads_eth_missed_total_nodesc = 0u;
 static uint32_t cads_eth_missed_total_fifo = 0u;
 
 static void cads_eth_missed_collect(void) {
-    uint32_t reg = ETH->DMAMFBOCR; /* reading this clears both fields (RM0090: rc_r) */
-    uint32_t nodesc = reg & ETH_DMAMFBOCR_MFC_Msk;
-    uint32_t fifo = (reg & ETH_DMAMFBOCR_MFA_Msk) >> ETH_DMAMFBOCR_MFA_Pos;
-    cads_eth_missed_pending_nodesc += nodesc;
-    cads_eth_missed_pending_fifo += fifo;
-    cads_eth_missed_total_nodesc += nodesc;
-    cads_eth_missed_total_fifo += fifo;
+    /* Reading clears both counters (RM0090: rc_r); decoding, overflow bits
+     * included, is hal_eth_missed.c (host tested). */
+    cads_eth_missed_t m = cads_eth_missed_decode(ETH->DMAMFBOCR);
+    cads_eth_missed_pending_nodesc += m.no_descriptor;
+    cads_eth_missed_pending_fifo += m.fifo_overflow;
+    cads_eth_missed_total_nodesc += m.no_descriptor;
+    cads_eth_missed_total_fifo += m.fifo_overflow;
 }
 
 void cads_hal_eth_mac_missed_totals(uint32_t* no_descriptor, uint32_t* fifo_overflow) {

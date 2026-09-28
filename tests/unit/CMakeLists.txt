@@ -200,6 +200,13 @@ target_include_directories(test_eth_linklog PRIVATE
 )
 target_link_libraries(test_eth_linklog PRIVATE cads_fake_mdio cads_fake_hal)
 
+# DMAMFBOCR decoding (RX ring / FIFO overrun counters behind `lab info`).
+cads_add_unit_test(test_eth_missed
+    test_eth_missed.c
+    ${CADS_ROOT}/targets/itsboard/hal/hal_eth_missed.c
+)
+target_include_directories(test_eth_missed PRIVATE ${CADS_ROOT}/targets/itsboard/hal)
+
 # --- config -------------------------------------------------------------------
 cads_add_unit_test(test_config test_config.c)
 target_link_libraries(test_config PRIVATE cads_config)
