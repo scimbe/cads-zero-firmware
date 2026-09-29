@@ -35,6 +35,15 @@ extern "C" {
  */
 bool cads_cli_tcp_start(uint16_t port);
 
+/**
+ * Close the listener and drop the current session, if any. Every caller of
+ * cads_cli_tcp_start() that only wants the CLI reachable for a while (the
+ * explorer's `j` demo) must call this when done - otherwise the port stays
+ * open for the rest of the boot, served from any later cads_net_poll().
+ * Harmless when nothing is running.
+ */
+void cads_cli_tcp_stop(void);
+
 #ifdef __cplusplus
 }
 #endif

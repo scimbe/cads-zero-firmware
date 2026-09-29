@@ -56,5 +56,6 @@ void cads_explorer_cli_demo(uint32_t seconds) {
         }
     }
 
+    cads_cli_tcp_stop(); /* do not leave :4242 open for the rest of the boot */
     cads_probe_puts("\r\n# cli: serial session ended\r\n");
 }

@@ -82,6 +82,36 @@ typedef struct {
 static cads_screencast_t s_cast;
 static struct tcp_pcb* s_listen_pcb = NULL;
 
+/* Set when a close had to fall back to tcp_abort() inside a callback: that
+ * callback must then return ERR_ABRT to lwIP. */
+static bool s_cast_aborted;
+static uint32_t s_cast_stalled_polls;
+
+/* tcp_poll() every second (2 x TCP_SLOW_INTERVAL). A viewer whose window has
+ * not moved for CADS_SCREENCAST_STALL_S (vanished without FIN/RST, or just
+ * stopped reading) is dropped instead of holding the one viewer slot until
+ * lwIP's own retransmission limit gives up minutes later. */
+#define CADS_SCREENCAST_POLL_TICKS 2u
+#define CADS_SCREENCAST_STALL_S    15u
+
+/* Detach every callback first, so a late event on a closing pcb can never
+ * act on the state of the NEXT viewer (s_cast is shared). */
+static void cads_screencast_release(struct tcp_pcb* pcb) {
+    tcp_arg(pcb, NULL);
+    tcp_recv(pcb, NULL);
+    tcp_sent(pcb, NULL);
+    tcp_err(pcb, NULL);
+    tcp_poll(pcb, NULL, 0u);
+    if(pcb == s_cast.pcb) {
+        s_cast.pcb = NULL;
+        s_cast.connected = false;
+    }
+    if(tcp_close(pcb) != ERR_OK) {
+        tcp_abort(pcb); /* lwIP's guidance when close fails (ERR_MEM) */
+        s_cast_aborted = true;
+    }
+}
+
 static void cads_screencast_build_header(uint8_t* out) {
     out[0] = 'C';
     out[1] = 'D';
@@ -172,6 +202,7 @@ static err_t cads_screencast_sent(void* arg, struct tcp_pcb* pcb, u16_t length) 
     (void)arg;
     (void)pcb;
     (void)length;
+    s_cast_stalled_polls = 0u; /* the viewer is reading */
     cads_screencast_pump();
     return ERR_OK;
 }
@@ -180,9 +211,9 @@ static err_t cads_screencast_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p
     (void)arg;
     (void)err;
     if(!p) {
-        tcp_close(pcb);
-        s_cast.connected = false;
-        return ERR_OK;
+        s_cast_aborted = false;
+        cads_screencast_release(pcb);
+        return s_cast_aborted ? ERR_ABRT : ERR_OK;
     }
     /* One-way stream: whatever the client sends is discarded, not fed to
      * anything - there is no command channel here, just pixels out. */
@@ -191,10 +222,30 @@ static err_t cads_screencast_recv(void* arg, struct tcp_pcb* pcb, struct pbuf* p
     return ERR_OK;
 }
 
-static void cads_screencast_error(void* arg, err_t err) {
+static err_t cads_screencast_poll(void* arg, struct tcp_pcb* pcb) {
     (void)arg;
+    if(++s_cast_stalled_polls < CADS_SCREENCAST_STALL_S) return ERR_OK;
+    tcp_arg(pcb, NULL);
+    tcp_recv(pcb, NULL);
+    tcp_sent(pcb, NULL);
+    tcp_err(pcb, NULL);
+    tcp_poll(pcb, NULL, 0u);
+    if(pcb == s_cast.pcb) {
+        s_cast.pcb = NULL;
+        s_cast.connected = false;
+    }
+    tcp_abort(pcb);
+    return ERR_ABRT;
+}
+
+static void cads_screencast_error(void* arg, err_t err) {
     (void)err;
-    s_cast.connected = false;
+    /* The pcb is already gone. Only the viewer this callback was installed
+     * for (`arg`) may be marked closed - never a newer one. */
+    if(arg != NULL && arg == s_cast.pcb) {
+        s_cast.pcb = NULL;
+        s_cast.connected = false;
+    }
 }
 
 static err_t cads_screencast_accept(void* arg, struct tcp_pcb* new_pcb, err_t err) {
@@ -205,20 +256,25 @@ static err_t cads_screencast_accept(void* arg, struct tcp_pcb* new_pcb, err_t er
         /* One viewer at a time - a second connection would otherwise
          * interleave with the first mid frame, which is not "two streams",
          * it is one corrupted one. */
-        tcp_close(new_pcb);
+        if(tcp_close(new_pcb) != ERR_OK) {
+            tcp_abort(new_pcb);
+            return ERR_ABRT;
+        }
         return ERR_OK;
     }
 
     memset(&s_cast, 0, sizeof(s_cast));
+    s_cast_stalled_polls = 0u;
     s_cast.pcb = new_pcb;
     s_cast.connected = true;
     s_cast.phase = CadsScreencastHeader;
     cads_screencast_build_header(s_cast.header);
 
-    tcp_arg(new_pcb, NULL);
+    tcp_arg(new_pcb, new_pcb);
     tcp_recv(new_pcb, cads_screencast_recv);
     tcp_sent(new_pcb, cads_screencast_sent);
     tcp_err(new_pcb, cads_screencast_error);
+    tcp_poll(new_pcb, cads_screencast_poll, CADS_SCREENCAST_POLL_TICKS);
 
     cads_screencast_pump();
     return ERR_OK;
@@ -244,6 +300,21 @@ static bool cads_screencast_start(uint16_t port) {
     s_listen_pcb = listening;
     tcp_accept(s_listen_pcb, cads_screencast_accept);
     return true;
+}
+
+/* Close the listener and drop the viewer. Without this :4244 stayed open for
+ * the rest of the boot: the app tree calls cads_net_poll() every tick, and
+ * the tcp_sent()-driven pump then streamed the live framebuffer - Marauder
+ * output, the Settings SSID - to any LAN host that connected, with no
+ * authentication, long after the operator's `S` run had ended. */
+static void cads_screencast_stop(void) {
+    if(s_cast.pcb != NULL) cads_screencast_release(s_cast.pcb);
+    s_cast.connected = false;
+    if(s_listen_pcb != NULL) {
+        tcp_accept(s_listen_pcb, NULL);
+        (void)tcp_close(s_listen_pcb); /* a LISTEN pcb closes synchronously */
+        s_listen_pcb = NULL;
+    }
 }
 
 /* A small moving marker rather than a static pattern - proves the stream is
@@ -292,7 +363,9 @@ void cads_explorer_screencast_demo(uint32_t seconds) {
         cads_hal_delay_ms(10u);
     }
 
+    uint32_t frames_sent = s_cast.frames_sent;
+    cads_screencast_stop();
     cads_probe_puts("# screencast: done, ");
-    cads_probe_put_uint(s_cast.frames_sent);
+    cads_probe_put_uint(frames_sent);
     cads_probe_puts(" full frame(s) sent to the last/only viewer\r\n");
 }
