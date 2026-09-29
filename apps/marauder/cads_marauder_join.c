@@ -1,6 +1,7 @@
 /* CaDS Zero - Marauder join-by-SSID implementation. See the header for the
  * full protocol reasoning. */
 #include "cads_marauder_join.h"
+#include "cads_marauder_reader.h"
 
 #include <string.h>
 
@@ -32,11 +33,18 @@ static const char* cads_marauder_ap_line_essid_start(const char* line) {
  * `target` at a clean boundary: target's full length, then end-of-string or
  * a space (the space before Marauder's own trailing beacon-interval hex
  * bytes) - not merely a prefix match, so "Home" cannot match "HomeNetwork". */
-static bool cads_marauder_essid_matches(const char* essid_text, const char* target) {
+static bool cads_marauder_essid_matches(const char* line, const char* essid_text, const char* target) {
     size_t tlen = strlen(target);
     if(strncmp(essid_text, target, tlen) != 0) return false;
     char next = essid_text[tlen];
-    return next == '\0' || next == ' ';
+    if(next == ' ') return true;
+    if(next != '\0') return false;
+    /* End-of-string only counts as a boundary if the reader did not cut
+     * the line there: a line that filled CADS_MARAUDER_LINE_LEN was
+     * force-split, so "ESSID: HomeNetwork1" may really be the first half
+     * of "HomeNetwork1-Guest". Treat that as not found (the documented
+     * degradation), never as a match on the wrong AP. */
+    return strlen(line) < CADS_MARAUDER_LINE_LEN - 1u;
 }
 
 void cads_marauder_join_feed_line(cads_marauder_join_state_t* st, const char* line) {
@@ -48,7 +56,7 @@ void cads_marauder_join_feed_line(cads_marauder_join_state_t* st, const char* li
     uint32_t this_index = st->ap_count;
     st->ap_count++;
 
-    if(cads_marauder_essid_matches(essid_text, st->target_ssid)) {
+    if(cads_marauder_essid_matches(line, essid_text, st->target_ssid)) {
         st->status = CADS_MARAUDER_JOIN_FOUND;
         st->found_index = this_index;
     }

@@ -1,9 +1,9 @@
 /*
- * CaDS Zero - WiFi co-processor link, USART6 (PC6=TX, PC7=RX, AF8), 460800 baud.
+ * CaDS Zero - WiFi co-processor link, USART6 (PC6=TX, PC7=RX, AF8), CADS_WIFI_BAUD (115200, see board.h).
  *
  * Structurally this is hal_console.c's driver again: RX is interrupt driven
  * into a ring buffer (the STM32F4 USART has a one-byte receive register and
- * no FIFO - a byte lands every ~2 us at this baud, so anything slower than
+ * no FIFO - a byte lands every ~87 us at 115200, so anything slower than
  * that polling drops characters), TX is a polled busy-wait. The difference
  * from the console is who reads the ring: cads_wifi_tick() (modules/wifi)
  * drains it and feeds pppos_input(), not a human at a terminal. pppos_input()

@@ -7,6 +7,7 @@
 #include "cads/net/net.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
+#include "cads_hal.h"
 #include "cads_menu.h"
 #include "cads_softkeys.h"
 #include "cads_view.h"
@@ -216,7 +217,7 @@ static void cads_nettools_arp_start(void) {
     s_arp.next_octet = 1u;
     s_arp.found = 0u;
     s_arp.running = true;
-    s_arp.next_tick_ms = 0u;
+    s_arp.next_tick_ms = cads_hal_ticks_ms(); /* due now */
     cads_str_copy(s_arp.last_found, sizeof(s_arp.last_found), "");
     cads_nettools_arp_progress_text();
 }
@@ -227,7 +228,7 @@ static void cads_nettools_arp_start(void) {
  * CADS_NETTOOLS_ARP_WINDOW past the bound with no new requests. */
 void cads_nettools_tick(uint32_t now_ms) {
     if(!s_arp.running) return;
-    if(now_ms < s_arp.next_tick_ms) return;
+    if((int32_t)(now_ms - s_arp.next_tick_ms) < 0) return; /* wrap safe */
     s_arp.next_tick_ms = now_ms + CADS_NETTOOLS_ARP_TICK_MS;
 
     uint16_t found_before = s_arp.found; /* snapshot before this tick's harvest */

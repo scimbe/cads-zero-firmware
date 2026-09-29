@@ -35,13 +35,12 @@ CADS_DMA_SECTION __attribute__((aligned(4)))
 static uint16_t cads_stage[CADS_STAGE_PIXELS];
 
 /*
- * Palette in native RGB565.
+ * Palette in RGB565, stored byte-swapped (high byte first in memory).
  *
- * The panel wants the high byte first, but pixels reach it through the SPI's
- * 16-bit frame format, which already transmits most significant byte first.
- * So no swap is needed anywhere - and, more importantly, this is the layout
- * DMA2D produces, which is what lets the hardware accelerator drop straight
- * into the flush path.
+ * The panel wants the high byte first and the pixel DMA runs in 8-bit beats
+ * (targets/itsboard/hal/hal_spi.c's cads_hal_spi_write_dma), which sends
+ * memory order - so the swap happens once per palette entry here, not per
+ * pixel at flush time.
  */
 static uint16_t cads_palette[CADS_PALETTE_SIZE];
 

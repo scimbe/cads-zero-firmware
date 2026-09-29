@@ -138,6 +138,25 @@ static void test_a_corrupt_file_reports_corrupt_and_leaves_the_table_empty(void)
     TEST_ASSERT_EQUAL_UINT32(0u, cads_kv_count());
 }
 
+static void test_an_unterminated_key_on_disk_reports_corrupt(void) {
+    cads_kv_set_i32("a", 1);
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_kv_save());
+
+    /* Rewrite the one entry's key array with no terminator anywhere in it:
+     * header (12 bytes) then the entry, whose key comes first. */
+    cads_storage_file_t* file = NULL;
+    TEST_ASSERT_EQUAL_INT(
+        CADS_STORAGE_OK, cads_storage_open(&file, "/settings.kv", CADS_STORAGE_WRONLY));
+    TEST_ASSERT_EQUAL_INT32(12, cads_storage_seek(file, 12, CADS_STORAGE_SEEK_SET));
+    char key[CADS_KV_KEY_MAX + 1u];
+    memset(key, 'k', sizeof(key));
+    TEST_ASSERT_EQUAL_INT32((int32_t)sizeof(key), cads_storage_write(file, key, sizeof(key)));
+    cads_storage_close(file);
+
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_ERR_CORRUPT, cads_kv_open("/settings.kv"));
+    TEST_ASSERT_EQUAL_UINT32(0u, cads_kv_count());
+}
+
 static void test_entry_pool_is_exhausted_not_grown(void) {
     char key[CADS_KV_KEY_MAX + 1u];
     for(uint32_t i = 0; i < CADS_KV_MAX_ENTRIES; i++) {
@@ -164,6 +183,7 @@ int main(void) {
     RUN_TEST(test_a_string_value_longer_than_the_limit_is_refused);
     RUN_TEST(test_get_str_truncates_to_the_callers_buffer);
     RUN_TEST(test_a_corrupt_file_reports_corrupt_and_leaves_the_table_empty);
+    RUN_TEST(test_an_unterminated_key_on_disk_reports_corrupt);
     RUN_TEST(test_entry_pool_is_exhausted_not_grown);
     return UNITY_END();
 }

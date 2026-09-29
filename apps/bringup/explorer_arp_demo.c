@@ -41,15 +41,7 @@ void cads_explorer_arp_demo(uint32_t base, uint32_t count) {
      * cads_net_poll(), so link_up could never actually become true and
      * every single probe below was silently returning false before
      * sending anything. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     char first_text[16];
     char last_text[16];

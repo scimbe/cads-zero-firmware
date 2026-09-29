@@ -236,7 +236,7 @@ static void cads_gpio_enter(void* context) {
     app->in_dirty = 0u;
     app->int_dirty = 0u;
     app->need_strips = true;
-    app->next_poll_ms = 0u;
+    app->next_poll_ms = cads_hal_ticks_ms(); /* due now; 0 would stall past 2^31 ms uptime */
 }
 
 void cads_gpio_init(cads_view_dispatcher_t* dispatcher) {

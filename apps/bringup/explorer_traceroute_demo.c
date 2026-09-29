@@ -37,15 +37,7 @@ void cads_explorer_traceroute_demo(uint32_t target, uint32_t max_hops) {
     /* Same reasoning (and the same bug once found and fixed there) as
      * explorer_arp_demo.c/explorer_ping_demo.c: this loop must call
      * cads_net_poll() itself. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     char target_text[16];
     cads_fmt_ipv4(target_text, sizeof(target_text), target);

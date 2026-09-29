@@ -269,7 +269,9 @@ void cads_hal_display_blit(
 }
 
 void cads_hal_display_set_fast_clock(bool fast) {
-    cads_hal_spi_wait();
+    /* No cads_hal_spi_wait() here: set_speed() waits itself, under the bus
+     * mutex. An unlocked wait drains DR/SR and could swallow the RXNE of a
+     * polled cads_hal_spi_transfer() another task has in flight. */
     cads_hal_spi_set_speed(fast ? CadsSpiSpeedDisplayFast : CadsSpiSpeedDisplay);
 }
 

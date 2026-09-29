@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "cads/diag/bootguard.h"
 #include "cads/diag/forensic.h"
 #include "cads_hal.h"
 #include "canvas.h"
@@ -461,7 +462,20 @@ void cads_explorer_run(void) {
     {
         cads_config_t boot_cfg;
         (void)cads_config_load(&boot_cfg);
-        if(boot_cfg.boot_autostart) {
+#ifdef CADS_TARGET_ITSBOARD
+        cads_bootguard_boot(cads_hal_reset_cause() == CadsResetWatchdogIndependent);
+#else
+        cads_bootguard_boot(false);
+#endif
+        if(boot_cfg.boot_autostart && cads_bootguard_tripped()) {
+            /* Crash loop: the last CADS_BOOTGUARD_LIMIT boots all ended in
+             * a watchdog reset before running stably. Stay at the prompt so
+             * the cause can be read ('E') and fixed (e.g. a config value)
+             * before the ring evicts the first record. NRST retries. */
+            cads_probe_puts("# boot.autostart SKIPPED: ");
+            cads_probe_put_uint(cads_bootguard_count());
+            cads_probe_puts(" watchdog resets in a row - 'E' shows why; press reset to retry\r\n");
+        } else if(boot_cfg.boot_autostart) {
             cads_probe_puts(
                 "# boot.autostart=1: entering the menu - scripts/board_key.py quit returns here\r\n");
             uint8_t wake = cads_explorer_app_demo(0u);
@@ -606,7 +620,7 @@ void cads_explorer_run(void) {
                     cads_probe_puts(" t=");
                     cads_probe_put_uint(record.uptime_ms);
                     cads_probe_puts("ms reason=");
-                    cads_probe_puts(record.reason ? record.reason : "(none)");
+                    cads_probe_puts(record.reason[0] != '\0' ? record.reason : "(none)");
                     cads_probe_puts("\r\n");
                     if(record.has_frame) {
                         cads_probe_puts("#     PC=0x");
@@ -902,13 +916,13 @@ void cads_explorer_run(void) {
                 uint32_t chunk_len = 0u;
                 uint32_t start_ms = cads_hal_ticks_ms();
                 while((cads_hal_ticks_ms() - start_ms) < seconds * 1000u) {
-                    uint8_t byte;
-                    while(cads_hal_wifi_uart_read(&byte)) {
+                    uint8_t rx;
+                    while(cads_hal_wifi_uart_read(&rx)) {
                         total_received++;
                         if(echo_len < sizeof(echo_check)) {
-                            echo_check[echo_len++] = (char)byte;
+                            echo_check[echo_len++] = (char)rx;
                         }
-                        chunk[chunk_len++] = (char)byte;
+                        chunk[chunk_len++] = (char)rx;
                         if(chunk_len == sizeof(chunk) - 1u) {
                             chunk[chunk_len] = '\0';
                             cads_probe_puts(chunk);

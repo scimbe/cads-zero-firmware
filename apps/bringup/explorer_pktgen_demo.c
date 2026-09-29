@@ -46,15 +46,7 @@ void cads_explorer_pktgen_demo(uint32_t pps, uint32_t seconds) {
      * explorer_arp_demo.c/explorer_ping_demo.c/explorer_traceroute_demo.c:
      * this loop must call cads_net_poll() itself to actually detect the
      * link, not just check its cached status. */
-    uint32_t link_wait_start = cads_hal_ticks_ms();
-    while(cads_hal_ticks_ms() - link_wait_start < 3000u) {
-        cads_net_poll();
-
-        cads_net_status_t status;
-        cads_net_status(&status);
-        if(status.link_up) break;
-        cads_hal_delay_ms(10u);
-    }
+    (void)cads_explorer_net_link_wait(3000u);
 
     uint32_t period_us = 1000000u / pps;
     cads_probe_puts("# pktgen: ");

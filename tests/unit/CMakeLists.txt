@@ -137,6 +137,8 @@ target_link_libraries(test_input PRIVATE cads_fake_hal)
 
 cads_add_unit_test(test_forensic test_forensic.c)
 target_link_libraries(test_forensic PRIVATE cads_diag cads_fake_hal)
+cads_add_unit_test(test_bootguard test_bootguard.c)
+target_link_libraries(test_bootguard PRIVATE cads_diag cads_fake_hal)
 
 # --- M6 app tree ---------------------------------------------------------------
 #
@@ -224,6 +226,8 @@ target_include_directories(cads_lwip_host PUBLIC
 target_compile_definitions(cads_lwip_host PUBLIC LWIP_DONT_PROVIDE_BYTEORDER_FUNCTIONS=1)
 cads_add_unit_test(test_lwip_dhcp_nak test_lwip_dhcp_nak.c)
 target_link_libraries(test_lwip_dhcp_nak PRIVATE cads_lwip_host cads_fake_hal)
+cads_add_unit_test(test_lwip_reass test_lwip_reass.c)
+target_link_libraries(test_lwip_reass PRIVATE cads_lwip_host cads_fake_hal)
 
 # --- security -------------------------------------------------------------
 cads_add_unit_test(test_secure_link test_secure_link.c)

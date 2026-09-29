@@ -16,6 +16,12 @@ void cads_hal_touch_init(void);
 void cads_fault_init(void);
 
 void cads_hal_init(void) {
+    /* Latch (and clear) RCC->CSR's sticky reset flags first thing, as
+     * hal_watchdog.c's own comment requires. Reading them lazily, only when
+     * the explorer's 'E' asks, left an earlier boot's IWDGRSTF in place
+     * across any boot nobody queried, so a later plain NRST reported as a
+     * watchdog reset. */
+    (void)cads_hal_reset_cause();
     cads_hal_time_init();
     cads_hal_io_init();
     cads_hal_console_init(CADS_CONSOLE_BAUD);

@@ -50,8 +50,12 @@ static bool cads_hal_rng_word(uint32_t* word) {
         s_rng_ready = true;
     }
 
+    /* One budget for the whole call, not per attempt: every path back to
+     * the top of the loop (discarded word, seed/clock error) spends it, so
+     * a peripheral that keeps failing ends in `false`, never a hang. */
+    uint32_t guard = 0u;
     for(;;) {
-        uint32_t guard = 0u;
+        if(++guard > CADS_RNG_WORD_TIMEOUT) return false;
         while((RNG->SR & RNG_SR_DRDY) == 0u) {
             if(RNG->SR & (RNG_SR_SEIS | RNG_SR_CEIS)) {
                 /* RM0090 24.3.2: a seed error needs a real reinit (clear
@@ -72,7 +76,17 @@ static bool cads_hal_rng_word(uint32_t* word) {
          * ones above - RM0090 24.3.2's explicit warning that a word can sit
          * in RNG_DR with DRDY=1 while SECS is *currently* 1 and must still
          * be discarded, not just when the fault first triggered SEIS. */
-        if(RNG->SR & (RNG_SR_SECS | RNG_SR_CECS)) continue;
+        if(RNG->SR & (RNG_SR_SECS | RNG_SR_CECS)) {
+            /* Discard the word and reinitialise, as for SEIS/CEIS above.
+             * A bare `continue` left DRDY set with the fault still
+             * standing, so the wait above was skipped and this spun forever
+             * on the console task - which the tick-fed IWDG never sees. */
+            (void)RNG->DR;
+            RNG->SR &= ~(RNG_SR_SEIS | RNG_SR_CEIS);
+            RNG->CR &= ~RNG_CR_RNGEN;
+            cads_hal_rng_enable();
+            continue;
+        }
 
         uint32_t candidate = RNG->DR;
 

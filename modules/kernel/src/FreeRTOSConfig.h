@@ -104,7 +104,9 @@
 /* An assert that halts with the machine intact beats one that returns and
  * lets a corrupted scheduler keep running. */
 extern void cads_kernel_assert(const char* file, int line);
-#define configASSERT(x) \
-    if((x) == 0) cads_kernel_assert(__FILE__, __LINE__)
+#define configASSERT(x)                                  \
+    do {                                                 \
+        if((x) == 0) cads_kernel_assert(__FILE__, __LINE__); \
+    } while(0)
 
 #endif /* FREERTOS_CONFIG_H */

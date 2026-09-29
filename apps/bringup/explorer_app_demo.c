@@ -39,8 +39,10 @@
 #include "cads_softkeys.h"
 #include "cads_statusbar.h"
 #include "cads_view_dispatcher.h"
+#include "cads/diag/bootguard.h"
 #include "explorer_eth.h" /* cads_explorer_net_mac() */
 #include "input_probe.h" /* cads_probe_puts / cads_probe_put_uint */
+#include "tasks.h"       /* cads_tasks_sleep_ms() */
 
 /*
  * desktop, menu, settings, settings-confirm, about, gpio, netinfo,
@@ -175,7 +177,13 @@ static void cads_app_demo_idle(uint32_t ms) {
         if(elapsed >= ms) return;
         uint32_t step = ms - elapsed;
         if(step > CADS_APP_DEMO_POLL_SLICE_MS) step = CADS_APP_DEMO_POLL_SLICE_MS;
-        cads_hal_delay_ms(step);
+        /* Sleep, not cads_hal_delay_ms(): that is a DWT busy-spin, and this
+         * loop is what the console task runs for the whole autostart GUI
+         * session. Spinning here kept the idle task (priority 0) from ever
+         * running - and vApplicationIdleHook() is the only place the stack
+         * guard sentinels are checked - while burning 100 % CPU. At the
+         * 1 kHz tick a 2 ms sleep is 1..2 ms, the same slice as before. */
+        cads_tasks_sleep_ms(step);
         if(cads_hal_ticks_ms() - start >= ms) return; /* the loop polls next anyway */
 #ifdef CADS_APP_ACTIVE_ENABLED
         if(!cads_active_owns_rx())
@@ -234,6 +242,10 @@ uint8_t cads_explorer_app_demo(uint32_t seconds) {
     uint8_t wake_byte = 0u;
     for(;;) {
         uint32_t now = cads_hal_ticks_ms();
+        /* Up long enough to trust this boot: an earlier watchdog reset was
+         * not the start of a crash loop (cads/diag/bootguard.h). Cheap and
+         * idempotent, so no "already done" flag. */
+        if(now >= CADS_BOOTGUARD_STABLE_MS) cads_bootguard_stable();
         {
             uint8_t byte;
             if(cads_hal_console_read(&byte)) {

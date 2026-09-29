@@ -338,12 +338,6 @@ uint8_t cads_hal_spi_transfer(uint8_t value) {
     return received;
 }
 
-void cads_hal_spi_write(const uint8_t* data, size_t length) {
-    for(size_t i = 0; i < length; i++) {
-        (void)cads_hal_spi_transfer(data[i]);
-    }
-}
-
 /* --- DMA transmit --------------------------------------------------------- */
 
 bool cads_hal_spi_busy(void) {
@@ -394,58 +388,10 @@ void cads_hal_spi_wait(void) {
 }
 
 /*
- * Pixel transfers run the bus in 16-bit data frame format.
- *
- * Three reasons, all of which matter:
- *   - The shield's 74HC4040 latches the shift register chain every 16 clocks,
- *     so a 16-bit frame is the natural unit. Two back-to-back 8-bit frames
- *     produce the same clocks but only if the DR is refilled without a gap.
- *   - SPI sends a 16-bit frame most significant byte first, which is exactly
- *     the order the panel wants. That removes the byte swap that would
- *     otherwise be needed on every pixel.
- *   - It halves the number of DMA beats.
- *
- * Commands and parameters stay 8-bit: a command is a single byte with DC low,
- * which a 16-bit frame cannot express.
+ * Pixel transfers are 8-bit DMA beats: the RGB565 staging buffer is already
+ * stored high byte first (gui/canvas.c), so no DFF switch is needed. An
+ * earlier 16-bit (DFF) DMA variant had no callers left and was removed.
  */
-void cads_hal_spi_write_dma16(const void* data, size_t halfwords) {
-    cads_hal_spi_wait();
-
-    /* DFF can only change while the peripheral is disabled. */
-    uint32_t cr1 = CADS_LCD_SPI->CR1;
-    CADS_LCD_SPI->CR1 = cr1 & ~SPI_CR1_SPE;
-    CADS_LCD_SPI->CR1 = (cr1 | SPI_CR1_DFF) & ~SPI_CR1_SPE;
-    CADS_LCD_SPI->CR1 |= SPI_CR1_SPE;
-
-    CADS_SPI_DMA_STREAM->CR &= ~DMA_SxCR_EN;
-    while(CADS_SPI_DMA_STREAM->CR & DMA_SxCR_EN) {
-    }
-    CADS_SPI_DMA->LIFCR = DMA_LIFCR_CTCIF3 | DMA_LIFCR_CHTIF3 | DMA_LIFCR_CTEIF3 |
-                          DMA_LIFCR_CDMEIF3 | DMA_LIFCR_CFEIF3;
-
-    CADS_SPI_DMA_STREAM->PAR = (uint32_t)&CADS_LCD_SPI->DR;
-    CADS_SPI_DMA_STREAM->M0AR = (uint32_t)data;
-    CADS_SPI_DMA_STREAM->NDTR = (uint32_t)halfwords;
-    CADS_SPI_DMA_STREAM->FCR = 0u;
-    CADS_SPI_DMA_STREAM->CR = (CADS_SPI_DMA_CHANNEL << DMA_SxCR_CHSEL_Pos) | DMA_SxCR_MINC |
-                              (1u << DMA_SxCR_MSIZE_Pos) | (1u << DMA_SxCR_PSIZE_Pos) |
-                              (1u << DMA_SxCR_DIR_Pos) | (2u << DMA_SxCR_PL_Pos) |
-                              DMA_SxCR_TCIE | DMA_SxCR_TEIE;
-
-    cads_spi_dma_active = true;
-    CADS_LCD_SPI->CR2 |= SPI_CR2_TXDMAEN;
-    CADS_SPI_DMA_STREAM->CR |= DMA_SxCR_EN;
-}
-
-/** Return the bus to 8-bit frames for commands and touch. */
-void cads_hal_spi_end_16bit(void) {
-    cads_hal_spi_wait();
-    uint32_t cr1 = CADS_LCD_SPI->CR1;
-    CADS_LCD_SPI->CR1 = cr1 & ~SPI_CR1_SPE;
-    CADS_LCD_SPI->CR1 = (cr1 & ~SPI_CR1_DFF) & ~SPI_CR1_SPE;
-    CADS_LCD_SPI->CR1 |= SPI_CR1_SPE;
-}
-
 void cads_hal_spi_write_dma(const void* data, size_t length) {
     cads_hal_spi_wait();
 

@@ -64,9 +64,14 @@ cads_secure_frame_status_t cads_secure_frame_decode(
      * builds for), but computed as a wider addition anyway so a caller
      * fuzzing malformed length fields never trips UB here. */
     size_t frame_len = (size_t)plain_len + CADS_SECURE_FRAME_OVERHEAD;
-    if(in_len < frame_len) return CADS_SECURE_FRAME_INCOMPLETE;
 
+    /* Checked before the completeness test on purpose: the length field is
+     * already known here, and a frame whose declared length can never fit
+     * plain_out would otherwise report INCOMPLETE forever - a streaming
+     * caller would keep buffering bytes for a frame it can never decode
+     * and never reach the TOO_LARGE branch that tells it so. */
     if((size_t)plain_len > plain_out_size) return CADS_SECURE_FRAME_TOO_LARGE;
+    if(in_len < frame_len) return CADS_SECURE_FRAME_INCOMPLETE;
 
     const uint8_t* cipher = in + CADS_SECURE_FRAME_HEADER_LEN;
     const uint8_t* mac = cipher + plain_len;
