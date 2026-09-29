@@ -59,8 +59,15 @@ static void dump_ppm(const char* dir, const char* name) {
 }
 
 static cads_view_dispatcher_t s_dispatcher;
-static cads_view_entry_t s_entries[24];
+/* Same capacity as the firmware's app tree (apps/bringup/explorer_app_demo.c
+ * CADS_APP_DEMO_VIEW_CAPACITY, mirrored by tests/unit/test_app_tree.c). With
+ * 24 here, the last two of the 26 registered views - the menu among them -
+ * were silently dropped by cads_view_dispatcher_add(), and the gallery just
+ * printed "switch_to 02_menu failed" while its smoke test stayed green. */
+#define GALLERY_VIEW_CAPACITY 28u
+static cads_view_entry_t s_entries[GALLERY_VIEW_CAPACITY];
 static uint32_t s_stack[8];
+static int s_failures;
 static cads_gui_t s_gui;
 static cads_statusbar_t s_statusbar;
 static cads_softkeys_t s_softkeys;
@@ -69,6 +76,7 @@ static uint32_t s_now = 1000u;
 static void shoot(const char* out_dir, uint32_t view_id, const char* name) {
     if(!cads_view_dispatcher_switch_to(&s_dispatcher, view_id)) {
         fprintf(stderr, "gallery: switch_to %s (0x%04x) failed\n", name, view_id);
+        s_failures++;
         return;
     }
     /* A few ticks so an app whose first frame depends on a tick (desktop's
@@ -105,7 +113,7 @@ int main(int argc, char** argv) {
         cads_storage_mount();
     }
 
-    cads_view_dispatcher_init(&s_dispatcher, s_entries, 24u, s_stack, 8u);
+    cads_view_dispatcher_init(&s_dispatcher, s_entries, GALLERY_VIEW_CAPACITY, s_stack, 8u);
     cads_rect_t full = {0, 0, CADS_CANVAS_WIDTH, CADS_CANVAS_HEIGHT};
     cads_view_dispatcher_set_area(&s_dispatcher, full);
 
@@ -143,5 +151,7 @@ int main(int argc, char** argv) {
     cads_dialog_draw(&dialog);
     dump_ppm(out_dir, "15_dialog");
 
-    return 0;
+    /* A view that could not be shown is a failure, not a warning: the
+     * gallery_renders test is the only thing that would notice. */
+    return s_failures == 0 ? 0 : 1;
 }
