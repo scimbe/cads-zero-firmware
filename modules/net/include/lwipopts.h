@@ -295,9 +295,24 @@
 extern unsigned char cads_lwip_ram_heap[];
 #define LWIP_RAM_HEAP_POINTER cads_lwip_ram_heap
 #define CADS_LWIP_MEMP_ESTIMATE ((PBUF_POOL_SIZE * (TCP_MSS + 80)) + 4096)
-#if (CADS_LWIP_MEMP_ESTIMATE + MEM_SIZE) <= (36 * 1024)
+/* CADS_LWIP_POOLS_IN_CCM tells the lessons which of the two regions this
+ * build has just filled, so a large CPU-only lesson buffer can go to the
+ * other one (apps/rnlab/src/l09_congestion_control.c's trace ring). */
+/* CCM's lwIP share: 36 KB next to the lessons' own CCM buffers. L09's trace
+ * ring (7.5 KB) is one of those only at MSS 536 - at MSS 1460 it sits in
+ * SRAM while the pools are in CCM - so the 536 builds have that much less
+ * (536/32/16 overflowed CCM by 0.6 KB with the full 36 KB). */
+#if TCP_MSS > 536
+#define CADS_LWIP_CCM_SHARE (36 * 1024)
+#else
+#define CADS_LWIP_CCM_SHARE (28 * 1024)
+#endif
+#if (CADS_LWIP_MEMP_ESTIMATE + MEM_SIZE) <= CADS_LWIP_CCM_SHARE
+#define CADS_LWIP_POOLS_IN_CCM 1
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
     u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".ccm"), aligned(4)))
+#else
+#define CADS_LWIP_POOLS_IN_CCM 0
 #endif
 #endif
 

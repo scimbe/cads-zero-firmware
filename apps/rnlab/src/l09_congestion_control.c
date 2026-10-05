@@ -87,7 +87,11 @@ typedef struct {
 
 static l09_state_t l09;
 static bool l09_ticking; /* outside l09: survives the reset in cc start */
-#if TCP_MSS > 536
+/* 7.5 KB, CPU-only: it goes wherever lwIP's pools are not. At MSS 1460 they
+ * either fill CCM (small windows - then the ring fits only in SRAM) or have
+ * moved to SRAM (WND 16..32, lwipopts.h - then SRAM is what an L08 build
+ * with a deep RX ring runs out of, and CCM is half empty). */
+#if (TCP_MSS > 536) && CADS_LWIP_POOLS_IN_CCM
 static rnlab_l09_trace_entry_t l09_trace[L09_TRACE_LEN];
 #else
 RNLAB_CCM static rnlab_l09_trace_entry_t l09_trace[L09_TRACE_LEN];
