@@ -2070,6 +2070,23 @@ _None outstanding._
 
 ## Log
 
+- 2026-10-05 (praktikum/start: L08's mandatory build variant did not link) -
+  `-DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=16
+  -DCADS_RNLAB_ETH_RX_COUNT=32`, the command on the L08 sheet, ended in
+  `.dmaram will not fit in region RAM` (198 048 B, 100.73 %). Per-commit
+  builds: 190 144 B at `aba05ab` (L08 stub merged, links), 198 048 B from
+  `c35e8f9` on (L09 stub merged). `705ff4a` puts L09's 7.5 KB trace ring
+  into SRAM for every MSS-1460 build because 1460/4/8 fills CCM with lwIP's
+  pools - but from WND 16 on those pools are in SRAM themselves and CCM is
+  half empty. Fix: the ring goes where the pools are not
+  (`CADS_LWIP_POOLS_IN_CCM`), and of the pools only `PBUF_POOL`/`TCP_SEG`
+  leave CCM (`.lwipmem.*` in the linker script), which leaves 1460/32 with
+  RX 20 linkable with every solution merged (2 208 B). Side finding:
+  536/32/16 overflowed CCM (66 160 B); MSS-536 builds now move the pools
+  out at 28 KB instead of 36 KB. Nothing built these variants, so
+  `scripts/build_lab_variants.sh` + `apps/rnlab/lab_variants.txt` now do, in
+  CI; CMake rejects combinations beyond the SRAM at configure time.
+
 - 2026-09-28 (`golden_splash`/`golden_boot_desktop`: host-dependent, fixed
   at the source) - CI's host job had failed on these two since `3c038cb`
   (2026-09-01) while macOS passed. The 2026-09-01 entry below had the right

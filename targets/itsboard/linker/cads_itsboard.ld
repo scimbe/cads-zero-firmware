@@ -125,6 +125,11 @@ SECTIONS
         *(.bss)
         *(.bss*)
         *(COMMON)
+        /* lwIP's window-sized pools when they do not fit CCM (lab builds
+         * with big TCP windows, modules/net/include/lwipopts.h); every
+         * other .lwipmem.* pool stays in .ccm below. */
+        *(.lwipmem.memp_memory_PBUF_POOL_base)
+        *(.lwipmem.memp_memory_TCP_SEG_base)
         . = ALIGN(4);
         __cads_bss_end = .;
         __bss_end__ = .;
@@ -171,6 +176,7 @@ SECTIONS
         __cads_ccm_start = .;
         *(.ccm)
         *(.ccm*)
+        *(.lwipmem.*)
         . = ALIGN(8);
         __cads_ccm_end = .;
     } > CCM

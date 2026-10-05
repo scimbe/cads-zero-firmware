@@ -1,0 +1,24 @@
+# Build variants of the lab that the course material names. Every one of
+# them must link (scripts/build_lab_variants.sh, CI job "Lab build variants").
+# A lab sheet that names a new combination gets a line here.
+#
+# TCP_MSS  TCP_WND_MSS  TCP_SND_BUF_MSS  ETH_RX_COUNT  expect  source
+536   8  4  8  ok      default
+536   8  4 16  ok      L07 deep-dive (RX ring 16)
+536   2  4  8  ok      L08 matrix, mandatory
+536  16  4  8  ok      L08 matrix, mandatory
+536  16  4 32  ok      L08 matrix, mandatory
+1460 16  4 32  ok      L08 matrix, mandatory (the build command on the sheet)
+536   4  4  8  ok      L08 matrix, deep-dive
+1460  4  4  8  ok      L08 matrix, deep-dive
+1460  8  4  8  ok      L08 matrix, deep-dive
+1460 16  4  8  ok      L08 matrix, deep-dive
+1460 32  4  8  ok      L08 matrix, deep-dive
+1460 32  4 20  ok      L08 matrix, deep-dive
+1460  4  8  8  ok      L09 measurement build
+1460 32 16  8  ok      README example, largest TCP configuration
+1460 32 16 20  ok      README: deepest RX ring at 1460/32/16
+1460 16  8 32  ok      README RX-ring figures
+536  32 16 32  ok      README RX-ring figures
+1460 32 16 32  reject  beyond the SRAM - CMake must say so
+1460 32  4 22  reject  first RX depth that no longer fits at 1460/32/4
