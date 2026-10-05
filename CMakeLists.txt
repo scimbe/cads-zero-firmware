@@ -510,6 +510,56 @@ if(CADS_TARGET STREQUAL "itsboard")
         # drain budget.
         target_compile_definitions(cads_hal_itsboard PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
         target_compile_definitions(cads_net PRIVATE CADS_RNLAB_ETH_RX_COUNT=${CADS_RNLAB_ETH_RX_COUNT})
+
+        # Not every combination of the four lab options fits the 192 KB of
+        # SRAM (framebuffer and display stage take 90 KB of it, each RX
+        # descriptor 1552 B, and a big TCP window moves lwIP's PBUF_POOL
+        # there). The linker is the exact check, but it only speaks up after
+        # the whole build and only says ".dmaram will not fit in region RAM".
+        # This estimate rejects such a combination at configure time and
+        # names the deepest RX ring that fits. It mirrors lwipopts.h (where
+        # the pools go) and l09_congestion_control.c (where the trace ring
+        # goes); the base is measured: SRAM of a default build minus its RX
+        # ring. scripts/build_lab_variants.sh compares the estimate with the
+        # linker's figure for every variant, so a stale mirror is noticed.
+        set(_sram_total 196608)
+        set(_sram_base 112096)
+        set(_sram_per_rx 1552)
+        math(EXPR _mem_size "${CADS_RNLAB_TCP_SND_BUF_MSS} * ${CADS_RNLAB_TCP_MSS} + 2048")
+        if(_mem_size LESS 4096)
+            set(_mem_size 4096)
+        endif()
+        set(_pool_bufs 10)
+        if(CADS_RNLAB_TCP_WND_MSS GREATER 8)
+            math(EXPR _pool_bufs "${CADS_RNLAB_TCP_WND_MSS} + 1")
+        endif()
+        set(_ccm_share 28672)
+        if(CADS_RNLAB_TCP_MSS GREATER 536)
+            set(_ccm_share 36864)
+        endif()
+        math(EXPR _ccm_need "${_pool_bufs} * (${CADS_RNLAB_TCP_MSS} + 80) + 4096 + ${_mem_size}")
+        set(_sram_lwip 0)
+        if(_ccm_need GREATER _ccm_share)
+            # PBUF_POOL (TCP_MSS + 72 B each) and TCP_SEG (20 B each) in SRAM.
+            math(EXPR _sram_lwip "${_pool_bufs} * (${CADS_RNLAB_TCP_MSS} + 72) + 80 * ${CADS_RNLAB_TCP_SND_BUF_MSS} + 8")
+        elseif(CADS_RNLAB_TCP_MSS GREATER 536)
+            set(_sram_lwip 7680) # L09's trace ring
+        endif()
+        math(EXPR CADS_RNLAB_SRAM_ESTIMATE "${_sram_base} + ${_sram_lwip} + ${CADS_RNLAB_ETH_RX_COUNT} * ${_sram_per_rx}")
+        math(EXPR _rx_max "(${_sram_total} - ${_sram_base} - ${_sram_lwip}) / ${_sram_per_rx}")
+        message(STATUS "apps/rnlab: SRAM estimate ${CADS_RNLAB_SRAM_ESTIMATE} B of ${_sram_total} B "
+                       "(TCP_MSS ${CADS_RNLAB_TCP_MSS}, WND ${CADS_RNLAB_TCP_WND_MSS}, "
+                       "SND_BUF ${CADS_RNLAB_TCP_SND_BUF_MSS}, RX ${CADS_RNLAB_ETH_RX_COUNT})")
+        if(CADS_RNLAB_SRAM_ESTIMATE GREATER _sram_total)
+            message(FATAL_ERROR
+                "This lab configuration does not fit the board's SRAM: "
+                "TCP_MSS ${CADS_RNLAB_TCP_MSS} / TCP_WND_MSS ${CADS_RNLAB_TCP_WND_MSS} / "
+                "TCP_SND_BUF_MSS ${CADS_RNLAB_TCP_SND_BUF_MSS} with ETH_RX_COUNT ${CADS_RNLAB_ETH_RX_COUNT} "
+                "needs about ${CADS_RNLAB_SRAM_ESTIMATE} B of ${_sram_total} B.\n"
+                "With this TCP window the RX ring can be at most "
+                "-DCADS_RNLAB_ETH_RX_COUNT=${_rx_max} (or choose a smaller CADS_RNLAB_TCP_WND_MSS). "
+                "See apps/rnlab/README.md, section \"TCP-Parameter\".")
+        endif()
     endif()
 
     set(CADS_LINKER_SCRIPT ${CADS_ROOT}/targets/itsboard/linker/cads_itsboard.ld)

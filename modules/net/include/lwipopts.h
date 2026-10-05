@@ -282,7 +282,7 @@
  * (LWIP_RAM_HEAP_POINTER -> cads_lwip_ram_heap, modules/net/src/
  * cads_net_board.c), and so do the memp pools (PBUF_POOL included) as long
  * as heap + pools fit CCM's lwIP share. The big L08/L09 windows (MSS 1460,
- * WND 16..32) do not fit there: then the pools go to SRAM instead, which
+ * WND 16..32) do not fit there: then the big pools go to SRAM instead, which
  * the lab build can afford because it drops the linker's unused 48K heap
  * floor (top-level CMakeLists.txt, __cads_heap_floor). Either placement is
  * safe: nothing DMAs to or from lwIP memory - hal_eth_mac.c copies every
@@ -312,7 +312,14 @@ extern unsigned char cads_lwip_ram_heap[];
 #define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
     u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] __attribute__((section(".ccm"), aligned(4)))
 #else
+/* Too big for CCM: only the two pools that grow with the window go to SRAM
+ * (PBUF_POOL, TCP_SEG). The linker script picks them out of .lwipmem.* by
+ * name and leaves the small fixed pools (~2.2 KB) in CCM - the SRAM that
+ * 1460/32 with RX 20 needs to link once the lessons are solved. */
 #define CADS_LWIP_POOLS_IN_CCM 0
+#define LWIP_DECLARE_MEMORY_ALIGNED(variable_name, size) \
+    u8_t variable_name[LWIP_MEM_ALIGN_BUFFER(size)] \
+        __attribute__((section(".lwipmem." #variable_name), aligned(4)))
 #endif
 #endif
 

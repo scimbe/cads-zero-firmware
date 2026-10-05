@@ -134,6 +134,43 @@ jobs:
       - name: scripts/build.sh
         run: bash scripts/build.sh Release
 
+  # Every build variant the lab sheets name (apps/rnlab/lab_variants.txt:
+  # TCP window, MSS, RX ring depth). They sit close to the end of the SRAM
+  # and no other job builds them - L08's mandatory variant stopped linking
+  # unnoticed that way.
+  lab-variants:
+    name: Lab build variants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '13.3.Rel1'
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Build all lab variants
+        run: |
+          set -o pipefail
+          {
+            echo '### Lab build variants'
+            echo '```'
+            bash scripts/build_lab_variants.sh
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs of failed variants
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-variant-logs
+          path: build/lab-variants/failed-*.log
+          if-no-files-found: ignore
+
   host:
     name: Host tests
     runs-on: ubuntu-latest

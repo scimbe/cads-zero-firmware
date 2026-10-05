@@ -199,7 +199,7 @@ dann entsprechend Reserve.
 
 **Richtmaß je Lektion** (SRAM, statisch). Die Werte summieren sich, weil ein
 Studierenden-Fork alle Lektionen nacheinander enthält. Sie sind so bemessen,
-dass sie auch in der größten TCP-Konfiguration (1460/32/16, 19,3 KB Reserve)
+dass sie auch in der größten TCP-Konfiguration (1460/32/16, 19,8 KB Reserve)
 noch passen:
 
 | Lektion | Richtmaß | Wofür typischerweise |
@@ -240,30 +240,42 @@ bash scripts/build.sh Debug -DCADS_RNLAB_TCP_MSS=1460 -DCADS_RNLAB_TCP_WND_MSS=3
 Mitwachsende Pools (`PBUF_POOL_SIZE` = Fenster + 1 Puffer, `PBUF_POOL_BUFSIZE`
 über `TCP_MSS`, `MEMP_NUM_TCP_SEG`, `MEM_SIZE`) werden in `lwipopts.h`
 abgeleitet. Der lwIP-Heap liegt immer im CCM, die memp-Pools ebenfalls,
-solange beides zusammen ins CCM passt; sonst wandern die Pools ins SRAM
-(automatisch, gemessen):
+solange beides zusammen ins CCM passt; sonst wandern die beiden Pools, die
+mit dem Fenster wachsen (`PBUF_POOL`, `TCP_SEG`), ins SRAM, die kleinen
+festen Pools bleiben im CCM (Linker-Skript, `.lwipmem.*`). Der Trace-Ring
+von L09 (7,5 KB) liegt jeweils dort, wo die Pools nicht liegen – außer bei
+MSS 536, dort immer im CCM. Gemessen mit RX 8:
 
-| MSS / WND / SND_BUF | Pools | SRAM-Reserve | CCM belegt | CCM frei¹ |
+| MSS / WND / SND_BUF | große Pools | SRAM-Reserve | CCM belegt | CCM frei¹ |
 |---|---|---:|---:|---:|
-| 536 / 2 / 2 | CCM | 73 824 B | 30,1 KB | 30,6 KB |
-| 536 / 8 / 4 (Default) | CCM | 73 824 B | 30,4 KB | 30,3 KB |
-| 536 / 16 / 8 | CCM | 73 824 B | 36,9 KB | 23,1 KB |
-| 536 / 32 / 16 | CCM | 73 824 B | 51,2 KB | 8,8 KB |
-| 1460 / 8 / 4 | CCM | 73 824 B | 43,0 KB | 17,0 KB |
-| 1460 / 16 / 8 | SRAM | 44 928 B | 31,4 KB | 28,6 KB |
-| 1460 / 32 / 16 | SRAM | 19 776 B | 42,8 KB | 17,1 KB |
+| 536 / 2 / 2 | CCM | 72 096 B | 43,5 KB | 16,5 KB |
+| 536 / 8 / 4 (Default) | CCM | 72 096 B | 43,7 KB | 16,3 KB |
+| 536 / 16 / 8 | CCM | 72 096 B | 50,3 KB | 9,7 KB |
+| 536 / 32 / 16 | SRAM | 50 752 B | 43,8 KB | 16,2 KB |
+| 1460 / 8 / 4 | CCM | 64 416 B | 48,9 KB | 11,1 KB |
+| 1460 / 16 / 8 | SRAM | 45 408 B | 46,8 KB | 13,2 KB |
+| 1460 / 32 / 16 | SRAM | 20 256 B | 58,2 KB | 1,8 KB |
 
 ¹ 64 KB minus belegt minus 4 KB Hauptstack.
 
-**RX-Ring:** Jeder Deskriptor über 8 kostet 1 536 B SRAM-Reserve. Messwerte:
-536/8/4 mit RX 8 hat 73 824 B Reserve, 536/32/16 mit RX 32 hat 36 576 B,
-1460/16/8 mit RX 32 hat 7 680 B. **1460/32/16 verträgt höchstens RX 20**
-(1 152 B Reserve; ab RX 21 läuft das SRAM über, der Linker bricht ab).
+**RX-Ring:** Jeder Deskriptor über 8 kostet 1 552 B SRAM-Reserve (1 536 B
+Puffer, 16 B Deskriptor). Messwerte: 536/32/16 mit RX 32 hat 13 504 B
+Reserve, 1460/16/4 mit RX 32 (Pflichtvariante von L08) 8 480 B, 1460/16/8
+mit RX 32 8 160 B, 1460/32/4 mit RX 20 2 592 B. **1460/32/16 verträgt
+höchstens RX 20** (1 632 B Reserve), 1460/32/4 höchstens RX 21.
 Framebuffer (75 KB), Display-Stage (15 KB, DMA) und der PBUF_POOL (50 KB bei
-33 × 1 460 B) lassen daneben keinen Platz. Solche Kombinationen sind reine
-L08/L09-Messbuilds, in denen die Lektions-Richtmaße oben nicht mehr passen.
+33 × 1 460 B) lassen daneben keinen Platz. Was nicht ins SRAM passt, lehnt
+CMake schon beim Konfigurieren ab und nennt den tiefsten RX-Ring, der zu
+diesem Fenster passt (Schätzung im obersten `CMakeLists.txt`; exakt prüft
+der Linker). Solche Kombinationen sind reine L08/L09-Messbuilds, in denen
+die Lektions-Richtmaße oben nicht mehr passen.
 Überläufe zeigt `lab info` als `rx_ring_overruns` (kein freier Deskriptor,
 DMAMFBOCR.MFC) und `FIFO` (DMAMFBOCR.MFA), jeweils seit dem Boot.
+
+Alle Varianten, die die Aufgabenblätter und dieses README nennen, stehen in
+`apps/rnlab/lab_variants.txt`; `bash scripts/build_lab_variants.sh` baut sie
+der Reihe nach (CI-Job „Lab build variants“). Nennt ein Blatt eine neue
+Kombination, kommt sie dort dazu.
 
 Die Optionen gelten für den ganzen Build-Ordner, danach also wieder auf die
 Defaults zurücksetzen
