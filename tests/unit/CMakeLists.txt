@@ -169,6 +169,22 @@ if(CADS_APP_SETTINGS AND CADS_APP_ABOUT AND CADS_APP_GPIO AND CADS_APP_NETINFO A
     )
 endif()
 
+# Settings -> Network and Factory reset, driven by key events through the same
+# app tree: the saved /config.txt and the live net config are what is asserted.
+cads_add_unit_test(test_settings_net test_settings_net.c)
+target_link_libraries(test_settings_net PRIVATE
+    cads_fake_hal
+    cads_app_desktop
+    cads_app_menu
+    cads_app_settings
+    cads_app_about
+    cads_app_gpio
+    cads_app_netinfo
+    cads_app_filebrowser
+    cads_app_game
+    cads_app_active
+)
+
 # --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------
 #
 # hal_eth_aneg.c and hal_eth_linklog.c only ever call cads_hal_eth_mdio_read(),
