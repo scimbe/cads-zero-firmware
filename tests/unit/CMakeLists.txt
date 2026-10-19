@@ -168,19 +168,25 @@ target_link_libraries(test_app_tree PRIVATE
 cads_add_unit_test(test_net_default test_net_default.c)
 target_link_libraries(test_net_default PRIVATE cads_net cads_config)
 
-cads_add_unit_test(test_settings_net test_settings_net.c)
-target_link_libraries(test_settings_net PRIVATE
-    cads_fake_hal
-    cads_app_desktop
-    cads_app_menu
-    cads_app_settings
-    cads_app_about
-    cads_app_gpio
-    cads_app_netinfo
-    cads_app_filebrowser
-    cads_app_game
-    cads_app_active
-)
+#
+# Unlike test_app_tree it needs only the settings app and the menu that reaches it;
+# the other apps are linked when the build has them, so a build with fewer apps
+# (praktikum/start's student defaults, the CI "minimal" config) still runs it.
+if(CADS_APP_SETTINGS)
+    cads_add_unit_test(test_settings_net test_settings_net.c)
+    target_link_libraries(test_settings_net PRIVATE
+        cads_fake_hal
+        cads_app_desktop
+        cads_app_menu
+        cads_app_settings
+    )
+    foreach(app ABOUT GPIO NETINFO FILEBROWSER GAME ACTIVE)
+        if(CADS_APP_${app})
+            string(TOLOWER ${app} app_lower)
+            target_link_libraries(test_settings_net PRIVATE cads_app_${app_lower})
+        endif()
+    endforeach()
+endif()
 
 # --- Ethernet diagnostics (MDIO-only, no RMII data path) -----------------------
 #
