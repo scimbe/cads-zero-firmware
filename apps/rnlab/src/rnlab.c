@@ -21,8 +21,9 @@
 #include "rnlab_args_logic.h"
 #include "rnlab_selftest.h"
 
-#define RNLAB_IP4(a, b, c, d) \
-    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+/* `lab net static` without arguments goes back to the firmware's factory network
+ * (config/factory.txt) - the same values /config.txt is seeded with, not a copy. */
+#include "cads/config/cads_factory_config.h"
 
 /* Index = lesson number - 1. */
 static const rnlab_lesson_fn rnlab_lessons[11] = {
@@ -51,7 +52,7 @@ static void rnlab_cmd_help(cads_cli_session_t* session) {
     cads_cli_write(session,
         "lab help                     diese Hilfe\r\n"
         "lab info                     IP/Maske/GW/DNS/MAC, Link, DHCP, Zaehler, Uptime\r\n"
-        "lab net static [ip mask gw]  statische Adresse (ohne Argumente: 192.168.33.99/24 gw .1)\r\n"
+        "lab net static [ip mask gw]  statische Adresse (ohne Argumente: Werksadresse der Firmware)\r\n"
         "lab net dhcp                 Adresse per DHCP beziehen\r\n"
         "lab selftest                 Zusagen des Rahmens pruefen (Timer-Reserve)\r\n"
         "lab poll [ms]                Poll-Intervall im App-Baum anzeigen/setzen (1..10)\r\n"
@@ -135,9 +136,9 @@ static void rnlab_cmd_net(cads_cli_session_t* session, int argc, char* argv[]) {
 
     if(argc >= 1 && cads_str_equal(argv[0], "static")) {
         if(argc == 1) {
-            config.ip = RNLAB_IP4(192, 168, 33, 99);
-            config.netmask = RNLAB_IP4(255, 255, 255, 0);
-            config.gateway = RNLAB_IP4(192, 168, 33, 1);
+            config.ip = CADS_FACTORY_NET_IP_U32;
+            config.netmask = CADS_FACTORY_NET_NETMASK_U32;
+            config.gateway = CADS_FACTORY_NET_GATEWAY_U32;
         } else if(argc != 4 || !rnlab_parse_ipv4(argv[1], &config.ip) ||
                   !rnlab_parse_ipv4(argv[2], &config.netmask) ||
                   !rnlab_parse_ipv4(argv[3], &config.gateway)) {

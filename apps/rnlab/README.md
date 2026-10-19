@@ -7,7 +7,9 @@ Der Firmware-Rahmen für das lwIP-Praktikum auf dem ITS-Board. Mit
 
 - **Netz läuft ab dem Boot.** Ohne Konsolenbefehl ist das Board unter
   `192.168.33.99/24` (Gateway `192.168.33.1`) erreichbar — `ping` und
-  Telnet auf Port 4242 funktionieren direkt nach dem Reset.
+  Telnet auf Port 4242 funktionieren direkt nach dem Reset. Das sind die
+  Werte aus `config/factory.txt`, der zentralen Werksdatei; dort (oder im
+  Panel unter Settings → Network) lässt sich die Adresse ändern.
 - **Kommando `lab`** auf der seriellen Konsole (ST-Link-VCP, 115200 Baud)
   **und** per `nc 192.168.33.99 4242`:
 
