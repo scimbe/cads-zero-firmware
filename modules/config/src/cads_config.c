@@ -243,9 +243,7 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_str(out, size, "wifi.password", cfg->wifi_password);
     append_kv_str(out, size, "wifi.uart", cfg->wifi_uart);
     append_kv_ip(out, size, "wifi.pcap_target", cfg->pcap_target_ip);
-    cads_str_append(out, size,
-        "\n# factory revision this file was seeded from - managed by the firmware.\n"
-        "# A firmware with other factory values (config/factory.txt) re-seeds the file once.\n");
+    cads_str_append(out, size, "\n# factory revision - managed by the firmware\n");
     cads_str_append(out, size, "config.factory_rev = ");
     char rev[9];
     cads_fmt_hex(rev, sizeof(rev), cfg->factory_rev, 8u, false);
