@@ -1,4 +1,5 @@
 #include "cads_settings.h"
+#include "cads_settings_net.h"
 #include "cads_touch_calib.h"
 #include "cads_splash.h"
 
@@ -48,6 +49,7 @@ typedef enum {
     CADS_SETTINGS_ROW_SPI_CLOCK,
     CADS_SETTINGS_ROW_CALIBRATION,
     CADS_SETTINGS_ROW_TEST_PATTERN,
+    CADS_SETTINGS_ROW_NETWORK,
     CADS_SETTINGS_ROW_CONFIG_RELOAD,
 #ifdef CADS_APP_MARAUDER_ENABLED
     CADS_SETTINGS_ROW_WIFI_JOIN,
@@ -67,6 +69,7 @@ typedef enum {
 
 static char s_brightness_detail[8];
 static char s_spi_detail[16];
+static char s_network_detail[16]; /* "192.168.33.99" or "DHCP" */
 #ifdef CADS_APP_MARAUDER_ENABLED
 static char s_wifi_join_detail[CADS_CONFIG_SSID_MAX];
 #endif
@@ -76,6 +79,7 @@ static cads_menu_item_t s_items[] = {
     {"SPI clock", s_spi_detail, CADS_SETTINGS_ROW_SPI_CLOCK},
     {"Touch calibration", NULL, CADS_SETTINGS_ROW_CALIBRATION},
     {"Test pattern", NULL, CADS_SETTINGS_ROW_TEST_PATTERN},
+    {"Network", s_network_detail, CADS_SETTINGS_ROW_NETWORK},
     {"Reload config", NULL, CADS_SETTINGS_ROW_CONFIG_RELOAD},
 #ifdef CADS_APP_MARAUDER_ENABLED
     {"Join WiFi", s_wifi_join_detail, CADS_SETTINGS_ROW_WIFI_JOIN},
@@ -218,6 +222,12 @@ static void cads_settings_apply_config(const cads_config_t* cfg) {
         (cfg->wifi_enabled && cfg->wifi_ssid[0] != '\0') ? cfg->wifi_ssid : "not configured");
 #endif
 
+    if(cfg->net_dhcp) {
+        cads_str_copy(s_network_detail, sizeof(s_network_detail), "DHCP");
+    } else {
+        cads_fmt_ipv4(s_network_detail, sizeof(s_network_detail), cfg->net_ip);
+    }
+
     s_applied_config = *cfg;
     s_have_applied_config = true;
     cads_settings_refresh_details();
@@ -243,6 +253,26 @@ void cads_settings_service_config(void) {
         (void)cads_config_save(&defaults); /* persist, so the reset survives a reboot */
         cads_settings_apply_config(&defaults);
         cads_menu_invalidate(&s_main.menu);
+    }
+    /* "Save & apply" in Settings -> Network: take the fresh file (so edits made
+     * there but not reloaded are not lost), overlay the four network fields,
+     * write it back and apply live. */
+    cads_config_t net_edit;
+    if(cads_settings_net_take_save(&net_edit)) {
+        cads_config_t cfg;
+        bool ok = (cads_config_load(&cfg) == CADS_STORAGE_OK);
+        if(ok) {
+            cfg.net_dhcp = net_edit.net_dhcp;
+            cfg.net_ip = net_edit.net_ip;
+            cfg.net_netmask = net_edit.net_netmask;
+            cfg.net_gateway = net_edit.net_gateway;
+            ok = (cads_config_save(&cfg) == CADS_STORAGE_OK);
+        }
+        if(ok) {
+            cads_settings_apply_config(&cfg);
+            cads_menu_invalidate(&s_main.menu);
+        }
+        cads_settings_net_saved(ok);
     }
     if(s_config_reload_requested) {
         s_config_reload_requested = false;
@@ -404,6 +434,10 @@ static void cads_settings_activate(const cads_menu_item_t* item, size_t index, v
             (void)cads_view_dispatcher_push(s_main.dispatcher, CADS_VIEW_ID_TEST_PATTERN);
             break;
 
+        case CADS_SETTINGS_ROW_NETWORK:
+            cads_settings_net_open(&s_applied_config);
+            break;
+
         case CADS_SETTINGS_ROW_CONFIG_RELOAD:
             cads_settings_config_reload();
             break;
@@ -419,8 +453,8 @@ static void cads_settings_activate(const cads_menu_item_t* item, size_t index, v
                 {CadsKeyOk, "Yes"}, {CadsKeyBack, "No"}};
             cads_settings_open_confirm(
                 CADS_SETTINGS_CONFIRM_RESET, "Factory reset",
-                "Reset brightness and SPI clock to defaults? This cannot be "
-                "undone.",
+                "Reset the whole configuration (network, display, ...) to the "
+                "firmware's factory values? This cannot be undone.",
                 answers, 2u);
             break;
         }
@@ -511,6 +545,7 @@ void cads_settings_init(cads_view_dispatcher_t* dispatcher) {
     (void)cads_view_dispatcher_add(dispatcher, CADS_VIEW_ID_SETTINGS_CONFIRM, &s_confirm.view);
 
     cads_touch_calib_init(dispatcher);
+    cads_settings_net_init(dispatcher);
 
     /* Load and apply the persistent config file at startup (writes the base
      * version if none exists). Same app-tree-init timing as touch calibration;
