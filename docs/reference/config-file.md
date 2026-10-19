@@ -154,7 +154,7 @@ wifi.password =
 wifi.uart = usart6
 wifi.pcap_target = 0.0.0.0
 
-# factory revision this file was seeded from - managed by the firmware.
+# factory revision - managed by the firmware
 config.factory_rev = 8cf9aa93
 ```
 

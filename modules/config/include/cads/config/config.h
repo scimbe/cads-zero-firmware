@@ -38,7 +38,9 @@ extern "C" {
  * populated config can actually serialize to. Found too small once already
  * (2026-08-29, adding net.mac_random/active.armed): the true worst case -
  * every field at its default plus a max-length wifi.ssid (32) and
- * wifi.password (63) - serializes to ~676 bytes, well past the old 512,
+ * wifi.password (63) - serializes to ~676 bytes (747 since the factory-revision
+ * line was added; test_config.c's worst-case test now fails if it outgrows
+ * the buffer), well past the old 512,
  * which cads_str_append's own bounded writes would have silently
  * truncated (dropping whatever came after, e.g. wifi.uart/wifi.pcap_target)
  * rather than erroring - caught by test_serialize_round_trips failing, not

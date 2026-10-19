@@ -121,6 +121,37 @@ static void test_factory_rev_rejects_junk(void) {
     }
 }
 
+/* The longest file a config can serialise to must still fit CADS_CONFIG_TEXT_MAX
+ * with its LAST line intact. cads_str_append truncates silently, so an overflow
+ * would not fail anywhere - the factory revision at the end would just vanish,
+ * the next boot would take it for an old file and re-seed it, every boot. */
+static void test_worst_case_file_fits_and_keeps_the_revision(void) {
+    cads_config_t c;
+    cads_config_defaults(&c);
+    memset(c.wifi_ssid, 'S', CADS_CONFIG_SSID_MAX - 1u);
+    c.wifi_ssid[CADS_CONFIG_SSID_MAX - 1u] = '\0';
+    memset(c.wifi_password, 'P', CADS_CONFIG_PASS_MAX - 1u);
+    c.wifi_password[CADS_CONFIG_PASS_MAX - 1u] = '\0';
+    c.net_ip = IP4(255, 255, 255, 254); /* longest dotted quads */
+    c.net_netmask = IP4(255, 255, 255, 255);
+    c.net_gateway = IP4(255, 255, 255, 255);
+    c.pcap_target_ip = IP4(255, 255, 255, 255);
+    c.brightness = 100u;
+    c.factory_rev = 0xFFFFFFFFu;
+
+    char text[CADS_CONFIG_TEXT_MAX];
+    size_t n = cads_config_serialize(&c, text, sizeof(text));
+    TEST_ASSERT_TRUE(n > 0u);
+    TEST_ASSERT_TRUE_MESSAGE(n < sizeof(text) - 1u, "worst case no longer fits CADS_CONFIG_TEXT_MAX");
+    TEST_ASSERT_NOT_NULL(strstr(text, "config.factory_rev = ffffffff\n"));
+
+    cads_config_t back;
+    memset(&back, 0, sizeof(back));
+    cads_config_parse(text, n, &back);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, back.factory_rev);
+    TEST_ASSERT_EQUAL_STRING(c.wifi_password, back.wifi_password);
+}
+
 /* A first boot writes the factory version, stamped with the current revision. */
 static void test_load_creates_factory_file(void) {
     cads_config_t c;
@@ -364,6 +395,7 @@ int main(void) {
     RUN_TEST(test_apply_factory_keeps_unlisted_keys);
     RUN_TEST(test_factory_rev_survives_serialize);
     RUN_TEST(test_factory_rev_rejects_junk);
+    RUN_TEST(test_worst_case_file_fits_and_keeps_the_revision);
     RUN_TEST(test_load_creates_factory_file);
     RUN_TEST(test_load_keeps_user_edit_of_current_revision);
     RUN_TEST(test_load_reseeds_when_factory_revision_changed);
