@@ -171,6 +171,9 @@ endif()
 
 # Settings -> Network and Factory reset, driven by key events through the same
 # app tree: the saved /config.txt and the live net config are what is asserted.
+cads_add_unit_test(test_net_default test_net_default.c)
+target_link_libraries(test_net_default PRIVATE cads_net cads_config)
+
 cads_add_unit_test(test_settings_net test_settings_net.c)
 target_link_libraries(test_settings_net PRIVATE
     cads_fake_hal
