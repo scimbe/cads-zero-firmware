@@ -43,7 +43,7 @@
  * Tools suite's selector + one shared tool view are the +2 over the 22 the
  * rest of the tree already filled). */
 #define VIEW_CAPACITY 28u
-#define STACK_DEPTH   4u
+#define STACK_DEPTH   5u
 
 static cads_view_entry_t s_entries[VIEW_CAPACITY];
 static uint32_t s_stack[STACK_DEPTH];

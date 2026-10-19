@@ -38,13 +38,15 @@ extern "C" {
  * populated config can actually serialize to. Found too small once already
  * (2026-08-29, adding net.mac_random/active.armed): the true worst case -
  * every field at its default plus a max-length wifi.ssid (32) and
- * wifi.password (63) - serializes to ~676 bytes, well past the old 512,
+ * wifi.password (63) - serializes to ~676 bytes (747 since the factory-revision
+ * line was added; test_config.c's worst-case test now fails if it outgrows
+ * the buffer), well past the old 512,
  * which cads_str_append's own bounded writes would have silently
  * truncated (dropping whatever came after, e.g. wifi.uart/wifi.pcap_target)
  * rather than erroring - caught by test_serialize_round_trips failing, not
  * by inspection. Recompute this worst case by hand before trusting any
  * future headroom claim here; do not just bump it and hope. */
-#define CADS_CONFIG_TEXT_MAX    768u
+#define CADS_CONFIG_TEXT_MAX    832u
 
 typedef struct {
     bool boot_autostart;  /**< boot straight into the menu (console key exits) */
@@ -92,12 +94,40 @@ typedef struct {
      *  (apps/marauder/cads_marauder_pcap.h), matching the fixed port
      *  Wireshark's udpdump is configured to listen on. */
     uint32_t pcap_target_ip;
+
+    /** Revision of the factory configuration (config/factory.txt) this config
+     *  was last seeded from. Stored in /config.txt as `config.factory_rev`;
+     *  cads_config_load() re-seeds the file when it differs from the revision
+     *  baked into the running firmware, which is how flashing a firmware with
+     *  new factory values updates a board that already holds a /config.txt. */
+    uint32_t factory_rev;
 } cads_config_t;
 
-/** Fill `cfg` with the built-in base version (the file written when none
- *  exists). Static network 192.168.33.99/24, gateway .1; backlight 80; wifi
- *  off. Matches the firmware's own historical defaults. */
+/** Fill `cfg` with the factory configuration: the values of config/factory.txt,
+ *  baked into the firmware at build time (cmake/cads_factory_config.cmake).
+ *  This is the "base version" written when no /config.txt exists and what
+ *  Settings -> Factory reset restores; the ITS image, the student image and the
+ *  unit tests all see the same values. Keys the factory file does not name
+ *  (wifi.ssid, wifi.password) are empty. */
 void cads_config_defaults(cads_config_t* cfg);
+
+/** Overlay the factory values onto `cfg` (every key config/factory.txt names;
+ *  other fields stay as they are) and stamp the factory revision. */
+void cads_config_apply_factory(cads_config_t* cfg);
+
+/** Revision of the baked-in factory configuration: the first 8 hex digits of
+ *  the MD5 of its normalised text. Changes whenever a value in
+ *  config/factory.txt changes (comments and whitespace do not count). */
+uint32_t cads_config_factory_rev(void);
+
+/** The baked-in factory configuration as normalised `key = value\n` text. */
+const char* cads_config_factory_text(void);
+
+/** True if ip/netmask/gateway can be used as a static host configuration: the
+ *  mask is a prefix (255.255.255.0, not 255.0.255.0), the host address is a
+ *  unicast address that is neither the network nor the broadcast address, and
+ *  the gateway - 0.0.0.0 means "none" - is another host on the same subnet. */
+bool cads_config_net_valid(uint32_t ip, uint32_t netmask, uint32_t gateway);
 
 /**
  * Parse `len` bytes of `key = value` text into `cfg`. `cfg` MUST already hold

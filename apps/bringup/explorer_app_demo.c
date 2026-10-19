@@ -102,7 +102,12 @@
  * are findable).
  */
 #define CADS_APP_DEMO_VIEW_CAPACITY 28u
-#define CADS_APP_DEMO_STACK_DEPTH   4u
+/* Navigation depth: desktop > menu > Settings > Network > octet editor is five
+ * deep. At 4 the editor's push failed silently (cads_view_dispatcher_push returns
+ * false, every caller discards it) and the keys went to the list underneath -
+ * found on the board, not on the host, because the host test used a deeper stack.
+ * tests/unit/test_app_tree.c and test_settings_net.c mirror this value. */
+#define CADS_APP_DEMO_STACK_DEPTH   5u
 
 static cads_view_entry_t s_entries[CADS_APP_DEMO_VIEW_CAPACITY];
 static uint32_t s_stack[CADS_APP_DEMO_STACK_DEPTH];

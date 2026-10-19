@@ -1,0 +1,42 @@
+# CaDS Zero - factory configuration (the one central source).
+#
+# Same `key = value` grammar as the board's /config.txt, but read at BUILD
+# time: CMake bakes this file into the firmware (cmake/cads_factory_config.cmake)
+# and every consumer takes its values from there -
+#
+#   - the ITS firmware image and the student firmware image (both link the
+#     same modules/config, so both start from these values),
+#   - the "Factory reset" row in Settings (it restores exactly these values),
+#   - the unit tests (tests/unit/test_config.c reads the generated header),
+#   - scripts/cads_factory.py (host tools and board tests ask it for values).
+#
+# Flashing a firmware whose factory values changed updates the board once:
+# at the next boot /config.txt is re-seeded with these values (see "Factory
+# revision" in docs/reference/config-file.md). Keys that are NOT listed here
+# (wifi.ssid, wifi.password) are device-local: a factory update leaves them
+# alone, Factory reset clears them.
+#
+# To use other values for one image, point CMake at another file:
+#   cmake -DCADS_FACTORY_CONFIG=config/my-lab.txt ...
+
+# boot
+boot.autostart = 1
+
+# display
+display.brightness = 80
+display.fast_clock = 0
+
+# network
+net.dhcp = 0
+net.ip = 192.168.33.99
+net.netmask = 255.255.255.0
+net.gateway = 192.168.33.1
+net.mac_random = 0
+
+# active tools (Marauder attacks, M9 forged traffic) - device-wide safety
+active.armed = 0
+
+# wifi (ESP32Marauder co-processor)
+wifi.enabled = 0
+wifi.uart = usart6
+wifi.pcap_target = 0.0.0.0

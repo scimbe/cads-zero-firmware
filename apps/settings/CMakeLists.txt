@@ -2,6 +2,7 @@
 
 add_library(cads_app_settings STATIC
     cads_settings.c
+    cads_settings_net.c
     cads_touch_calib.c
 )
 
