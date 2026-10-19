@@ -32,6 +32,17 @@ static struct {
     uint32_t gateway;
 } s_work;
 
+/* What "Save & apply" was pressed with. A snapshot taken at the press, not a
+ * read of s_work later: the console task picks the request up some milliseconds
+ * on (longer while it is busy with a flash erase) and the input task keeps
+ * running meanwhile - the user could already be in the editor, and what was
+ * validated must be what gets written. */
+static struct {
+    bool dhcp;
+    uint32_t ip;
+    uint32_t netmask;
+    uint32_t gateway;
+} s_request;
 static volatile bool s_save_requested = false;
 
 static char s_dhcp_detail[4];
@@ -231,7 +242,11 @@ static void list_activate(const cads_menu_item_t* item, size_t index, void* cont
                 set_info("Not usable: check mask, host and gateway");
                 break;
             }
-            s_save_requested = true;
+            s_request.dhcp = s_work.dhcp;
+            s_request.ip = s_work.ip;
+            s_request.netmask = s_work.netmask;
+            s_request.gateway = s_work.gateway;
+            s_save_requested = true; /* last: the console task reads the snapshot after it */
             set_info("Saving...");
             break;
     }
@@ -292,10 +307,10 @@ void cads_settings_net_open(const cads_config_t* current) {
 bool cads_settings_net_take_save(cads_config_t* out) {
     if(!s_save_requested) return false;
     s_save_requested = false;
-    out->net_dhcp = s_work.dhcp;
-    out->net_ip = s_work.ip;
-    out->net_netmask = s_work.netmask;
-    out->net_gateway = s_work.gateway;
+    out->net_dhcp = s_request.dhcp;
+    out->net_ip = s_request.ip;
+    out->net_netmask = s_request.netmask;
+    out->net_gateway = s_request.gateway;
     return true;
 }
 

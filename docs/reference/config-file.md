@@ -71,9 +71,17 @@ edit the file, or point CMake at a different one:
 cmake -DCADS_FACTORY_CONFIG=config/my-lab.txt ...
 ```
 
-A line that is not `section.key = value`, a duplicate key, or a value with a
-quote or backslash stops the configure. `wifi.ssid` and `wifi.password` are
-deliberately absent from the file: they are device-local (see below).
+The configure stops on anything the firmware would silently misread: a line
+that is not `section.key = value`, a duplicate or unknown key (`net.gatway`), a
+value of the wrong shape (`net.ip = 1.2.3`, `net.dhcp = maybe`), or a value
+with a quote or backslash. A relative `CADS_FACTORY_CONFIG` path is relative to
+the source tree. `wifi.ssid` and `wifi.password` are deliberately not accepted
+in the file: they are device-local (see below).
+
+`config.factory_rev` is the first line of `/config.txt` on purpose: the firmware
+reads at most 831 bytes of the file, and a file that outgrows that (long
+comments, say) loses its last lines — if the revision were one of them the
+board would take the file for an old one and re-seed it at every boot.
 
 #### Updating a board that is already configured
 
@@ -130,6 +138,9 @@ For reference, the file written on a first boot with the shipped
 # CaDS Zero configuration
 # Edit and save, then reload from Settings -> Reload config.
 
+# factory revision - managed by the firmware, keep it first
+config.factory_rev = 8cf9aa93
+
 # boot
 boot.autostart = 1
 
@@ -153,9 +164,6 @@ wifi.ssid =
 wifi.password =
 wifi.uart = usart6
 wifi.pcap_target = 0.0.0.0
-
-# factory revision - managed by the firmware
-config.factory_rev = 8cf9aa93
 ```
 
 ### Applying changes

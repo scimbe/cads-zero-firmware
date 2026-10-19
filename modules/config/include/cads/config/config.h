@@ -46,7 +46,7 @@ extern "C" {
  * rather than erroring - caught by test_serialize_round_trips failing, not
  * by inspection. Recompute this worst case by hand before trusting any
  * future headroom claim here; do not just bump it and hope. */
-#define CADS_CONFIG_TEXT_MAX    768u
+#define CADS_CONFIG_TEXT_MAX    832u
 
 typedef struct {
     bool boot_autostart;  /**< boot straight into the menu (console key exits) */

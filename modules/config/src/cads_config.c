@@ -210,6 +210,15 @@ static void append_kv_uint(char* out, size_t size, const char* key, uint32_t v) 
     cads_str_append(out, size, "\n");
 }
 
+static void append_kv_hex8(char* out, size_t size, const char* key, uint32_t v) {
+    cads_str_append(out, size, key);
+    cads_str_append(out, size, " = ");
+    char hex[9];
+    cads_fmt_hex(hex, sizeof(hex), v, 8u, false);
+    cads_str_append(out, size, hex);
+    cads_str_append(out, size, "\n");
+}
+
 static void append_kv_str(char* out, size_t size, const char* key, const char* val) {
     cads_str_append(out, size, key);
     cads_str_append(out, size, " = ");
@@ -222,7 +231,9 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     cads_str_copy(out, size,
         "# CaDS Zero configuration\n"
         "# Edit and save, then reload from Settings -> Reload config.\n\n"
-        "# boot\n");
+        "# factory revision - managed by the firmware, keep it first\n");
+    append_kv_hex8(out, size, "config.factory_rev", cfg->factory_rev);
+    cads_str_append(out, size, "\n# boot\n");
     append_kv_uint(out, size, "boot.autostart", cfg->boot_autostart ? 1u : 0u);
     cads_str_append(out, size,
         "\n"
@@ -243,12 +254,6 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_str(out, size, "wifi.password", cfg->wifi_password);
     append_kv_str(out, size, "wifi.uart", cfg->wifi_uart);
     append_kv_ip(out, size, "wifi.pcap_target", cfg->pcap_target_ip);
-    cads_str_append(out, size, "\n# factory revision - managed by the firmware\n");
-    cads_str_append(out, size, "config.factory_rev = ");
-    char rev[9];
-    cads_fmt_hex(rev, sizeof(rev), cfg->factory_rev, 8u, false);
-    cads_str_append(out, size, rev);
-    cads_str_append(out, size, "\n");
     return strlen(out);
 }
 

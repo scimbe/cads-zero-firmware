@@ -138,18 +138,48 @@ static void test_worst_case_file_fits_and_keeps_the_revision(void) {
     c.pcap_target_ip = IP4(255, 255, 255, 255);
     c.brightness = 100u;
     c.factory_rev = 0xFFFFFFFFu;
+    memset(c.wifi_uart, 'U', CADS_CONFIG_UART_MAX - 1u);
+    c.wifi_uart[CADS_CONFIG_UART_MAX - 1u] = '\0';
 
     char text[CADS_CONFIG_TEXT_MAX];
     size_t n = cads_config_serialize(&c, text, sizeof(text));
     TEST_ASSERT_TRUE(n > 0u);
     TEST_ASSERT_TRUE_MESSAGE(n < sizeof(text) - 1u, "worst case no longer fits CADS_CONFIG_TEXT_MAX");
     TEST_ASSERT_NOT_NULL(strstr(text, "config.factory_rev = ffffffff\n"));
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(text, "wifi.pcap_target = 255.255.255.255\n"),
+                                 "the last line was cut off");
 
     cads_config_t back;
     memset(&back, 0, sizeof(back));
     cads_config_parse(text, n, &back);
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, back.factory_rev);
     TEST_ASSERT_EQUAL_STRING(c.wifi_password, back.wifi_password);
+}
+
+/* A hand-edited file that outgrows the read buffer (long comments, say) loses its
+ * trailing lines - but never the revision, which is the first line, so it is not
+ * mistaken for an old file and the edits are not thrown away. */
+static void test_oversized_file_keeps_edits_of_the_current_revision(void) {
+    char big[CADS_CONFIG_TEXT_MAX * 2];
+    size_t n = 0u;
+    n += (size_t)snprintf(big + n, sizeof(big) - n, "config.factory_rev = %08x\n",
+                          (unsigned)CADS_FACTORY_CONFIG_REV);
+    n += (size_t)snprintf(big + n, sizeof(big) - n, "net.ip = 10.77.0.5\n");
+    while(n < sizeof(big) - 80u) {
+        n += (size_t)snprintf(big + n, sizeof(big) - n, "# padding padding padding padding padding\n");
+    }
+    cads_config_t c;
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_config_load(&c));
+    cads_storage_file_t* f = NULL;
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK,
+        cads_storage_open(&f, CADS_CONFIG_PATH,
+            CADS_STORAGE_WRONLY | CADS_STORAGE_CREAT | CADS_STORAGE_TRUNC));
+    TEST_ASSERT_EQUAL_INT((int)n, (int)cads_storage_write(f, big, (uint32_t)n));
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_storage_close(f));
+
+    cads_config_t after;
+    TEST_ASSERT_EQUAL_INT(CADS_STORAGE_OK, cads_config_load(&after));
+    TEST_ASSERT_EQUAL_HEX32(OTHER_IP, after.net_ip);
 }
 
 /* A first boot writes the factory version, stamped with the current revision. */
@@ -396,6 +426,7 @@ int main(void) {
     RUN_TEST(test_factory_rev_survives_serialize);
     RUN_TEST(test_factory_rev_rejects_junk);
     RUN_TEST(test_worst_case_file_fits_and_keeps_the_revision);
+    RUN_TEST(test_oversized_file_keeps_edits_of_the_current_revision);
     RUN_TEST(test_load_creates_factory_file);
     RUN_TEST(test_load_keeps_user_edit_of_current_revision);
     RUN_TEST(test_load_reseeds_when_factory_revision_changed);
