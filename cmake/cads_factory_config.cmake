@@ -55,6 +55,18 @@ function(cads_generate_factory_config factory_file out_header)
         string(TOUPPER "${key}" macro)
         string(REPLACE "." "_" macro "${macro}")
         string(APPEND c_values "#define CADS_FACTORY_${macro} \"${value}\"\n")
+        # An IPv4 value also gets a numeric twin (host byte order) for static
+        # initialisers, e.g. the net module's built-in address before the
+        # config has been read: CADS_FACTORY_NET_IP_U32.
+        if(value MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
+            foreach(octet ${CMAKE_MATCH_1} ${CMAKE_MATCH_2} ${CMAKE_MATCH_3} ${CMAKE_MATCH_4})
+                if(octet GREATER 255)
+                    message(FATAL_ERROR "CADS_FACTORY_CONFIG ${factory_file}: '${key} = ${value}' has an octet above 255")
+                endif()
+            endforeach()
+            math(EXPR u32 "(${CMAKE_MATCH_1} << 24) | (${CMAKE_MATCH_2} << 16) | (${CMAKE_MATCH_3} << 8) | ${CMAKE_MATCH_4}" OUTPUT_FORMAT HEXADECIMAL)
+            string(APPEND c_values "#define CADS_FACTORY_${macro}_U32 ${u32}u\n")
+        endif()
     endforeach()
 
     string(MD5 digest "${normalised}")

@@ -13,6 +13,7 @@
  * arbitration contract.
  */
 
+#include "cads/config/cads_factory_config.h"
 #include "cads/net/net.h"
 #include "cads/net/lwip_hooks.h"
 #include "cads/net/rand.h"
@@ -55,14 +56,15 @@ static bool cads_net_poll_suppressed = false;
 /* Addressing configuration. Default is a STATIC address, not DHCP: this
  * board's bench segment has no DHCP server, so a lease never binds there and
  * a static address is what makes the board reachable out of the box. Held in
- * RAM only, reset to this default on reboot. See cads_net_set_config(). */
-#define CADS_IP4(a, b, c, d)                                                              \
-    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+ * RAM only, reset to this default on reboot. See cads_net_set_config().
+ * The values are the factory configuration (config/factory.txt), the same ones
+ * /config.txt is seeded with - this is only the address the stack holds in the
+ * moments before the config has been read, so it must not be a second copy. */
 static cads_net_config_t cads_net_cfg = {
     .use_dhcp = false,
-    .ip = CADS_IP4(192, 168, 33, 99),
-    .netmask = CADS_IP4(255, 255, 255, 0),
-    .gateway = CADS_IP4(192, 168, 33, 1),
+    .ip = CADS_FACTORY_NET_IP_U32,
+    .netmask = CADS_FACTORY_NET_NETMASK_U32,
+    .gateway = CADS_FACTORY_NET_GATEWAY_U32,
 };
 
 /* Staging buffer for linkoutput: pbufs may be chained, but
