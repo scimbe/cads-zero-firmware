@@ -2,29 +2,33 @@
 
 #include <string.h>
 
+#include "cads/config/cads_factory_config.h"
 #include "cads/storage/storage.h"
 #include "cads/toolbox/fmt.h"
 #include "cads/toolbox/str.h"
 
-#define CADS_IP4(a, b, c, d)                                                              \
-    (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(c) << 8) | (uint32_t)(d))
+/* The built-in "base version" is not written here: it is config/factory.txt,
+ * baked in by CMake (cmake/cads_factory_config.cmake). Starting from an all-zero
+ * struct and parsing that text is what makes the ITS image, the student image,
+ * Settings -> Factory reset and the unit tests agree on one set of values. */
+static const char s_factory_text[] = CADS_FACTORY_CONFIG_TEXT;
+
+uint32_t cads_config_factory_rev(void) {
+    return CADS_FACTORY_CONFIG_REV;
+}
+
+const char* cads_config_factory_text(void) {
+    return s_factory_text;
+}
+
+void cads_config_apply_factory(cads_config_t* cfg) {
+    cads_config_parse(s_factory_text, sizeof(s_factory_text) - 1u, cfg);
+    cfg->factory_rev = CADS_FACTORY_CONFIG_REV;
+}
 
 void cads_config_defaults(cads_config_t* cfg) {
     memset(cfg, 0, sizeof(*cfg));
-    cfg->boot_autostart = true;
-    cfg->brightness = 80u;
-    cfg->fast_clock = false;
-    cfg->net_dhcp = false;
-    cfg->net_ip = CADS_IP4(192, 168, 33, 99);
-    cfg->net_netmask = CADS_IP4(255, 255, 255, 0);
-    cfg->net_gateway = CADS_IP4(192, 168, 33, 1);
-    cfg->net_mac_random = false;
-    cfg->active_armed = false;
-    cfg->wifi_enabled = false;
-    cfg->wifi_ssid[0] = '\0';
-    cfg->wifi_password[0] = '\0';
-    cads_str_copy(cfg->wifi_uart, sizeof(cfg->wifi_uart), "usart6");
-    cfg->pcap_target_ip = 0u; /* unset - the PCAP-over-TZSP relay stays silent */
+    cads_config_apply_factory(cfg);
 }
 
 /* --- small parse helpers ---------------------------------------------------- */
@@ -159,6 +163,25 @@ size_t cads_config_parse(const char* text, size_t len, cads_config_t* cfg) {
                     copy_trimmed(cfg->wifi_uart, sizeof(cfg->wifi_uart), v, line_end); applied++;
                 } else if(key_is(s, kend, "wifi.pcap_target")) {
                     if(parse_ipv4(v, line_end, &cfg->pcap_target_ip)) applied++;
+                } else if(key_is(s, kend, "config.factory_rev")) {
+                    /* exactly 1..8 hex digits - the revision the file was last
+                     * seeded from (see cads_config_load) */
+                    const char* ve = line_end;
+                    while(ve > v && (ve[-1] == ' ' || ve[-1] == '\t' || ve[-1] == '\r')) ve--;
+                    uint32_t rev = 0u;
+                    size_t digits = 0u;
+                    for(const char* q = v; q < ve; q++, digits++) {
+                        char c = *q;
+                        uint32_t d;
+                        if(c >= '0' && c <= '9') d = (uint32_t)(c - '0');
+                        else if(c >= 'a' && c <= 'f') d = (uint32_t)(c - 'a' + 10);
+                        else if(c >= 'A' && c <= 'F') d = (uint32_t)(c - 'A' + 10);
+                        else { digits = 0u; break; }
+                        rev = (rev << 4) | d;
+                    }
+                    if(digits >= 1u && digits <= 8u) {
+                        cfg->factory_rev = rev; applied++;
+                    }
                 }
             }
         }
@@ -220,6 +243,14 @@ size_t cads_config_serialize(const cads_config_t* cfg, char* out, size_t size) {
     append_kv_str(out, size, "wifi.password", cfg->wifi_password);
     append_kv_str(out, size, "wifi.uart", cfg->wifi_uart);
     append_kv_ip(out, size, "wifi.pcap_target", cfg->pcap_target_ip);
+    cads_str_append(out, size,
+        "\n# factory revision this file was seeded from - managed by the firmware.\n"
+        "# A firmware with other factory values (config/factory.txt) re-seeds the file once.\n");
+    cads_str_append(out, size, "config.factory_rev = ");
+    char rev[9];
+    cads_fmt_hex(rev, sizeof(rev), cfg->factory_rev, 8u, false);
+    cads_str_append(out, size, rev);
+    cads_str_append(out, size, "\n");
     return strlen(out);
 }
 
@@ -294,8 +325,45 @@ int cads_config_load(cads_config_t* cfg) {
         while(len > 0u && text[len - 1u] != '\n') len--;
     }
 
+    /* The stored file says which factory revision it was seeded from. A file
+     * without the line (written by an older firmware) counts as "unknown", so
+     * it is re-seeded too. */
+    cfg->factory_rev = 0u;
     cads_config_parse(text, len, cfg);
+
+    if(cfg->factory_rev != CADS_FACTORY_CONFIG_REV) {
+        /* This firmware carries other factory values than the ones the file was
+         * seeded from - the board was flashed with a changed config/factory.txt.
+         * Take the factory values for every key the factory file names (keys it
+         * does not name, wifi.ssid/password, stay as stored) and write the file
+         * back, so the update happens once and later edits survive reboots. */
+        cads_config_apply_factory(cfg);
+        (void)cads_config_save(cfg);
+    }
     return CADS_STORAGE_OK;
+}
+
+/* Contiguous run of ones from the top (255.255.255.0, /24) and not 0 or all-ones:
+ * the only masks an IPv4 host can usefully sit in. */
+static bool mask_is_prefix(uint32_t mask) {
+    if(mask == 0u || mask == 0xFFFFFFFFu) return false;
+    uint32_t inv = ~mask;
+    return (inv & (inv + 1u)) == 0u;
+}
+
+bool cads_config_net_valid(uint32_t ip, uint32_t netmask, uint32_t gateway) {
+    if(!mask_is_prefix(netmask)) return false;
+    uint32_t host = ip & ~netmask;
+    if(ip == 0u || (ip >> 24) >= 224u) return false;      /* unspecified, multicast, reserved */
+    if((ip >> 24) == 127u) return false;                   /* loopback */
+    if(host == 0u || host == ~netmask) return false;       /* network / broadcast address */
+    if(gateway != 0u) {
+        if((gateway & netmask) != (ip & netmask)) return false; /* gateway off-link */
+        if(gateway == ip) return false;
+        uint32_t g = gateway & ~netmask;
+        if(g == 0u || g == ~netmask) return false;
+    }
+    return true;
 }
 
 bool cads_config_equal(const cads_config_t* a, const cads_config_t* b) {

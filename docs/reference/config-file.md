@@ -33,11 +33,98 @@ parsed", never a garbage state.
 | `wifi.uart` | string | `usart6` | Which UART the co-processor is wired to. Not yet read by the driver (`board.h`'s `CADS_WIFI_*` constants are the actual source of truth today) — carried for a future multi-UART board. |
 | `wifi.pcap_target` | IPv4 | `0.0.0.0` | Where the Marauder tool's **Sniff (PCAP)** live relay sends TZSP-encapsulated captured frames (UDP port 37008, Wireshark's own `udpdump` default — see [marauder-pcap-stream.md](marauder-pcap-stream.md)). `0.0.0.0` (unset) means the relay parses and counts frames but sends nothing. |
 
+| `config.factory_rev` | 8 hex digits | *(set by the firmware)* | The [factory revision](#the-factory-configuration) this file was last seeded from. Managed by the firmware: leave it alone. |
+
 Booleans accept `1`/`0`, `on`/`off`, `true`/`false`, `yes`/`no`. IPv4 values
 are dotted decimal; an out-of-range octet or a malformed address is rejected
 and the key keeps its previous value.
 
+The defaults in the table are the ones in `config/factory.txt` as shipped; the
+next section explains why that file, and not this page, is where they are
+defined.
+
+### The factory configuration
+
+The values a board starts with — the "base version" — are **not written in C**.
+They live in one text file, `config/factory.txt`, in the same `key = value`
+grammar as `/config.txt`. CMake bakes it into the firmware
+(`cmake/cads_factory_config.cmake` generates `cads/config/cads_factory_config.h`),
+and everything that needs a default reads it from there:
+
+| Consumer | How it gets the values |
+|---|---|
+| ITS firmware image and student firmware image | both link `modules/config`, so both start from `config/factory.txt` |
+| First boot (no `/config.txt`) | the file is written from it |
+| Settings → **Factory reset** | restores exactly these values (and clears the device-local keys below) |
+| Unit tests | `tests/unit/test_config.c` and `test_settings_net.c` read the generated header; changing `net.ip` in the file changes what they expect |
+| Host tools, board tests | `scripts/cads_factory.py get net.ip` prints the value; `rev` prints the revision |
+
+```bash
+scripts/cads_factory.py get net.ip      # 192.168.33.99
+scripts/cads_factory.py rev             # 8cf9aa93
+```
+
+To build an image with other values — a lab with its own address plan, say —
+edit the file, or point CMake at a different one:
+
+```bash
+cmake -DCADS_FACTORY_CONFIG=config/my-lab.txt ...
+```
+
+A line that is not `section.key = value`, a duplicate key, or a value with a
+quote or backslash stops the configure. `wifi.ssid` and `wifi.password` are
+deliberately absent from the file: they are device-local (see below).
+
+#### Updating a board that is already configured
+
+Flashing never touches the filesystem, so a board keeps its `/config.txt`
+across firmware updates. To still let a new firmware change the defaults, the
+file records the **factory revision** it was seeded from
+(`config.factory_rev`, the first 8 hex digits of the MD5 of the normalised
+factory text — comments and whitespace do not count). At boot:
+
+- the revision in the file equals the firmware's: nothing happens, the file —
+  including every edit made on the panel or by hand — is left as it is;
+- it differs, or the file has no revision line (written by an older firmware):
+  the values named in `config/factory.txt` are applied once and the file is
+  written back with the new revision. Keys the factory file does not name —
+  `wifi.ssid`, `wifi.password` — keep what the board has.
+
+So: change `net.ip` in `config/factory.txt`, build, flash — the board comes up
+with the new address, once. Flash the same build again — the board keeps
+whatever was edited since. A hand edit made *between* two factory changes is
+overwritten by the second one for the keys the factory file names; that is the
+price of "a flash can update the configuration", and the reason the revision
+only changes when a value does.
+
+#### Factory reset
+
+Settings → **Factory reset** writes the firmware's factory configuration to
+`/config.txt` and applies it live — network included. It resets to what *this
+firmware* carries, not to a fixed set of numbers: an image built with another
+`config/factory.txt` resets to that file's values. Device-local keys
+(`wifi.ssid`, `wifi.password`) are cleared.
+
+### Changing the network on the panel
+
+Settings → **Network** opens the four network fields without a host:
+
+| Row | What it does |
+|---|---|
+| DHCP | toggles `net.dhcp` |
+| IP address / Netmask / Gateway | opens the octet editor: `+`/`-` change the selected octet (hold for ±10 steps after 1.6 s), `<`/`>` pick the octet, **Set** keeps the value, **Cancel** drops it |
+| Save & apply | checks the combination, writes `/config.txt` and applies it to the running network stack — no reboot |
+
+A static configuration is refused with a message on the screen if the mask is
+not a prefix (255.0.255.0), the address is the network or broadcast address,
+multicast or loopback, or the gateway is not another host in the same subnet
+(`0.0.0.0` means "no gateway"). With DHCP on, the static fields are not
+checked.
+
 ### The base version
+
+For reference, the file written on a first boot with the shipped
+`config/factory.txt`:
 
 ```ini
 # CaDS Zero configuration
@@ -57,12 +144,18 @@ net.netmask = 255.255.255.0
 net.gateway = 192.168.33.1
 net.mac_random = 0
 
+# active tools (Marauder attacks, M9 forged traffic) - device-wide safety
+active.armed = 0
+
 # wifi (ESP32Marauder co-processor - see docs/reference/marauder-coprocessor.md)
 wifi.enabled = 0
 wifi.ssid =
 wifi.password =
 wifi.uart = usart6
 wifi.pcap_target = 0.0.0.0
+
+# factory revision this file was seeded from - managed by the firmware.
+config.factory_rev = 8cf9aa93
 ```
 
 ### Applying changes
