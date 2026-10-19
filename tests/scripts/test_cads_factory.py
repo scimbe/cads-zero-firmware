@@ -52,6 +52,14 @@ class FactoryScript(unittest.TestCase):
             r = run("dump", factory=self.write(text))
             self.assertNotEqual(r.returncode, 0, text)
 
+    def test_typos_are_rejected_like_cmake_does(self):
+        base = "net.ip = 10.0.0.1\nnet.dhcp = 0\n"
+        for extra in ("net.gatway = 10.0.0.2\n", "wifi.ssid = x\n", "wifi.uart =\n"):
+            self.assertNotEqual(run("dump", factory=self.write(base + extra)).returncode, 0, extra)
+        for text in ("net.ip = 08.1.1.1\n", "net.ip = 1.2.3\n", "net.netmask = 256.0.0.0\n",
+                     "net.dhcp = maybe\n", "display.brightness = abc\n"):
+            self.assertNotEqual(run("dump", factory=self.write(text)).returncode, text)
+
     def test_revision_ignores_comments_and_whitespace_but_not_values(self):
         a = run("rev", factory=self.write("net.ip = 10.0.0.1\nnet.dhcp = 0\n")).stdout
         b = run("rev", factory=self.write("# hi\n\nnet.ip=10.0.0.1  \n  net.dhcp =   0\n")).stdout

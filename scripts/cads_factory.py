@@ -36,6 +36,35 @@ def factory_path():
     return Path(os.environ.get("CADS_FACTORY_CONFIG") or CADS_ROOT / "config" / "factory.txt")
 
 
+BOOL_KEYS = {"boot.autostart", "display.fast_clock", "net.dhcp", "net.mac_random",
+             "active.armed", "wifi.enabled"}
+IP_KEYS = {"net.ip", "net.netmask", "net.gateway", "wifi.pcap_target"}
+OCTET = r"(0|[1-9][0-9]?|1[0-9][0-9]|2[0-4][0-9]|25[0-5])"
+IP_RE = re.compile(rf"^{OCTET}\.{OCTET}\.{OCTET}\.{OCTET}$")
+BOOL_RE = re.compile(r"^(0|1|on|off|true|false|yes|no)$")
+
+
+def check_value(path, lineno, key, value):
+    """The same keys and value shapes cmake/cads_factory_config.cmake accepts: the
+    firmware's parser silently skips an unknown key and falls back on a malformed
+    value, which is fine for a hand-edited /config.txt and wrong for the file an
+    image is built from. wifi.ssid / wifi.password are device-local and refused."""
+    where = f"{path}:{lineno}: '{key} = {value}'"
+    if key in BOOL_KEYS:
+        ok, what = BOOL_RE.match(value), "a boolean"
+    elif key in IP_KEYS:
+        ok, what = IP_RE.match(value), "a dotted-decimal IPv4 address"
+    elif key == "display.brightness":
+        ok, what = re.match(r"^[0-9]+$", value), "a number"
+    elif key == "wifi.uart":
+        ok, what = re.match(r"^[a-z0-9_]+$", value), "a UART name"
+    else:
+        sys.exit(f"{where}: unknown key (wifi.ssid and wifi.password are device-local "
+                 "and deliberately not part of the factory file)")
+    if not ok:
+        sys.exit(f"{where} is not {what}")
+
+
 def parse(path):
     """Return the ordered [(key, value)] of a factory file, or exit on a bad line."""
     if not path.exists():
@@ -53,6 +82,7 @@ def parse(path):
             sys.exit(f"{path}:{lineno}: value of {key} contains a quote or backslash")
         if key in seen:
             sys.exit(f"{path}:{lineno}: {key} is set twice")
+        check_value(path, lineno, key, value)
         seen.add(key)
         pairs.append((key, value))
     return pairs

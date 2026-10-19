@@ -9,7 +9,10 @@ include(${CMAKE_SOURCE_DIR}/cmake/cads_factory_config.cmake)
 set(CADS_FACTORY_CONFIG "${CMAKE_SOURCE_DIR}/config/factory.txt" CACHE FILEPATH
     "Factory configuration baked into the firmware (key = value, see config/factory.txt)")
 set(CADS_FACTORY_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
-cads_generate_factory_config("${CADS_FACTORY_CONFIG}"
+# A relative path (-DCADS_FACTORY_CONFIG=config/my-lab.txt) is relative to the
+# source tree, not to the build directory CMake would otherwise resolve it in.
+get_filename_component(CADS_FACTORY_CONFIG_ABS "${CADS_FACTORY_CONFIG}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+cads_generate_factory_config("${CADS_FACTORY_CONFIG_ABS}"
     "${CADS_FACTORY_GENERATED_DIR}/cads/config/cads_factory_config.h")
 
 add_library(cads_config STATIC
