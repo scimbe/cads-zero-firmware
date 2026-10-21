@@ -129,6 +129,9 @@ jobs:
       - name: No vcpkg tree present
         run: test ! -e "$HOME/.vcpkg"
 
+      - name: Build job count (cads_build_jobs)
+        run: python3 -m unittest tests/scripts/test_build_jobs.py -v
+
       - name: scripts/build.sh
         run: bash scripts/build.sh Release
 

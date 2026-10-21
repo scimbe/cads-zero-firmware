@@ -77,6 +77,48 @@ cads_require_arm_gcc() {
     done
 }
 
+# Parallel jobs for `cmake --build`. In a container `nproc` reports the host's
+# cores; ninja then starts about nproc+2 jobs, the container's CPU quota
+# throttles them and an IDE in the same container stutters. Prints the job
+# count that fits the container's quota, or NOTHING where there is no cgroup
+# CPU file (macOS, Windows, a plain Linux host) - the caller then passes no -j
+# and the build behaves as before.
+#
+#   jobs = ceil(quota / period), at least 1, at most the CPU count;
+#   cgroup v2 /sys/fs/cgroup/cpu.max, else cgroup v1 cpu.cfs_quota_us /
+#   cpu.cfs_period_us; "max", -1 or an unreadable value -> the CPU count.
+#
+# Inside the firmware-lab image `cads-jobs` does the same and is used instead.
+# Tests point the files elsewhere: CADS_JOBS_CPU_MAX, CADS_JOBS_V1_QUOTA,
+# CADS_JOBS_V1_PERIOD, CADS_JOBS_NPROC.
+cads_build_jobs() {
+    if command -v cads-jobs >/dev/null 2>&1; then
+        cads-jobs
+        return 0
+    fi
+    local v2="${CADS_JOBS_CPU_MAX:-/sys/fs/cgroup/cpu.max}"
+    local v1q="${CADS_JOBS_V1_QUOTA:-/sys/fs/cgroup/cpu/cpu.cfs_quota_us}"
+    local v1p="${CADS_JOBS_V1_PERIOD:-/sys/fs/cgroup/cpu/cpu.cfs_period_us}"
+    local quota="" period="" extra="" cpus
+    if [ -r "${v2}" ]; then
+        read -r quota period extra < "${v2}" || true
+    elif [ -r "${v1q}" ] && [ -r "${v1p}" ]; then
+        read -r quota < "${v1q}" || true
+        read -r period < "${v1p}" || true
+    else
+        return 0
+    fi
+    cpus="${CADS_JOBS_NPROC:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)}"
+    [[ "${cpus}" =~ ^[1-9][0-9]*$ ]] || cpus=1
+    if [ -z "${extra}" ] && [[ "${quota}" =~ ^[1-9][0-9]*$ ]] && [[ "${period}" =~ ^[1-9][0-9]*$ ]]; then
+        local jobs=$(( (quota + period - 1) / period ))
+        [ "${jobs}" -le "${cpus}" ] || jobs="${cpus}"
+        echo "${jobs}"
+    else
+        echo "${cpus}"
+    fi
+}
+
 # The board this repository is developed against.
 export CADS_STLINK_SERIAL="${CADS_STLINK_SERIAL:-066FFF565282494867161033}"
 export CADS_CONSOLE_PORT="${CADS_CONSOLE_PORT:-}"
