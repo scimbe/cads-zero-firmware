@@ -16,7 +16,9 @@ cmake -S "${CADS_ROOT}" -B "${BUILD_DIR}" -G Ninja \
     -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
     "$@"
 
-cmake --build "${BUILD_DIR}"
+# -j only where a container quota limits the CPUs (see cads_build_jobs).
+JOBS="$(cads_build_jobs)"
+cmake --build "${BUILD_DIR}" ${JOBS:+-j "${JOBS}"}
 
 echo
 echo "Artifacts:"
