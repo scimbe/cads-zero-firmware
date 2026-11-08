@@ -68,6 +68,8 @@ typedef struct {
     uint64_t t0_us;
     uint64_t t_end_us;
     uint8_t seen_nrtx;     /* pcb->nrtx already accounted as a timeout */
+    bool fast_counted;     /* fast retransmit for fast_ack already counted */
+    uint32_t fast_ack;
     /* RTT sample in flight (Karn's algorithm: one at a time, never across a retransmission) */
     bool timing;
     uint32_t timed_end;
@@ -204,18 +206,28 @@ void rnlab_l09_hook_tx_frame(const uint8_t* frame, size_t len) {
     /* Old data again: a retransmission. Its ACK would be ambiguous (Karn). */
     l09.timing = false;
     const struct tcp_pcb* pcb = l09.pcb;
-    if(pcb->flags & TF_INFR) {
-        /* tcp_rexmit_fast() set TF_INFR before this tcp_output() ran. */
+    if(pcb->flags & TF_RTO) {
+        /* tcp_rexmit_rto_prepare() set TF_RTO before this tcp_output() ran.
+         * Checked first: lwIP keeps TF_INFR when the fast retransmission
+         * itself was lost, so a timeout during fast recovery used to be
+         * counted as a second 'F'. Only the first resend after the timer
+         * fired is an event (nrtx grows by one per timeout); the go-back-N
+         * resends that follow are not. */
+        if(pcb->nrtx > l09.seen_nrtx) {
+            l09.seen_nrtx = pcb->nrtx;
+            l09.rto++;
+            rnlab_reno_on_timeout(&l09.model, l09.snd_max - l09.last_ack);
+            rnlab_l09_trace_entry_t e = l09_new_entry(RNLAB_L09_EV_RTO, l09.last_ack);
+            l09_commit(&e);
+        }
+    } else if((pcb->flags & TF_INFR) && !(l09.fast_counted && l09.fast_ack == l09.last_ack)) {
+        /* tcp_rexmit_fast() set TF_INFR before this tcp_output() ran; one
+         * event per recovery (tcp_rexmit() also bumps nrtx, which is no RTO). */
+        l09.fast_counted = true;
+        l09.fast_ack = l09.last_ack;
+        l09.seen_nrtx = pcb->nrtx;
         l09.fast++;
         rnlab_l09_trace_entry_t e = l09_new_entry(RNLAB_L09_EV_FAST, l09.last_ack);
-        l09_commit(&e);
-    } else if(pcb->nrtx > l09.seen_nrtx) {
-        /* First resend after the retransmission timer fired (lwIP counts it
-         * in nrtx); the go-back-N resends that follow are not new events. */
-        l09.seen_nrtx = pcb->nrtx;
-        l09.rto++;
-        rnlab_reno_on_timeout(&l09.model, l09.snd_max - l09.last_ack);
-        rnlab_l09_trace_entry_t e = l09_new_entry(RNLAB_L09_EV_RTO, l09.last_ack);
         l09_commit(&e);
     }
 }
@@ -548,8 +560,14 @@ static void l09_cmd_calc(cads_cli_session_t* s, int argc, char* argv[]) {
         return;
     }
     uint32_t ppm = l09_loss_ppm();
-    if(rtt == 0u || ppm == 0u) {
-        cads_cli_write(s, "? braucht RTT (Messung oder Argument) und 'lab 09 loss'\r\n");
+    if(rtt == 0u) {
+        cads_cli_write(s, "? braucht RTT (Messung oder Argument)\r\n");
+        return;
+    }
+    if(ppm == 0u) {
+        /* p = 0: the Mathis formula has no finite value; say so instead of
+         * refusing, students ask for it in run A. */
+        cads_cli_write(s, "mathis:    unbegrenzt (p = 0, keine Verluste eingestellt)\r\n");
         return;
     }
     uint32_t mss = TCP_MSS;

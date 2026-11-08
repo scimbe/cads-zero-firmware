@@ -281,4 +281,4 @@ Kombination, kommt sie dort dazu.
 
 Die Optionen gelten für den ganzen Build-Ordner, danach also wieder auf die
 Defaults zurücksetzen
-(`-DCADS_RNLAB_TCP_MSS=536 -DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4`).
+(`-DCADS_RNLAB_TCP_MSS=536 -DCADS_RNLAB_TCP_WND_MSS=8 -DCADS_RNLAB_TCP_SND_BUF_MSS=4 -DCADS_RNLAB_ETH_RX_COUNT=8`).

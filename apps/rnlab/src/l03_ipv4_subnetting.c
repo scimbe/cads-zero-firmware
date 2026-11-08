@@ -90,7 +90,12 @@ static void l03_show(cads_cli_session_t* session) {
     cads_cli_write(session, "\r\nnetz:      ");
     l03_write_ip(session, rnlab_l03_network(st.ip_addr, st.netmask));
     cads_cli_write(session, "\r\nbroadcast: ");
-    l03_write_ip(session, rnlab_l03_broadcast(st.ip_addr, st.netmask));
+    if(st.netmask >= 0xFFFFFFFEu) {
+        /* /31 and /32 have no directed broadcast (RFC 3021). */
+        cads_cli_write(session, "- (/31, /32: keiner, RFC 3021)");
+    } else {
+        l03_write_ip(session, rnlab_l03_broadcast(st.ip_addr, st.netmask));
+    }
     cads_cli_write(session, "\r\ngateway:   ");
     l03_write_ip(session, st.gw_addr);
     cads_cli_write(session, rnlab_same_subnet(st.gw_addr, st.ip_addr, st.netmask) ? " (im Netz)\r\n"

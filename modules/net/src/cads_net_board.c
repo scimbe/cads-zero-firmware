@@ -94,8 +94,8 @@ CADS_CCM_SECTION static uint8_t cads_net_tx_staging[CADS_NET_TX_STAGING_SIZE];
 static uint8_t cads_net_tx_staging[CADS_NET_TX_STAGING_SIZE];
 #endif
 
-/* Most frames this bench ever sees per poll is a small handful; 16 (4x the RX
- * ring depth) clears any realistic burst in one pass while capping the worst
+/* Most frames this bench ever sees per poll is a small handful; 16 (2x the
+ * default RX ring depth of 8) clears any realistic burst in one pass while capping the worst
  * case, so a sustained line-rate flood cannot keep cads_net_receive_pump()
  * refilling forever and starve the single bare-metal loop. See its own note. */
 #if defined(CADS_RNLAB_ETH_RX_COUNT) && (CADS_RNLAB_ETH_RX_COUNT > 16)
@@ -275,7 +275,7 @@ static void cads_net_receive_pump(void) {
 #endif
 
     /* Bounded, not for(;;): each receive() hands its descriptor straight back
-     * to the RxDMA, so under a sustained line-rate flood the 4-deep ring
+     * to the RxDMA, so under a sustained line-rate flood the RX ring
      * refills as fast as this drains and an unbounded loop would never return
      * - stalling display and input in this single bare-metal loop for as long
      * as the flood lasts. Draining at most CADS_NET_RX_BUDGET_PER_POLL per call
