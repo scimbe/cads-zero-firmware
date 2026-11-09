@@ -130,7 +130,7 @@ static void test_stats(void) {
     TEST_ASSERT_EQUAL_UINT32(0u, rnlab_l04_stats_avg_us(&s));
     TEST_ASSERT_EQUAL_UINT32(0u, rnlab_l04_stats_stddev_us(&s));
 
-    /* 2, 4, 4, 4, 5, 5, 7, 9 ms: mean 5 ms, population stddev exactly 2 ms. */
+    /* 2, 4, 4, 4, 5, 5, 7, 9 ms: average 5 ms, population stddev exactly 2 ms. */
     const uint32_t ms[] = {2, 4, 4, 4, 5, 5, 7, 9};
     s.sent = 10u;
     for(unsigned i = 0; i < 8u; i++) rnlab_l04_stats_add(&s, ms[i] * 1000u);
@@ -158,7 +158,7 @@ static void test_stats_identical_samples_have_zero_stddev(void) {
 
 static void test_stats_uniform_poll_delay(void) {
     /* The shape the lesson predicts for a 10 ms poll loop: RTT uniform over
-     * 0..10 ms -> mean 5 ms, stddev 10/sqrt(12) = 2.887 ms. */
+     * 0..10 ms -> average 5 ms, stddev 10/sqrt(12) = 2.887 ms. */
     rnlab_l04_stats_t s;
     rnlab_l04_stats_init(&s);
     for(uint32_t us = 0; us < 10000u; us += 10u) rnlab_l04_stats_add(&s, us);

@@ -40,7 +40,23 @@ typedef struct {
     uint32_t hist[RNLAB_L04_HIST_BINS];
 } rnlab_l04_stats_t;
 
-/* --- TODO(L04): the functions students implement ---------------------- */
+/* --- TODO(L04): the functions students implement ---------------------- *
+ *
+ * Implement ALL six functions below before you expect the unit tests
+ * (tests/unit/test_rnlab_l04.c) to pass. The tests build on each other:
+ *   - test_checksum_*         need rnlab_inet_checksum()
+ *   - test_echo_to_reply*     need rnlab_inet_checksum() as well
+ *   - test_hist_bin           needs rnlab_l04_hist_bin()
+ *   - test_stats*             need rnlab_l04_stats_add() (which itself
+ *                             calls rnlab_l04_hist_bin()), _avg_us()
+ *                             and _stddev_us() together
+ *   - test_provided_helpers   (the last test) checks the PROVIDED helpers,
+ *                             but rnlab_l04_build_echo_request() computes
+ *                             its checksum with YOUR rnlab_inet_checksum();
+ *                             it only passes once the checksum is correct.
+ * A failing last test therefore usually means a TODO above is still open,
+ * not that the provided code is broken.
+ */
 
 /** Internet checksum (RFC 1071) over `len` bytes: one's-complement of the
  *  one's-complement sum of the big-endian 16-bit words, an odd last byte
@@ -61,7 +77,7 @@ void rnlab_l04_stats_add(rnlab_l04_stats_t* stats, uint32_t rtt_us);
 /** Histogram bin for one RTT (see RNLAB_L04_HIST_BINS). */
 unsigned rnlab_l04_hist_bin(uint32_t rtt_us);
 
-/** Mean RTT in us, 0 without samples. */
+/** Average RTT in us (sum / received), 0 without samples. */
 uint32_t rnlab_l04_stats_avg_us(const rnlab_l04_stats_t* stats);
 
 /** Standard deviation in us, population form sqrt(E[x^2] - E[x]^2) - the one

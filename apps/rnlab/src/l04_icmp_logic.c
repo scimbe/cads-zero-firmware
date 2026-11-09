@@ -10,7 +10,10 @@
 uint16_t rnlab_inet_checksum(const uint8_t* data, size_t len) {
     /* TODO(L04): RFC 1071 - add the big-endian 16-bit words in a 32-bit sum
      * (odd last byte = high byte of a word padded with 0), fold the carries
-     * back into the low 16 bits until none are left, return the complement. */
+     * back into the low 16 bits until none are left, return the complement.
+     * Do this one first: echo_to_reply() and the provided
+     * rnlab_l04_build_echo_request() (checked by the last test,
+     * test_provided_helpers) both rely on it. */
     (void)data;
     (void)len;
     return 0u;
@@ -33,13 +36,15 @@ unsigned rnlab_l04_hist_bin(uint32_t rtt_us) {
 }
 
 void rnlab_l04_stats_add(rnlab_l04_stats_t* stats, uint32_t rtt_us) {
-    /* TODO(L04): received, min, max, sum, sum of squares, histogram. */
+    /* TODO(L04): received, min, max, sum, sum of squares, histogram
+     * (use rnlab_l04_hist_bin() for the bin). The test_stats* tests need
+     * this function together with _avg_us() and _stddev_us(). */
     (void)stats;
     (void)rtt_us;
 }
 
 uint32_t rnlab_l04_stats_avg_us(const rnlab_l04_stats_t* stats) {
-    /* TODO(L04): mean in us, 0 without samples. */
+    /* TODO(L04): average in us (sum / received), 0 without samples. */
     (void)stats;
     return 0u;
 }
