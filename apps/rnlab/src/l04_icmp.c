@@ -37,6 +37,7 @@
 /* opt.h before the rest: def.h/arch.h would otherwise define a fallback
  * LWIP_DECLARE_MEMORY_ALIGNED that lwipopts.h then redefines. */
 #include "lwip/opt.h"
+#include "lwip/inet_chksum.h"
 #include "lwip/ip.h"
 #include "lwip/ip4_addr.h"
 #include "lwip/pbuf.h"
@@ -68,6 +69,30 @@ static uint32_t l04_lost;      /* dropped on purpose (`loss`) */
 static uint32_t l04_bad;       /* too short, wrong code, bad checksum */
 static uint32_t l04_overflow;  /* no delay slot or no heap for the reply */
 static rnlab_l04_stats_t l04_proc; /* recv callback entry -> reply handed to the MAC */
+
+/* Board-side check of the students' rnlab_l04_echo_to_reply() against lwIP's
+ * own checksum (lwip/inet_chksum.c - independent of rnlab_inet_checksum()).
+ * A wrong reply still goes out, exactly as the code built it; but `ping` on
+ * the PC only says "timeout" for it, so `lab 04 stats` says what was wrong. */
+typedef enum {
+    L04_PROBLEM_NONE = 0,
+    L04_PROBLEM_REJECTED_VALID, /* false for a request lwIP calls valid */
+    L04_PROBLEM_ACCEPTED_BAD,   /* true for a request with wrong checksum or code */
+    L04_PROBLEM_TYPE,           /* reply type not 0 */
+    L04_PROBLEM_CODE,           /* reply code not 0 */
+    L04_PROBLEM_CHANGED,        /* byte >= 4 (id, seq, data) differs from the request */
+    L04_PROBLEM_CHECKSUM,       /* reply checksum wrong */
+} l04_problem_t;
+static uint32_t l04_rejected_valid; /* subset of l04_bad: the request was fine */
+static uint32_t l04_bad_replies;    /* replies sent that the PC will drop */
+static struct {
+    l04_problem_t kind;
+    uint16_t seq;
+    uint16_t len;
+    uint16_t byte; /* L04_PROBLEM_CHANGED: offset in the ICMP message */
+    uint16_t got;  /* type/code/byte value or checksum field as sent */
+    uint16_t want; /* what a correct reply carries there */
+} l04_last;
 
 typedef struct {
     struct pbuf* reply; /* ready ICMP reply (no IP header), NULL = slot free */
@@ -120,6 +145,54 @@ static void l04_cancel_pending(void) {
     }
 }
 
+static void l04_note(l04_problem_t kind, uint16_t seq, uint16_t len, uint16_t byte, uint16_t got,
+                     uint16_t want) {
+    l04_last.kind = kind;
+    l04_last.seq = seq;
+    l04_last.len = len;
+    l04_last.byte = byte;
+    l04_last.got = got;
+    l04_last.want = want;
+}
+
+/* Compare the reply the students' code built with what RFC 792 asks for. */
+static void l04_check_reply(const struct pbuf* request, u16_t iphdr_len, const uint8_t* icmp,
+                            u16_t len, bool request_ok, uint16_t request_csum, uint16_t seq) {
+    if(!request_ok) {
+        l04_bad_replies++;
+        l04_note(L04_PROBLEM_ACCEPTED_BAD, seq, len, 0u, 0u, 0u);
+        return;
+    }
+    if(icmp[0] != RNLAB_L04_ICMP_ECHO_REPLY) {
+        l04_bad_replies++;
+        l04_note(L04_PROBLEM_TYPE, seq, len, 0u, icmp[0], RNLAB_L04_ICMP_ECHO_REPLY);
+        return;
+    }
+    if(icmp[1] != 0u) {
+        l04_bad_replies++;
+        l04_note(L04_PROBLEM_CODE, seq, len, 1u, icmp[1], 0u);
+        return;
+    }
+    /* pbuf_memcmp: 0 = equal, else 1 + offset of the first difference. */
+    u16_t diff = pbuf_memcmp(request, (u16_t)(iphdr_len + 4u), icmp + 4, (u16_t)(len - 4u));
+    if(diff != 0u) {
+        uint16_t at = (uint16_t)(4u + diff - 1u);
+        uint8_t was = pbuf_get_at(request, (u16_t)(iphdr_len + at));
+        l04_bad_replies++;
+        l04_note(L04_PROBLEM_CHANGED, seq, len, at, icmp[at], was);
+        return;
+    }
+    if(inet_chksum(icmp, len) != 0u) {
+        /* Type 8 -> 0 lowers the first word by 0x0800, so the correct field
+         * is the request's plus 0x0800, one's complement (RFC 1624). */
+        uint32_t want = (uint32_t)request_csum + 0x0800u;
+        want = (want & 0xFFFFu) + (want >> 16);
+        l04_bad_replies++;
+        l04_note(L04_PROBLEM_CHECKSUM, seq, len, 2u, (uint16_t)((icmp[2] << 8) | icmp[3]),
+                 (uint16_t)want);
+    }
+}
+
 /* Echo request for our unicast address: build the reply from a copy, then
  * send, delay or drop it. Returns 1 in every case - once we have looked at
  * a request to us, lwIP must not answer it a second time. */
@@ -143,13 +216,26 @@ static u8_t l04_answer(struct pbuf* p, u16_t iphdr_len, const ip_addr_t* addr, u
         return 1u;
     }
     pbuf_copy_partial(p, reply->payload, icmp_len, iphdr_len);
-    pbuf_free(p);
 
-    if(!rnlab_l04_echo_to_reply((uint8_t*)reply->payload, icmp_len)) {
+    /* Keep p until the reply is checked against it. */
+    uint8_t* icmp = (uint8_t*)reply->payload;
+    bool request_ok = icmp_len >= RNLAB_L04_ICMP_HEADER_LEN && icmp[1] == 0u &&
+                      inet_chksum(icmp, icmp_len) == 0u;
+    uint16_t request_csum = (uint16_t)((icmp[2] << 8) | icmp[3]);
+    uint16_t seq = (uint16_t)((icmp[6] << 8) | icmp[7]);
+
+    if(!rnlab_l04_echo_to_reply(icmp, icmp_len)) {
         l04_bad++;
+        if(request_ok) {
+            l04_rejected_valid++;
+            l04_note(L04_PROBLEM_REJECTED_VALID, seq, icmp_len, 0u, 0u, 0u);
+        }
+        pbuf_free(p);
         pbuf_free(reply);
         return 1u;
     }
+    l04_check_reply(p, iphdr_len, icmp, icmp_len, request_ok, request_csum, seq);
+    pbuf_free(p);
 
     if(l04_delay_ms == 0u) {
         l04_send_reply(reply, addr);
@@ -286,6 +372,10 @@ static void l04_cmd_echo(cads_cli_session_t* session, bool on) {
     }
     cads_cli_write(session, l04_pcb ? "echo: eigener Responder (TTL 64)\r\n"
                                     : "echo: lwIP-Responder (TTL 255)\r\n");
+    if(l04_pcb) {
+        cads_cli_write(session, "      ping meldet Zeitueberschreitung? 'lab 04 stats' zeigt, ob und\r\n");
+        cads_cli_write(session, "      warum eure Antworten falsch sind (gegen lwIP geprueft).\r\n");
+    }
 }
 
 static void l04_cmd_ping(cads_cli_session_t* session, uint32_t ip, uint32_t count, uint32_t size) {
@@ -404,6 +494,96 @@ static void l04_cmd_pollgap(cads_cli_session_t* session, int argc, char* argv[])
     cads_cli_write(session, "pollgap gestartet - Ergebnis mit 'lab 04 pollgap'\r\n");
 }
 
+static void l04_write_hex16(cads_cli_session_t* session, uint16_t value) {
+    char buf[8];
+    cads_cli_write(session, "0x");
+    cads_fmt_hex(buf, sizeof(buf), value, 4u, true);
+    cads_cli_write(session, buf);
+}
+
+static const char* l04_field_name(uint16_t offset) {
+    if(offset < 4u) return offset == 0u ? "Typ" : offset == 1u ? "Code" : "Pruefsumme";
+    if(offset < 6u) return "Identifier";
+    if(offset < 8u) return "Sequenznummer";
+    return "Daten";
+}
+
+/* The verdict on the students' echo_to_reply(), checked against lwIP. One
+ * write per line (cads_cli_write() caps a single call, see l04_help()). */
+static void l04_write_check(cads_cli_session_t* session) {
+    if(!l04_pcb && l04_last.kind == L04_PROBLEM_NONE) return;
+    cads_cli_write(session, "pruefung:  ");
+    if(l04_last.kind == L04_PROBLEM_NONE) {
+        cads_cli_write(session, l04_replied ? "alle Antworten korrekt (gegen lwIP geprueft)\r\n"
+                                            : "noch keine Anfrage\r\n");
+        return;
+    }
+    cads_cli_write_uint(session, l04_rejected_valid);
+    cads_cli_write(session, " gueltige Anfragen abgelehnt, ");
+    cads_cli_write_uint(session, l04_bad_replies);
+    cads_cli_write(session, " fehlerhafte Antworten gesendet\r\n");
+    cads_cli_write(session, "letzter fehler (seq ");
+    cads_cli_write_uint(session, l04_last.seq);
+    cads_cli_write(session, ", ");
+    cads_cli_write_uint(session, l04_last.len);
+    cads_cli_write(session, " B ICMP):\r\n  ");
+    switch(l04_last.kind) {
+    case L04_PROBLEM_REJECTED_VALID:
+        cads_cli_write(session, "echo_to_reply() lieferte false, die Anfrage war laut lwIP korrekt.\r\n");
+        cads_cli_write(session, "  Pruefung zu streng? Laenge >= 8, Typ 8, Code 0, und\r\n");
+        cads_cli_write(session, "  rnlab_inet_checksum() ueber das ganze Paket muss 0 sein.\r\n");
+        break;
+    case L04_PROBLEM_ACCEPTED_BAD:
+        cads_cli_write(session, "Anfrage mit falscher Pruefsumme oder Code != 0 beantwortet.\r\n");
+        cads_cli_write(session, "  echo_to_reply() muss sie ablehnen (false).\r\n");
+        break;
+    case L04_PROBLEM_TYPE:
+        cads_cli_write(session, "Antwort hat Typ ");
+        cads_cli_write_uint(session, l04_last.got);
+        cads_cli_write(session, " statt 0 (Echo Reply).\r\n");
+        break;
+    case L04_PROBLEM_CODE:
+        cads_cli_write(session, "Antwort hat Code ");
+        cads_cli_write_uint(session, l04_last.got);
+        cads_cli_write(session, " statt 0.\r\n");
+        break;
+    case L04_PROBLEM_CHANGED:
+        cads_cli_write(session, "Antwort: Byte ");
+        cads_cli_write_uint(session, l04_last.byte);
+        cads_cli_write(session, " (");
+        cads_cli_write(session, l04_field_name(l04_last.byte));
+        cads_cli_write(session, ") veraendert, ");
+        l04_write_hex16(session, l04_last.got);
+        cads_cli_write(session, " statt ");
+        l04_write_hex16(session, l04_last.want);
+        cads_cli_write(session, ".\r\n");
+        cads_cli_write(session, "  Identifier, Sequenz und Daten muessen unveraendert zurueck.\r\n");
+        break;
+    case L04_PROBLEM_CHECKSUM:
+        cads_cli_write(session, "Antwort-Pruefsumme ");
+        l04_write_hex16(session, l04_last.got);
+        cads_cli_write(session, " statt ");
+        l04_write_hex16(session, l04_last.want);
+        cads_cli_write(session, ".\r\n  ");
+        if(l04_last.got == (uint16_t)((l04_last.want << 8) | (l04_last.want >> 8))) {
+            cads_cli_write(session, "Bytes vertauscht: Feld steht big-endian im Paket.\r\n");
+        } else if(l04_last.got == (uint16_t)(l04_last.want - 0x0800u) ||
+                  l04_last.got == (uint16_t)(l04_last.want - 0x0801u)) {
+            cads_cli_write(session, "Feld wie in der Anfrage: nach Typ 8 -> 0 nicht neu berechnet.\r\n");
+        } else {
+            cads_cli_write(session, "Feld vor dem Rechnen auf 0 gesetzt? Ergebnis big-endian\r\n");
+            cads_cli_write(session, "  in Byte 2..3 zurueckgeschrieben?\r\n");
+        }
+        break;
+    case L04_PROBLEM_NONE:
+        break;
+    }
+    if(l04_bad_replies) {
+        cads_cli_write(session, "  Der PC verwirft solche Antworten stillschweigend: ping meldet\r\n");
+        cads_cli_write(session, "  Zeitueberschreitung, obwohl das Board geantwortet hat.\r\n");
+    }
+}
+
 static void l04_cmd_stats(cads_cli_session_t* session) {
     cads_cli_write(session, l04_pcb ? "echo:      eigener Responder, TTL 64\r\n"
                                     : "echo:      lwIP (icmp.c), TTL 255\r\n");
@@ -421,7 +601,9 @@ static void l04_cmd_stats(cads_cli_session_t* session) {
     cads_cli_write_uint(session, l04_bad);
     cads_cli_write(session, ", ueberlauf ");
     cads_cli_write_uint(session, l04_overflow);
-    cads_cli_write(session, "\r\nbearbeitung ");
+    cads_cli_write(session, "\r\n");
+    l04_write_check(session);
+    cads_cli_write(session, "bearbeitung ");
     l04_write_summary(session, &l04_proc);
     if(l04_rtt.sent) {
         cads_cli_write(session, "letzter ping ");
@@ -435,6 +617,8 @@ static void l04_cmd_stats(cads_cli_session_t* session) {
 
 static void l04_reset(void) {
     l04_requests = l04_replied = l04_lost = l04_bad = l04_overflow = 0u;
+    l04_rejected_valid = l04_bad_replies = 0u;
+    l04_last.kind = L04_PROBLEM_NONE;
     rnlab_l04_stats_init(&l04_proc);
     rnlab_l04_stats_init(&l04_rtt);
 }
